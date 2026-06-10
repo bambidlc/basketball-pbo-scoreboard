@@ -3,6 +3,7 @@ import {
   ArrowLeft,
   Blocks,
   Check,
+  ChevronDown,
   ChevronRight,
   CircleX,
   Clock3,
@@ -2214,6 +2215,7 @@ function RosterPanel({
   const accent = isAway ? "bg-red-500" : "bg-blue-500";
   const borderAccent = isAway ? "border-l-red-500" : "border-l-blue-500";
   const starterCount = team.players.length;
+  const [benchCollapsed, setBenchCollapsed] = useState(false);
 
   return (
     <aside
@@ -2263,32 +2265,42 @@ function RosterPanel({
           </div>
         )}
       </div>
-      {/* Bench: takes the remaining space below the starters and scrolls. */}
-      <div className="flex shrink-0 items-center justify-between border-y border-neutral-800 bg-neutral-900/95 px-4 py-1 text-[11px] font-black uppercase tracking-wide text-neutral-500">
-        <span>Bench</span>
+      {/* Bench: tap the header to collapse/expand; expanded it takes the remaining space and scrolls. */}
+      <button
+        aria-expanded={!benchCollapsed}
+        className="flex shrink-0 items-center justify-between gap-2 border-y border-neutral-800 bg-neutral-900/95 px-4 py-1 text-[11px] font-black uppercase tracking-wide text-neutral-500 transition-colors hover:bg-neutral-800 hover:text-neutral-300 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-neutral-500"
+        type="button"
+        onClick={() => setBenchCollapsed((current) => !current)}
+      >
+        <span className="flex items-center gap-1.5">
+          {benchCollapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
+          Bench
+        </span>
         <span className="font-mono tabular-nums text-neutral-400">{team.bench.length}</span>
-      </div>
-      <div className="min-h-0 flex-1 overflow-y-auto scrollbar-slim">
-        {team.bench.length > 0 ? (
-          team.bench.map((player) => (
-            <PlayerRow
-              accent={accent}
-              borderAccent={borderAccent}
-              compact
-              key={getPlayerKey(player)}
-              player={player}
-              selected={selectedTeam && selectedPlayerKey === getPlayerKey(player)}
-              starterDisabled={starterCount >= 5}
-              onClick={() => onSelectPlayer(side, player)}
-              onToggleStarter={() => onToggleStarter(side, player)}
-            />
-          ))
-        ) : (
-          <div className="px-4 py-4 text-center text-[11px] font-semibold text-neutral-500">
-            No bench players.
-          </div>
-        )}
-      </div>
+      </button>
+      {!benchCollapsed && (
+        <div className="min-h-0 flex-1 overflow-y-auto scrollbar-slim">
+          {team.bench.length > 0 ? (
+            team.bench.map((player) => (
+              <PlayerRow
+                accent={accent}
+                borderAccent={borderAccent}
+                compact
+                key={getPlayerKey(player)}
+                player={player}
+                selected={selectedTeam && selectedPlayerKey === getPlayerKey(player)}
+                starterDisabled={starterCount >= 5}
+                onClick={() => onSelectPlayer(side, player)}
+                onToggleStarter={() => onToggleStarter(side, player)}
+              />
+            ))
+          ) : (
+            <div className="px-4 py-4 text-center text-[11px] font-semibold text-neutral-500">
+              No bench players.
+            </div>
+          )}
+        </div>
+      )}
     </aside>
   );
 }
