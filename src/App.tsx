@@ -1229,7 +1229,7 @@ function App() {
   return (
     <main className="min-h-dvh bg-neutral-950 p-2 text-neutral-100 [font-family:Inter,ui-sans-serif,system-ui,sans-serif] sm:p-3 xl:h-dvh xl:overflow-hidden">
       <section className="mx-auto max-w-[1640px] overflow-hidden rounded-xl border border-neutral-800 bg-neutral-800 shadow-2xl shadow-black/50 ring-1 ring-white/5 xl:h-full">
-        <div className="grid gap-px bg-neutral-800 md:grid-cols-2 xl:h-full xl:min-h-0 xl:grid-cols-[230px_minmax(0,1fr)_230px_320px] xl:grid-rows-[auto_minmax(0,1fr)_210px] 2xl:grid-cols-[260px_minmax(0,1fr)_260px_350px] 2xl:grid-rows-[auto_minmax(0,1fr)_224px]">
+        <div className="grid gap-px bg-neutral-800 md:grid-cols-2 xl:h-full xl:min-h-0 xl:grid-cols-[230px_minmax(0,1fr)_230px_320px] xl:grid-rows-[auto_minmax(0,1fr)_166px] 2xl:grid-cols-[260px_minmax(0,1fr)_260px_350px] 2xl:grid-rows-[auto_minmax(0,1fr)_182px]">
           <ScoreHeader
             away={match.away}
             awayScore={match.awayScore}
@@ -1768,7 +1768,7 @@ function ScoreHeader({
         onClick={() => onSelectTeam("away")}
       />
 
-      <div className="flex flex-col items-center justify-center gap-2 border-y border-neutral-800 px-3 py-3 text-center md:border-x md:border-y-0 xl:gap-1 xl:py-1.5">
+      <div className="flex flex-col items-center justify-center gap-2 border-y border-neutral-800 px-3 py-3 text-center md:border-x md:border-y-0 xl:gap-0.5 xl:py-1">
         <div className="flex w-full items-center justify-between gap-2">
           <button
             aria-label="Back to dashboard"
@@ -1830,7 +1830,7 @@ function ScoreHeader({
         <div className="rounded-full bg-amber-400/10 px-3 py-0.5 text-[11px] font-black uppercase tracking-wide text-amber-300">
           {periodLabel}
         </div>
-        <div className="flex max-w-full items-center gap-1.5 text-[10px] font-black uppercase tracking-wide text-neutral-500">
+        <div className="flex max-w-full items-center gap-1.5 text-[10px] font-black uppercase tracking-wide text-neutral-500 xl:hidden">
           <Activity size={12} />
           <span className="truncate">{status}</span>
         </div>
@@ -2563,9 +2563,9 @@ function BottomPanel({
 }) {
   return (
     <section className="order-6 grid gap-px overflow-hidden bg-neutral-800 md:col-span-2 md:grid-cols-2 lg:grid-cols-3 xl:col-span-3 xl:col-start-1 xl:row-start-3 xl:min-h-0 xl:grid-cols-[minmax(360px,1fr)_240px_1fr]">
-      <div className="min-h-0 overflow-hidden bg-neutral-950 p-3 md:col-span-2 lg:col-span-1 xl:col-span-1">
+      <div className="min-h-0 overflow-hidden bg-neutral-950 p-3 md:col-span-2 lg:col-span-1 xl:col-span-1 xl:p-2">
         <PanelTitle>{`Event Feed (${events.length})`}</PanelTitle>
-        <div className="mt-2 max-h-72 overflow-y-auto rounded-lg border border-neutral-800 md:max-h-56 xl:max-h-[120px] xl:rounded-md 2xl:max-h-[132px]">
+        <div className="mt-2 max-h-72 overflow-y-auto rounded-lg border border-neutral-800 md:max-h-56 xl:mt-1 xl:max-h-[116px] xl:rounded-md 2xl:max-h-[132px]">
           {events.map((event) => (
             <div
               className="grid min-h-11 grid-cols-[26px_48px_minmax(72px,1fr)_minmax(0,1.3fr)_56px_32px_32px] items-center gap-1 border-b border-neutral-800/70 bg-neutral-900/40 px-2 last:border-b-0 xl:min-h-8"
@@ -2609,10 +2609,10 @@ function BottomPanel({
         </div>
       </div>
 
-      <div className="min-h-0 overflow-hidden bg-neutral-950 p-3 xl:overflow-y-auto xl:scrollbar-slim">
+      <div className="min-h-0 overflow-hidden bg-neutral-950 p-3 xl:p-2 xl:overflow-y-auto xl:scrollbar-slim">
         <PanelTitle>Current Possession</PanelTitle>
-        <div className="mt-2 grid gap-2 xl:mt-1.5 xl:gap-1.5">
-          <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-lg border border-neutral-800 bg-neutral-900 px-3 py-2 xl:py-1.5">
+        <div className="mt-2 grid gap-2 xl:mt-1 xl:gap-1">
+          <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-lg border border-neutral-800 bg-neutral-900 px-3 py-2 xl:py-1">
             <div className="min-w-0">
               <div className="text-[10px] font-black uppercase tracking-wide text-neutral-500">Possession</div>
               <div
@@ -2628,7 +2628,7 @@ function BottomPanel({
           </div>
 
           <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
-            <div className="min-w-0 rounded-lg border border-neutral-800 bg-neutral-900 px-3 py-2 xl:py-1.5">
+            <div className="min-w-0 rounded-lg border border-neutral-800 bg-neutral-900 px-3 py-2 xl:py-1">
               <div className="text-[10px] font-black uppercase tracking-wide text-neutral-500">Foul Ball</div>
               <div className="mt-1 flex items-center gap-2">
                 <PossessionArrow possession={foulBallTeam} />
@@ -2639,7 +2639,7 @@ function BottomPanel({
             </div>
             <div
               className={cn(
-                "flex size-14 items-center justify-center rounded-full border-2 font-mono text-2xl font-black tabular-nums xl:size-11 xl:text-lg",
+                "flex size-14 items-center justify-center rounded-full border-2 font-mono text-2xl font-black tabular-nums xl:size-10 xl:text-base",
                 possession === "away"
                   ? "border-red-500/80 text-red-400"
                   : "border-blue-400/80 text-blue-400",
@@ -2649,7 +2649,7 @@ function BottomPanel({
             </div>
           </div>
 
-          <div className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-end gap-3 rounded-lg border border-neutral-800 bg-neutral-900 px-3 py-2 text-xs uppercase text-neutral-500 xl:py-1.5">
+          <div className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-end gap-3 rounded-lg border border-neutral-800 bg-neutral-900 px-3 py-2 text-xs uppercase text-neutral-500 xl:py-1">
             <div className="min-w-0">
               <div className="text-[10px] font-black tracking-wide">Ball Handler</div>
               <div className="mt-0.5 truncate text-sm font-bold normal-case text-neutral-200">{ballHandlerName}</div>
@@ -2659,12 +2659,12 @@ function BottomPanel({
         </div>
       </div>
 
-      <div className="min-h-0 overflow-hidden bg-neutral-950 p-3 xl:overflow-y-auto xl:scrollbar-slim">
+      <div className="min-h-0 overflow-hidden bg-neutral-950 p-3 xl:p-2 xl:overflow-y-auto xl:scrollbar-slim">
         <PanelTitle>Game Summary</PanelTitle>
         <div className="mt-2 space-y-1.5 xl:mt-1.5 xl:space-y-1">
           {summary.map((item) => (
             <div
-              className="flex items-center justify-between gap-4 rounded-lg border border-neutral-800 bg-neutral-900 px-3 py-2 text-sm xl:py-1.5"
+              className="flex items-center justify-between gap-4 rounded-lg border border-neutral-800 bg-neutral-900 px-3 py-2 text-sm xl:py-1"
               key={item.label}
             >
               <span className="text-[11px] font-black uppercase tracking-wide text-neutral-500">{item.label}</span>
