@@ -1,0 +1,42 @@
+# Render Blueprint — https://render.com/docs/blueprint-spec
+#
+# Deploys the Basketball PBO Scoreboard as a single Node web service that
+# serves the built Vite app and proxies /odoo to your Odoo instance with the
+# API key injected server-side (the key is NOT shipped in the browser bundle).
+#
+# After connecting the repo, set the two secret values (ODOO_URL, ODOO_API_KEY)
+# in the Render dashboard — they are intentionally not stored in this file.
+
+services:
+  - type: web
+    name: basketball-pbo-scoreboard
+    runtime: node
+    plan: free
+    buildCommand: npm ci && npm run build
+    startCommand: node server.js
+    healthCheckPath: /
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+
+      # ---- Server-side secrets (set these in the Render dashboard) ----
+      - key: ODOO_URL # e.g. https://pbopr.odoo.com
+        sync: false
+      - key: ODOO_API_KEY # your private Odoo API key — never commit this
+        sync: false
+      - key: ODOO_DB
+        value: pbopr
+
+      # ---- Client build-time config (safe to expose in the bundle) ----
+      - key: VITE_ODOO_PROXY_PATH
+        value: /odoo
+      - key: VITE_ODOO_API_MODE
+        value: json2
+      - key: VITE_ODOO_DB
+        value: pbopr
+      # Placeholder only — the real key is added by the server-side proxy.
+      - key: VITE_ODOO_API_KEY
+        value: managed-by-proxy
+      - key: VITE_MATCH_POLL_MS
+        value: "15000"

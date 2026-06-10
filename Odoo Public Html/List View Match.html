@@ -1,0 +1,282 @@
+<t t-name="website_studio.games">
+  <t t-call="website.layout">
+    <style>
+      .pbo-public {
+        --pbo-bg: #0a0a0a;
+        --pbo-panel: #111111;
+        --pbo-panel-soft: #171717;
+        --pbo-border: #262626;
+        --pbo-text: #f5f5f5;
+        --pbo-muted: #a3a3a3;
+        --pbo-subtle: #737373;
+        --pbo-red: #ef4444;
+        --pbo-blue: #3b82f6;
+        --pbo-amber: #fbbf24;
+        background: var(--pbo-bg);
+        color: var(--pbo-text);
+        padding: 32px 0 48px;
+      }
+
+      .pbo-public a {
+        color: inherit;
+      }
+
+      .pbo-shell {
+        max-width: 1180px;
+      }
+
+      .pbo-kicker {
+        color: var(--pbo-amber);
+        font-size: 0.75rem;
+        font-weight: 800;
+        text-transform: uppercase;
+      }
+
+      .pbo-page-title {
+        margin: 0;
+        color: var(--pbo-text);
+        font-size: clamp(2rem, 5vw, 4rem);
+        font-weight: 900;
+        line-height: 1;
+      }
+
+      .pbo-muted {
+        color: var(--pbo-muted);
+      }
+
+      .pbo-toolbar {
+        margin-top: 24px;
+        border: 1px solid var(--pbo-border);
+        border-radius: 8px;
+        background: var(--pbo-panel);
+        padding: 12px;
+      }
+
+      .pbo-toolbar .btn-toolbar {
+        gap: 12px;
+      }
+
+      .pbo-toolbar .input-group {
+        border: 1px solid var(--pbo-border);
+        border-radius: 6px;
+        overflow: hidden;
+        background: var(--pbo-panel-soft);
+      }
+
+      .pbo-toolbar .form-control,
+      .pbo-toolbar .btn {
+        border: 0;
+        background: transparent;
+        color: var(--pbo-text);
+        min-height: 44px;
+      }
+
+      .pbo-toolbar .form-control::placeholder {
+        color: var(--pbo-subtle);
+      }
+
+      .pbo-toolbar .btn {
+        border-left: 1px solid var(--pbo-border);
+        font-weight: 800;
+      }
+
+      .pbo-grid {
+        margin-top: 24px;
+      }
+
+      .pbo-match-card {
+        height: 100%;
+        border: 1px solid var(--pbo-border);
+        border-radius: 8px;
+        background: var(--pbo-panel);
+        padding: 16px;
+        transition: border-color 160ms ease-out, transform 160ms ease-out;
+      }
+
+      .pbo-match-card:hover {
+        border-color: #525252;
+        transform: translateY(-2px);
+      }
+
+      .pbo-status {
+        display: inline-flex;
+        align-items: center;
+        border: 1px solid var(--pbo-border);
+        border-radius: 999px;
+        color: var(--pbo-muted);
+        font-size: 0.75rem;
+        font-weight: 800;
+        min-height: 30px;
+        padding: 5px 10px;
+        text-transform: uppercase;
+      }
+
+      .pbo-match-name {
+        margin: 12px 0 0;
+        color: var(--pbo-text);
+        font-size: 1.1rem;
+        font-weight: 900;
+        line-height: 1.2;
+      }
+
+      .pbo-score-row {
+        display: grid;
+        gap: 8px;
+        margin-top: 16px;
+      }
+
+      .pbo-team-line {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 12px;
+        border: 1px solid var(--pbo-border);
+        border-radius: 6px;
+        background: var(--pbo-panel-soft);
+        padding: 10px 12px;
+      }
+
+      .pbo-team-label {
+        color: var(--pbo-subtle);
+        font-size: 0.7rem;
+        font-weight: 900;
+        text-transform: uppercase;
+      }
+
+      .pbo-team-name {
+        color: var(--pbo-text);
+        font-size: 1rem;
+        font-weight: 800;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .pbo-score {
+        color: var(--pbo-text);
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        font-size: 2rem;
+        font-weight: 900;
+        line-height: 1;
+      }
+
+      .pbo-away {
+        border-left: 4px solid var(--pbo-red);
+      }
+
+      .pbo-home {
+        border-left: 4px solid var(--pbo-blue);
+      }
+
+      .pbo-match-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 14px;
+      }
+
+      .pbo-pill {
+        border: 1px solid var(--pbo-border);
+        border-radius: 999px;
+        color: var(--pbo-muted);
+        font-size: 0.75rem;
+        font-weight: 800;
+        padding: 5px 9px;
+      }
+
+      @media (max-width: 767.98px) {
+        .pbo-public {
+          padding: 24px 0 36px;
+        }
+
+        .pbo-toolbar .btn-toolbar {
+          align-items: stretch;
+          flex-direction: column;
+        }
+      }
+    </style>
+
+    <main class="pbo-public o_website_listing_layout">
+      <div class="container pbo-shell">
+        <div class="oe_structure oe_new"/>
+
+        <section class="pbo-hero" aria-labelledby="pbo-match-list-title">
+          <div class="pbo-kicker">Basketball PBO</div>
+          <h1 id="pbo-match-list-title" class="pbo-page-title">Matches</h1>
+          <p class="pbo-muted mb-0 mt-2">Live, scheduled, and completed games.</p>
+        </section>
+
+        <section class="pbo-toolbar" aria-label="Match search">
+          <div class="btn-toolbar">
+            <form method="get" class="o_searchbar_form s_searchbar_input me-auto flex-grow-1">
+              <div role="search" class="input-group">
+                <input type="search" name="search" class="search-query form-control oe_search_box" placeholder="Search matches" t-att-value="search" autocomplete="off"/>
+                <button type="submit" aria-label="Search matches" title="Search" class="btn oe_search_button">
+                  <i class="oi oi-search"/>
+                  <span t-if="search" class="oe_search_found ms-1">
+                    <small>(<t t-out="search_count or 0"/> found)</small>
+                  </span>
+                </button>
+              </div>
+              <input name="order" type="hidden" class="o_search_order_by" t-att-value="order_by if order_by else 'x_studio_datetime desc'"/>
+            </form>
+            <t t-call="website_studio.listing_layout_switcher"/>
+          </div>
+        </section>
+
+        <section t-attf-class="row g-3 pbo-grid #{'o_website_grid' if layout_mode == 'grid' else 'o_website_list'}" aria-label="Match results">
+          <t t-foreach="records" t-as="record">
+            <div t-attf-class="#{'col-xl-4 col-md-6 col-12' if layout_mode == 'grid' else 'col-12'}">
+              <a class="o_website_record text-decoration-none d-block pbo-match-card" t-att-href="record_to_url(record)">
+                <span class="pbo-status">
+                  <span t-field="record.x_studio_status"/>
+                </span>
+                <h2 class="pbo-match-name">
+                  <span t-if="record.x_studio_match_name" t-field="record.x_studio_match_name"/>
+                  <span t-else="" t-field="record.x_name"/>
+                </h2>
+
+                <div class="pbo-score-row">
+                  <div class="pbo-team-line pbo-away">
+                    <div class="min-w-0">
+                      <div class="pbo-team-label">Away</div>
+                      <div class="pbo-team-name">
+                        <span t-field="record.x_studio_away_team"/>
+                      </div>
+                    </div>
+                    <div class="pbo-score">
+                      <span t-field="record.x_studio_away_score"/>
+                    </div>
+                  </div>
+
+                  <div class="pbo-team-line pbo-home">
+                    <div class="min-w-0">
+                      <div class="pbo-team-label">Home</div>
+                      <div class="pbo-team-name">
+                        <span t-field="record.x_studio_home_team"/>
+                      </div>
+                    </div>
+                    <div class="pbo-score">
+                      <span t-field="record.x_studio_home_score"/>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="pbo-match-meta">
+                  <span t-if="record.x_studio_datetime" class="pbo-pill" t-field="record.x_studio_datetime"/>
+                  <span t-if="record.x_studio_location" class="pbo-pill" t-field="record.x_studio_location"/>
+                  <span t-if="record.x_studio_week" class="pbo-pill" t-field="record.x_studio_week"/>
+                </div>
+              </a>
+            </div>
+          </t>
+        </section>
+
+        <div class="oe_structure oe_new"/>
+        <div t-if="pager" class="o_portal_pager d-flex justify-content-center my-4">
+          <t t-call="portal.pager"/>
+        </div>
+      </div>
+    </main>
+  </t>
+</t>

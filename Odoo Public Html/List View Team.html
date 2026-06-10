@@ -1,0 +1,715 @@
+<t t-name="website_studio.team">
+  <t t-call="website.layout">
+    <style>
+      .pbo-public {
+        --pbo-bg: #0a0a0a;
+        --pbo-panel: #111111;
+        --pbo-panel-soft: #171717;
+        --pbo-border: #262626;
+        --pbo-text: #f5f5f5;
+        --pbo-muted: #a3a3a3;
+        --pbo-subtle: #737373;
+        --pbo-red: #ef4444;
+        --pbo-blue: #3b82f6;
+        --pbo-green: #84cc16;
+        --pbo-amber: #fbbf24;
+        background: var(--pbo-bg);
+        color: var(--pbo-text);
+        padding: 28px 0 42px;
+      }
+
+      .pbo-public a {
+        color: inherit;
+      }
+
+      .pbo-shell {
+        max-width: 1180px;
+      }
+
+      .pbo-hero {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 18px;
+        align-items: end;
+      }
+
+      .pbo-kicker {
+        color: var(--pbo-red);
+        font-size: 0.75rem;
+        font-weight: 900;
+        text-transform: uppercase;
+      }
+
+      .pbo-page-title {
+        margin: 6px 0 0;
+        color: var(--pbo-text);
+        font-size: clamp(2rem, 4.8vw, 4.1rem);
+        font-weight: 900;
+        line-height: 0.95;
+      }
+
+      .pbo-muted {
+        color: var(--pbo-muted);
+      }
+
+      .pbo-hero-count {
+        display: grid;
+        min-width: 148px;
+        border: 1px solid var(--pbo-border);
+        border-radius: 8px;
+        background: var(--pbo-panel);
+        padding: 12px 14px;
+      }
+
+      .pbo-label {
+        color: var(--pbo-subtle);
+        font-size: 0.62rem;
+        font-weight: 900;
+        text-transform: uppercase;
+      }
+
+      .pbo-value {
+        color: var(--pbo-text);
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        font-size: 1.8rem;
+        font-weight: 900;
+        font-variant-numeric: tabular-nums;
+        line-height: 1;
+        margin-top: 5px;
+      }
+
+      .pbo-controls {
+        position: sticky;
+        top: 12px;
+        z-index: 2;
+        display: grid;
+        grid-template-columns: minmax(180px, 1fr) minmax(150px, 0.55fr) minmax(150px, 0.45fr) auto;
+        gap: 10px;
+        align-items: end;
+        margin-top: 22px;
+        border: 1px solid var(--pbo-border);
+        border-radius: 8px;
+        background: var(--pbo-panel);
+        padding: 12px;
+      }
+
+      .pbo-field {
+        min-width: 0;
+      }
+
+      .pbo-field label {
+        display: block;
+        color: var(--pbo-subtle);
+        font-size: 0.62rem;
+        font-weight: 900;
+        margin-bottom: 6px;
+        text-transform: uppercase;
+      }
+
+      .pbo-input,
+      .pbo-select {
+        width: 100%;
+        min-height: 42px;
+        border: 1px solid var(--pbo-border);
+        border-radius: 6px;
+        background: var(--pbo-panel-soft);
+        color: var(--pbo-text);
+        font-size: 0.9rem;
+        font-weight: 800;
+        padding: 8px 10px;
+      }
+
+      .pbo-input::placeholder {
+        color: var(--pbo-subtle);
+      }
+
+      .pbo-select option {
+        background: var(--pbo-panel);
+        color: var(--pbo-text);
+      }
+
+      .pbo-reset {
+        min-height: 42px;
+        border: 1px solid var(--pbo-border);
+        border-radius: 6px;
+        background: transparent;
+        color: var(--pbo-muted);
+        font-size: 0.8rem;
+        font-weight: 900;
+        padding: 8px 12px;
+        text-transform: uppercase;
+        white-space: nowrap;
+      }
+
+      .pbo-reset:hover,
+      .pbo-reset:focus {
+        border-color: #525252;
+        color: var(--pbo-text);
+      }
+
+      .pbo-summary-rail {
+        display: grid;
+        grid-template-columns: 1fr 0.8fr 1.3fr 1.5fr;
+        gap: 1px;
+        overflow: hidden;
+        margin-top: 14px;
+        border: 1px solid var(--pbo-border);
+        border-radius: 8px;
+        background: var(--pbo-border);
+      }
+
+      .pbo-summary-item {
+        min-width: 0;
+        background: var(--pbo-panel);
+        padding: 12px 14px;
+      }
+
+      .pbo-summary-value {
+        overflow: hidden;
+        color: var(--pbo-text);
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        font-size: clamp(1.05rem, 2vw, 1.45rem);
+        font-weight: 900;
+        font-variant-numeric: tabular-nums;
+        line-height: 1.1;
+        margin-top: 5px;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .pbo-board {
+        margin-top: 18px;
+        overflow: hidden;
+        border: 1px solid var(--pbo-border);
+        border-radius: 8px;
+        background: var(--pbo-panel);
+      }
+
+      .pbo-board-head {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 12px;
+        align-items: center;
+        border-bottom: 1px solid var(--pbo-border);
+        padding: 14px 16px;
+      }
+
+      .pbo-board-title {
+        margin: 0;
+        color: var(--pbo-text);
+        font-size: 0.95rem;
+        font-weight: 900;
+        text-transform: uppercase;
+      }
+
+      .pbo-count {
+        color: var(--pbo-muted);
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        font-size: 0.78rem;
+        font-weight: 900;
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+      }
+
+      .pbo-board-scroll {
+        max-height: min(70vh, 720px);
+        max-height: min(70dvh, 720px);
+        overflow: auto;
+      }
+
+      .pbo-standings-table {
+        width: 100%;
+        min-width: 900px;
+        border-collapse: collapse;
+      }
+
+      .pbo-standings-table th,
+      .pbo-standings-table td {
+        border-bottom: 1px solid var(--pbo-border);
+        color: var(--pbo-muted);
+        font-size: 0.78rem;
+        font-weight: 800;
+        padding: 10px 12px;
+        text-align: right;
+        vertical-align: middle;
+        white-space: nowrap;
+      }
+
+      .pbo-standings-table th {
+        position: sticky;
+        top: 0;
+        z-index: 1;
+        background: var(--pbo-panel);
+        color: var(--pbo-subtle);
+        font-size: 0.65rem;
+        font-weight: 900;
+        text-transform: uppercase;
+      }
+
+      .pbo-standings-table th:first-child,
+      .pbo-standings-table td:first-child,
+      .pbo-standings-table th:nth-child(2),
+      .pbo-standings-table td:nth-child(2),
+      .pbo-standings-table th:nth-child(3),
+      .pbo-standings-table td:nth-child(3),
+      .pbo-standings-table th:nth-child(4),
+      .pbo-standings-table td:nth-child(4),
+      .pbo-standings-table th:nth-child(9),
+      .pbo-standings-table td:nth-child(9) {
+        text-align: left;
+      }
+
+      .pbo-team-row:last-child td {
+        border-bottom: 0;
+      }
+
+      .pbo-team-row:hover td {
+        background: var(--pbo-panel-soft);
+      }
+
+      .pbo-rank-cell {
+        color: var(--pbo-text);
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        font-size: 1rem;
+        font-weight: 900;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .pbo-team-link {
+        display: inline-flex;
+        max-width: 300px;
+        min-width: 0;
+        align-items: center;
+        gap: 10px;
+        text-decoration: none;
+      }
+
+      .pbo-team-link:hover .pbo-team-name {
+        color: var(--pbo-red);
+      }
+
+      .pbo-avatar,
+      .pbo-avatar-empty {
+        flex: 0 0 auto;
+        width: 38px;
+        height: 38px;
+        overflow: hidden;
+        border: 1px solid var(--pbo-border);
+        border-radius: 999px;
+        background: #080a0d;
+      }
+
+      .pbo-avatar .o_website_image,
+      .pbo-avatar img {
+        display: block;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+
+      .pbo-avatar-empty {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--pbo-subtle);
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        font-size: 0.85rem;
+        font-weight: 900;
+      }
+
+      .pbo-team-text {
+        min-width: 0;
+      }
+
+      .pbo-team-name {
+        display: block;
+        overflow: hidden;
+        color: var(--pbo-text);
+        font-size: 0.94rem;
+        font-weight: 900;
+        line-height: 1.15;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .pbo-team-sub {
+        display: block;
+        overflow: hidden;
+        color: var(--pbo-subtle);
+        font-size: 0.7rem;
+        font-weight: 800;
+        line-height: 1.25;
+        margin-top: 2px;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .pbo-pill {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        max-width: 180px;
+        min-height: 26px;
+        overflow: hidden;
+        border: 1px solid var(--pbo-border);
+        border-radius: 999px;
+        color: var(--pbo-muted);
+        font-size: 0.7rem;
+        font-weight: 900;
+        padding: 4px 9px;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .pbo-record {
+        color: var(--pbo-text);
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        font-weight: 900;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .pbo-pct {
+        color: var(--pbo-green);
+      }
+
+      .pbo-num {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .pbo-empty {
+        border: 1px dashed #404040;
+        border-radius: 6px;
+        color: var(--pbo-muted);
+        font-size: 0.9rem;
+        font-weight: 800;
+        margin: 14px;
+        padding: 16px;
+        text-align: center;
+      }
+
+      .pbo-pager {
+        margin-top: 18px;
+      }
+
+      @media (max-width: 991.98px) {
+        .pbo-hero,
+        .pbo-controls,
+        .pbo-summary-rail {
+          grid-template-columns: 1fr 1fr;
+        }
+
+        .pbo-field:first-child,
+        .pbo-summary-item:nth-child(3),
+        .pbo-summary-item:nth-child(4) {
+          grid-column: 1 / -1;
+        }
+
+        .pbo-reset {
+          align-self: end;
+        }
+      }
+
+      @media (max-width: 575.98px) {
+        .pbo-public {
+          padding: 20px 0 34px;
+        }
+
+        .pbo-hero,
+        .pbo-controls,
+        .pbo-summary-rail,
+        .pbo-board-head {
+          grid-template-columns: 1fr;
+        }
+
+        .pbo-hero-count,
+        .pbo-reset {
+          width: 100%;
+        }
+
+        .pbo-board-scroll {
+          max-height: 68vh;
+          max-height: 68dvh;
+        }
+      }
+    </style>
+
+    <main class="pbo-public o_website_listing_layout" data-pbo-team-ranking="1">
+      <div class="container pbo-shell">
+        <div class="oe_structure oe_new"/>
+
+        <section class="pbo-hero" aria-labelledby="pbo-team-list-title">
+          <div>
+            <div class="pbo-kicker">Basketball PBO</div>
+            <h1 id="pbo-team-list-title" class="pbo-page-title">Team Rankings</h1>
+            <p class="pbo-muted mb-0 mt-2">Filter by category and sex to compare each division leaderboard.</p>
+          </div>
+          <div class="pbo-hero-count" aria-label="Teams loaded">
+            <span class="pbo-label">Visible Teams</span>
+            <span class="pbo-value" data-pbo-count="">
+              <t t-out="len(records)"/>
+            </span>
+          </div>
+        </section>
+
+        <section class="pbo-controls" aria-label="Ranking filters">
+          <div class="pbo-field">
+            <label for="pbo-team-search">Search</label>
+            <input id="pbo-team-search" type="search" class="pbo-input" placeholder="Find a team, tournament, category" t-att-value="search" data-pbo-filter="search" autocomplete="off"/>
+          </div>
+          <div class="pbo-field">
+            <label for="pbo-category-filter">Category</label>
+            <select id="pbo-category-filter" class="pbo-select" data-pbo-filter="category">
+              <option value="">All categories</option>
+            </select>
+          </div>
+          <div class="pbo-field">
+            <label for="pbo-sex-filter">Sex</label>
+            <select id="pbo-sex-filter" class="pbo-select" data-pbo-filter="sex">
+              <option value="">All</option>
+            </select>
+          </div>
+          <button type="button" class="pbo-reset" data-pbo-reset="">Reset</button>
+        </section>
+
+        <section class="pbo-summary-rail" aria-label="Current leaderboard summary">
+          <div class="pbo-summary-item">
+            <div class="pbo-label">Visible Teams</div>
+            <div class="pbo-summary-value" data-pbo-count="">
+              <t t-out="len(records)"/>
+            </div>
+          </div>
+          <div class="pbo-summary-item">
+            <div class="pbo-label">Games</div>
+            <div class="pbo-summary-value" data-pbo-games="">0</div>
+          </div>
+          <div class="pbo-summary-item">
+            <div class="pbo-label">Division</div>
+            <div class="pbo-summary-value" data-pbo-division="">All categories / All sex groups</div>
+          </div>
+          <div class="pbo-summary-item">
+            <div class="pbo-label">Leader</div>
+            <div class="pbo-summary-value" data-pbo-leader="">--</div>
+          </div>
+        </section>
+
+        <section class="pbo-board" aria-labelledby="pbo-standings-title">
+          <div class="pbo-board-head">
+            <h2 id="pbo-standings-title" class="pbo-board-title">Leaderboard</h2>
+            <span class="pbo-count">Sorted by win rate, wins, then losses</span>
+          </div>
+
+          <div class="pbo-board-scroll">
+            <table class="pbo-standings-table">
+              <thead>
+                <tr>
+                  <th>Rank</th>
+                  <th>Team</th>
+                  <th>Category</th>
+                  <th>Sex</th>
+                  <th>W-L</th>
+                  <th>GP</th>
+                  <th>Win %</th>
+                  <th>Roster</th>
+                  <th>Tournament</th>
+                </tr>
+              </thead>
+              <tbody class="pbo-standings-body">
+                <t t-foreach="records" t-as="record">
+                  <t t-set="wins" t-value="record.x_wins or 0"/>
+                  <t t-set="losses" t-value="record.x_losses or 0"/>
+                  <t t-set="games_played" t-value="record.x_games_played or (wins + losses)"/>
+                  <t t-set="win_pct_raw" t-value="record.x_win_pct or 0"/>
+                  <t t-set="win_pct_value" t-value="int(win_pct_raw * 100) if win_pct_raw and win_pct_raw &lt;= 1 else int(win_pct_raw or 0)"/>
+                  <tr class="pbo-team-row" t-att-data-wins="wins" t-att-data-losses="losses" t-att-data-games="games_played" t-att-data-pct="win_pct_value">
+                    <td class="pbo-rank-cell">--</td>
+                    <td>
+                      <a class="pbo-team-link o_website_record" t-att-href="record_to_url(record)">
+                        <span t-if="record.x_studio_image" class="pbo-avatar">
+                          <span t-field="record.x_studio_image" t-options-widget="'image'" t-options-qweb_img_raw_data="True" t-options-class="'o_website_image'"/>
+                        </span>
+                        <span t-else="" class="pbo-avatar-empty">
+                          <t t-out="(record.x_name or '?')[:1]"/>
+                        </span>
+                        <span class="pbo-team-text">
+                          <span class="pbo-team-name" t-field="record.x_name"/>
+                          <span class="pbo-team-sub">
+                            <t t-if="record.x_studio_coach">Coach <span t-field="record.x_studio_coach"/></t>
+                            <t t-else="">Team profile</t>
+                          </span>
+                        </span>
+                      </a>
+                    </td>
+                    <td>
+                      <span t-if="record.x_studio_categoria" class="pbo-pill pbo-category-value" t-field="record.x_studio_categoria"/>
+                      <span t-else="" class="pbo-pill pbo-category-value">Uncategorized</span>
+                    </td>
+                    <td>
+                      <span t-if="record.x_studio_sexo" class="pbo-pill pbo-sex-value" t-field="record.x_studio_sexo"/>
+                      <span t-else="" class="pbo-pill pbo-sex-value">Open</span>
+                    </td>
+                    <td class="pbo-record">
+                      <t t-out="wins"/>-<t t-out="losses"/>
+                    </td>
+                    <td class="pbo-num">
+                      <t t-out="games_played"/>
+                    </td>
+                    <td class="pbo-record pbo-pct">
+                      <t t-out="'%d%%' % win_pct_value"/>
+                    </td>
+                    <td class="pbo-num">
+                      <t t-out="len(record.x_studio_players)"/>
+                    </td>
+                    <td>
+                      <span t-if="record.x_studio_tournament" class="pbo-pill pbo-tournament-value" t-field="record.x_studio_tournament"/>
+                      <span t-else="" class="pbo-pill pbo-tournament-value">--</span>
+                    </td>
+                  </tr>
+                </t>
+              </tbody>
+            </table>
+            <div t-if="not records" class="pbo-empty">Teams appear here after they are published to this list.</div>
+            <div class="pbo-empty pbo-empty-state" hidden="">No teams match the current filters.</div>
+          </div>
+        </section>
+
+        <div class="oe_structure oe_new"/>
+        <div t-if="pager" class="o_portal_pager pbo-pager d-flex justify-content-center">
+          <t t-call="portal.pager"/>
+        </div>
+      </div>
+
+      <script>
+        <![CDATA[
+          (function () {
+            var root = document.querySelector("[data-pbo-team-ranking]");
+            if (!root) {
+              return;
+            }
+
+            var tableBody = root.querySelector(".pbo-standings-body");
+            var rows = Array.prototype.slice.call(root.querySelectorAll(".pbo-team-row"));
+            var searchInput = root.querySelector("[data-pbo-filter='search']");
+            var categorySelect = root.querySelector("[data-pbo-filter='category']");
+            var sexSelect = root.querySelector("[data-pbo-filter='sex']");
+            var resetButton = root.querySelector("[data-pbo-reset]");
+            var countEls = Array.prototype.slice.call(root.querySelectorAll("[data-pbo-count]"));
+            var gamesEl = root.querySelector("[data-pbo-games]");
+            var divisionEl = root.querySelector("[data-pbo-division]");
+            var leaderEl = root.querySelector("[data-pbo-leader]");
+            var emptyState = root.querySelector(".pbo-empty-state");
+
+            function cleanText(node) {
+              return node && node.textContent ? node.textContent.replace(/\s+/g, " ").trim() : "";
+            }
+
+            function numberFrom(row, key) {
+              return Number(row.dataset[key]) || 0;
+            }
+
+            function uniqueSorted(values) {
+              var seen = {};
+              return values.filter(function (value) {
+                if (!value || seen[value]) {
+                  return false;
+                }
+                seen[value] = true;
+                return true;
+              }).sort(function (a, b) {
+                return a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
+              });
+            }
+
+            function addOptions(select, values) {
+              values.forEach(function (value) {
+                var option = document.createElement("option");
+                option.value = value;
+                option.textContent = value;
+                select.appendChild(option);
+              });
+            }
+
+            rows.forEach(function (row) {
+              var team = cleanText(row.querySelector(".pbo-team-name"));
+              var category = cleanText(row.querySelector(".pbo-category-value")) || "Uncategorized";
+              var sex = cleanText(row.querySelector(".pbo-sex-value")) || "Open";
+              var tournament = cleanText(row.querySelector(".pbo-tournament-value"));
+
+              row.dataset.team = team;
+              row.dataset.category = category;
+              row.dataset.sex = sex;
+              row.dataset.search = [team, category, sex, tournament].join(" ").toLowerCase();
+            });
+
+            addOptions(categorySelect, uniqueSorted(rows.map(function (row) {
+              return row.dataset.category;
+            })));
+            addOptions(sexSelect, uniqueSorted(rows.map(function (row) {
+              return row.dataset.sex;
+            })));
+
+            rows.sort(function (a, b) {
+              return numberFrom(b, "pct") - numberFrom(a, "pct") ||
+                numberFrom(b, "wins") - numberFrom(a, "wins") ||
+                numberFrom(a, "losses") - numberFrom(b, "losses") ||
+                a.dataset.team.localeCompare(b.dataset.team, undefined, { numeric: true, sensitivity: "base" });
+            }).forEach(function (row) {
+              tableBody.appendChild(row);
+            });
+
+            function updateBoard() {
+              var query = (searchInput.value || "").toLowerCase().trim();
+              var category = categorySelect.value;
+              var sex = sexSelect.value;
+              var visibleRows = [];
+              var games = 0;
+
+              rows.forEach(function (row) {
+                var isVisible = (!category || row.dataset.category === category) &&
+                  (!sex || row.dataset.sex === sex) &&
+                  (!query || row.dataset.search.indexOf(query) !== -1);
+
+                row.hidden = !isVisible;
+
+                if (isVisible) {
+                  visibleRows.push(row);
+                  games += numberFrom(row, "games");
+                }
+              });
+
+              visibleRows.forEach(function (row, index) {
+                var rankCell = row.querySelector(".pbo-rank-cell");
+                if (rankCell) {
+                  rankCell.textContent = String(index + 1);
+                }
+              });
+
+              countEls.forEach(function (node) {
+                node.textContent = String(visibleRows.length);
+              });
+              gamesEl.textContent = String(games);
+              divisionEl.textContent = (category || "All categories") + " / " + (sex || "All sex groups");
+              leaderEl.textContent = visibleRows.length ? visibleRows[0].dataset.team : "--";
+              emptyState.hidden = visibleRows.length !== 0;
+            }
+
+            [searchInput, categorySelect, sexSelect].forEach(function (control) {
+              control.addEventListener("input", updateBoard);
+              control.addEventListener("change", updateBoard);
+            });
+
+            resetButton.addEventListener("click", function () {
+              searchInput.value = "";
+              categorySelect.value = "";
+              sexSelect.value = "";
+              updateBoard();
+              searchInput.focus();
+            });
+
+            updateBoard();
+          })();
+        ]]>
+      </script>
+    </main>
+  </t>
+</t>

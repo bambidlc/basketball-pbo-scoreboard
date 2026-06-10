@@ -1,0 +1,75 @@
+@import "tailwindcss";
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  background: #0a0a0a;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background:
+    radial-gradient(1100px 700px at 50% -15%, #161821 0%, rgba(10, 10, 10, 0) 55%),
+    #0a0a0a;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+button {
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+button:active {
+  transform: translateY(1px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Premium slim scrollbars for the scrollable panels */
+.scrollbar-slim {
+  scrollbar-width: thin;
+  scrollbar-color: #404040 transparent;
+}
+
+.scrollbar-slim::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.scrollbar-slim::-webkit-scrollbar-thumb {
+  background-color: #3a3a3a;
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+.scrollbar-slim::-webkit-scrollbar-thumb:hover {
+  background-color: #525252;
+}
+
+/* Keep number inputs clean (used in period setup / clock fields) */
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+input[type="number"] {
+  -moz-appearance: textfield;
+}
+
+::selection {
+  background: rgba(245, 245, 245, 0.18);
+}

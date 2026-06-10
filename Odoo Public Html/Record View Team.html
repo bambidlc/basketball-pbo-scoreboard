@@ -1,0 +1,1074 @@
+<t t-name="website_studio.team-1">
+  <t t-call="website.layout">
+    <style>
+      .pbo-public {
+        --pbo-bg: #0a0a0a;
+        --pbo-panel: #111111;
+        --pbo-panel-soft: #171717;
+        --pbo-border: #262626;
+        --pbo-text: #f5f5f5;
+        --pbo-muted: #a3a3a3;
+        --pbo-subtle: #737373;
+        --pbo-red: #ef4444;
+        --pbo-blue: #3b82f6;
+        --pbo-green: #84cc16;
+        --pbo-amber: #fbbf24;
+        background: var(--pbo-bg);
+        color: var(--pbo-text);
+        padding: 24px 0 48px;
+      }
+
+      .pbo-public a {
+        color: inherit;
+      }
+
+      .pbo-shell {
+        max-width: 1180px;
+      }
+
+      .pbo-breadcrumb {
+        margin: 0 0 20px;
+        padding: 0;
+      }
+
+      .pbo-breadcrumb a {
+        color: var(--pbo-muted);
+        text-decoration: none;
+      }
+
+      .pbo-breadcrumb .active {
+        color: var(--pbo-text);
+      }
+
+      .pbo-hero {
+        display: grid;
+        grid-template-columns: minmax(0, 1.05fr) minmax(300px, 0.95fr);
+        gap: 16px;
+        align-items: stretch;
+      }
+
+      .pbo-hero-copy {
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        border: 1px solid var(--pbo-border);
+        border-radius: 8px;
+        background: var(--pbo-panel);
+        padding: clamp(16px, 2.5vw, 28px);
+      }
+
+      .pbo-kicker {
+        color: var(--pbo-red);
+        font-size: 0.75rem;
+        font-weight: 900;
+        text-transform: uppercase;
+      }
+
+      .pbo-title {
+        margin: 8px 0 0;
+        color: var(--pbo-text);
+        font-size: clamp(2rem, 4.6vw, 4.2rem);
+        font-weight: 900;
+        line-height: 0.95;
+      }
+
+      .pbo-tag-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-top: 14px;
+      }
+
+      .pbo-pill {
+        display: inline-flex;
+        align-items: center;
+        border: 1px solid var(--pbo-border);
+        border-radius: 999px;
+        color: var(--pbo-muted);
+        font-size: 0.68rem;
+        font-weight: 900;
+        min-height: 26px;
+        padding: 4px 9px;
+      }
+
+      .pbo-summary-rail {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        margin-top: 18px;
+        border: 1px solid var(--pbo-border);
+        border-radius: 6px;
+        background: var(--pbo-panel-soft);
+        overflow: hidden;
+      }
+
+      .pbo-metric {
+        min-width: 0;
+        border-right: 1px solid var(--pbo-border);
+        padding: 8px 10px;
+      }
+
+      .pbo-metric:last-child {
+        border-right: 0;
+      }
+
+      .pbo-metric-label,
+      .pbo-staff-role {
+        color: var(--pbo-subtle);
+        font-size: 0.6rem;
+        font-weight: 900;
+        text-transform: uppercase;
+      }
+
+      .pbo-metric-value {
+        color: var(--pbo-text);
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        font-size: clamp(1.25rem, 2.2vw, 1.8rem);
+        font-weight: 900;
+        font-variant-numeric: tabular-nums;
+        line-height: 1;
+        margin-top: 4px;
+      }
+
+      .pbo-staff-list {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 1px;
+        margin-top: 14px;
+        overflow: hidden;
+        border: 1px solid var(--pbo-border);
+        border-radius: 6px;
+        background: var(--pbo-border);
+      }
+
+      .pbo-staff-item {
+        min-width: 0;
+        background: var(--pbo-panel-soft);
+        padding: 8px 10px;
+      }
+
+      .pbo-staff-name {
+        overflow: hidden;
+        color: var(--pbo-text);
+        font-size: 0.82rem;
+        font-weight: 900;
+        line-height: 1.15;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .pbo-media {
+        min-height: 420px;
+        overflow: hidden;
+        border: 1px solid var(--pbo-border);
+        border-radius: 8px;
+        background: #080a0d;
+      }
+
+      .pbo-media .o_website_image,
+      .pbo-media img {
+        display: block;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+
+      .pbo-image-empty {
+        display: flex;
+        height: 100%;
+        min-height: 420px;
+        align-items: center;
+        justify-content: center;
+        color: var(--pbo-subtle);
+        font-size: 2.5rem;
+        font-weight: 900;
+        text-align: center;
+        text-transform: uppercase;
+      }
+
+      .pbo-content-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(320px, 0.72fr);
+        gap: 16px;
+        margin-top: 24px;
+      }
+
+      .pbo-panel {
+        border: 1px solid var(--pbo-border);
+        border-radius: 8px;
+        background: var(--pbo-panel);
+        overflow: hidden;
+      }
+
+      .pbo-panel-head {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 12px;
+        align-items: center;
+        border-bottom: 1px solid var(--pbo-border);
+        padding: 14px 16px;
+      }
+
+      .pbo-panel-title {
+        margin: 0;
+        color: var(--pbo-text);
+        font-size: 0.95rem;
+        font-weight: 900;
+        text-transform: uppercase;
+      }
+
+      .pbo-count {
+        color: var(--pbo-muted);
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        font-size: 0.8rem;
+        font-weight: 900;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .pbo-table-wrap {
+        overflow-x: auto;
+      }
+
+      .pbo-roster-table {
+        width: 100%;
+        min-width: 820px;
+        border-collapse: collapse;
+      }
+
+      .pbo-roster-table th,
+      .pbo-roster-table td {
+        border-bottom: 1px solid var(--pbo-border);
+        color: var(--pbo-muted);
+        font-size: 0.78rem;
+        font-weight: 800;
+        padding: 10px 12px;
+        text-align: right;
+        white-space: nowrap;
+      }
+
+      .pbo-roster-table th:first-child,
+      .pbo-roster-table td:first-child,
+      .pbo-roster-table th:nth-child(2),
+      .pbo-roster-table td:nth-child(2),
+      .pbo-roster-table th:nth-child(3),
+      .pbo-roster-table td:nth-child(3) {
+        text-align: left;
+      }
+
+      .pbo-roster-table th {
+        color: var(--pbo-subtle);
+        font-size: 0.68rem;
+        font-weight: 900;
+        text-transform: uppercase;
+      }
+
+      .pbo-roster-table tr:last-child td {
+        border-bottom: 0;
+      }
+
+      .pbo-player-cell {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        color: var(--pbo-text);
+        font-weight: 900;
+      }
+
+      .pbo-player-text {
+        min-width: 0;
+      }
+
+      .pbo-player-name {
+        overflow: hidden;
+        color: var(--pbo-text);
+        font-weight: 900;
+        line-height: 1.15;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .pbo-player-detail {
+        overflow: hidden;
+        color: var(--pbo-muted);
+        font-size: 0.72rem;
+        font-weight: 800;
+        line-height: 1.25;
+        margin-top: 2px;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .pbo-avatar,
+      .pbo-avatar-empty {
+        flex: 0 0 auto;
+        width: 38px;
+        height: 38px;
+        overflow: hidden;
+        border: 1px solid var(--pbo-border);
+        border-radius: 999px;
+        background: var(--pbo-panel-soft);
+      }
+
+      .pbo-avatar .o_website_image,
+      .pbo-avatar img {
+        display: block;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+
+      .pbo-avatar-empty {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--pbo-subtle);
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        font-size: 0.85rem;
+        font-weight: 900;
+      }
+
+      .pbo-jersey {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 42px;
+        min-height: 30px;
+        border: 1px solid var(--pbo-border);
+        border-radius: 6px;
+        color: var(--pbo-text);
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        font-weight: 900;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .pbo-pos {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 38px;
+        min-height: 28px;
+        border: 1px solid var(--pbo-border);
+        border-radius: 999px;
+        color: var(--pbo-blue);
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        font-weight: 900;
+      }
+
+      .pbo-num {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .pbo-num-strong {
+        color: var(--pbo-text);
+        font-weight: 900;
+      }
+
+      .pbo-player-detail-panel {
+        margin-top: 16px;
+      }
+
+      .pbo-player-detail-card {
+        border-bottom: 1px solid var(--pbo-border);
+      }
+
+      .pbo-player-detail-card:last-child {
+        border-bottom: 0;
+      }
+
+      .pbo-player-detail-card summary {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 12px;
+        align-items: center;
+        color: var(--pbo-text);
+        cursor: pointer;
+        list-style: none;
+        padding: 13px 14px;
+      }
+
+      .pbo-player-detail-card summary::-webkit-details-marker {
+        display: none;
+      }
+
+      .pbo-player-detail-card summary::after {
+        content: "+";
+        color: var(--pbo-muted);
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        font-size: 1rem;
+        font-weight: 900;
+      }
+
+      .pbo-player-detail-card[open] summary::after {
+        content: "-";
+      }
+
+      .pbo-detail-summary-main {
+        display: flex;
+        min-width: 0;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .pbo-detail-summary-stats {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        gap: 6px;
+      }
+
+      .pbo-detail-body {
+        border-top: 1px solid var(--pbo-border);
+        padding: 14px;
+      }
+
+      .pbo-detail-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(260px, 0.5fr);
+        gap: 14px;
+        align-items: start;
+      }
+
+      .pbo-game-log-table {
+        width: 100%;
+        min-width: 560px;
+        border-collapse: collapse;
+      }
+
+      .pbo-game-log-table th,
+      .pbo-game-log-table td {
+        border-bottom: 1px solid var(--pbo-border);
+        color: var(--pbo-muted);
+        font-size: 0.74rem;
+        font-weight: 800;
+        padding: 9px 8px;
+        text-align: right;
+        white-space: nowrap;
+      }
+
+      .pbo-game-log-table th:first-child,
+      .pbo-game-log-table td:first-child {
+        color: var(--pbo-text);
+        text-align: left;
+      }
+
+      .pbo-game-log-table th {
+        color: var(--pbo-subtle);
+        font-size: 0.64rem;
+        font-weight: 900;
+        text-transform: uppercase;
+      }
+
+      .pbo-game-log-table tr:last-child td {
+        border-bottom: 0;
+      }
+
+      .pbo-shot-card {
+        display: grid;
+        gap: 10px;
+      }
+
+      .pbo-shot-summary {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 1px;
+        overflow: hidden;
+        border: 1px solid var(--pbo-border);
+        border-radius: 6px;
+        background: var(--pbo-border);
+      }
+
+      .pbo-shot-stat {
+        min-width: 0;
+        background: var(--pbo-panel-soft);
+        padding: 9px 10px;
+      }
+
+      .pbo-shot-label {
+        color: var(--pbo-subtle);
+        font-size: 0.62rem;
+        font-weight: 900;
+        text-transform: uppercase;
+      }
+
+      .pbo-shot-value {
+        margin-top: 4px;
+        color: var(--pbo-text);
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        font-size: 0.95rem;
+        font-weight: 900;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .pbo-court {
+        display: block;
+        width: 100%;
+        aspect-ratio: 760 / 440;
+        height: auto;
+        min-height: 230px;
+        border: 1px solid var(--pbo-border);
+        border-radius: 6px;
+        background: #080a0d;
+      }
+
+      .pbo-schedule-list {
+        display: grid;
+      }
+
+      .pbo-game {
+        display: grid;
+        grid-template-columns: 72px minmax(0, 1fr) auto;
+        gap: 12px;
+        align-items: center;
+        border-bottom: 1px solid var(--pbo-border);
+        padding: 13px 14px;
+      }
+
+      .pbo-game:last-child {
+        border-bottom: 0;
+      }
+
+      .pbo-game-date {
+        color: var(--pbo-muted);
+        font-size: 0.76rem;
+        font-weight: 900;
+        line-height: 1.25;
+      }
+
+      .pbo-game-title {
+        color: var(--pbo-text);
+        font-size: 0.92rem;
+        font-weight: 900;
+        line-height: 1.2;
+      }
+
+      .pbo-game-meta {
+        color: var(--pbo-muted);
+        font-size: 0.74rem;
+        font-weight: 800;
+        line-height: 1.35;
+      }
+
+      .pbo-score {
+        text-align: right;
+      }
+
+      .pbo-score-line {
+        color: var(--pbo-text);
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        font-size: 1.05rem;
+        font-weight: 900;
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+      }
+
+      .pbo-status {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border: 1px solid var(--pbo-border);
+        border-radius: 999px;
+        color: var(--pbo-muted);
+        font-size: 0.68rem;
+        font-weight: 900;
+        min-height: 24px;
+        padding: 3px 8px;
+        text-transform: uppercase;
+        white-space: nowrap;
+      }
+
+      .pbo-status-win {
+        color: var(--pbo-green);
+      }
+
+      .pbo-status-loss {
+        color: var(--pbo-red);
+      }
+
+      .pbo-empty {
+        border: 1px dashed #404040;
+        border-radius: 6px;
+        color: var(--pbo-muted);
+        font-size: 0.9rem;
+        font-weight: 800;
+        margin: 14px;
+        padding: 16px;
+        text-align: center;
+      }
+
+      @media (max-width: 991.98px) {
+        .pbo-hero,
+        .pbo-content-grid,
+        .pbo-detail-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .pbo-media,
+        .pbo-image-empty {
+          min-height: 340px;
+        }
+      }
+
+      @media (max-width: 575.98px) {
+        .pbo-public {
+          padding: 18px 0 36px;
+        }
+
+        .pbo-summary-rail,
+        .pbo-staff-list {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .pbo-metric:nth-child(2) {
+          border-right: 0;
+        }
+
+        .pbo-metric:nth-child(-n + 2) {
+          border-bottom: 1px solid var(--pbo-border);
+        }
+
+        .pbo-game {
+          grid-template-columns: 1fr;
+        }
+
+        .pbo-player-detail-card summary {
+          grid-template-columns: 1fr;
+        }
+
+        .pbo-detail-summary-stats {
+          justify-content: flex-start;
+        }
+
+        .pbo-score {
+          text-align: left;
+        }
+      }
+    </style>
+
+    <main id="o_website_record_page" class="pbo-public">
+      <t t-set="editor_message">Drag building blocks to customize the header of single record pages.</t>
+      <div class="oe_structure oe_empty oe_new" t-att-data-editor-message="editor_message"/>
+
+      <div class="container pbo-shell">
+        <t t-set="players" t-value="record.x_studio_players.sorted('x_studio_jersey_number')"/>
+        <t t-set="games" t-value="(record.x_studio_home_games | record.x_studio_away_games).sorted('x_studio_datetime')"/>
+        <t t-set="wins" t-value="record.x_wins or 0"/>
+        <t t-set="losses" t-value="record.x_losses or 0"/>
+        <t t-set="games_played" t-value="record.x_games_played or 0"/>
+        <t t-set="win_pct_display" t-value="'%d%%' % int((record.x_win_pct or 0) * 100) if record.x_win_pct and record.x_win_pct &lt;= 1 else '%d%%' % int(record.x_win_pct or 0)"/>
+
+        <ol t-if="listing" class="breadcrumb pbo-breadcrumb">
+          <li class="breadcrumb-item o_not_editable">
+            <a t-att-href="listing['href']">
+              <span t-out="listing['name']"/>
+            </a>
+          </li>
+          <li class="breadcrumb-item active">
+            <span t-field="record.x_name"/>
+          </li>
+        </ol>
+
+        <section class="pbo-hero" aria-labelledby="pbo-team-record-title">
+          <div class="pbo-hero-copy">
+            <div class="pbo-kicker">Team</div>
+            <h1 id="pbo-team-record-title" class="pbo-title">
+              <span t-field="record.x_name"/>
+            </h1>
+
+            <div class="pbo-tag-row">
+              <span t-if="record.x_studio_categoria" class="pbo-pill" t-field="record.x_studio_categoria"/>
+              <span t-if="record.x_studio_sexo" class="pbo-pill" t-field="record.x_studio_sexo"/>
+              <span t-if="record.x_studio_tournament" class="pbo-pill" t-field="record.x_studio_tournament"/>
+            </div>
+
+            <div class="pbo-summary-rail" aria-label="Team summary">
+              <div class="pbo-metric">
+                <div class="pbo-metric-label">Record</div>
+                <div class="pbo-metric-value">
+                  <t t-out="wins"/>-<t t-out="losses"/>
+                </div>
+              </div>
+              <div class="pbo-metric">
+                <div class="pbo-metric-label">Games</div>
+                <div class="pbo-metric-value">
+                  <t t-out="games_played"/>
+                </div>
+              </div>
+              <div class="pbo-metric">
+                <div class="pbo-metric-label">Win Rate</div>
+                <div class="pbo-metric-value">
+                  <t t-out="win_pct_display"/>
+                </div>
+              </div>
+              <div class="pbo-metric">
+                <div class="pbo-metric-label">Roster</div>
+                <div class="pbo-metric-value">
+                  <t t-out="len(players)"/>
+                </div>
+              </div>
+            </div>
+
+            <div t-if="record.x_studio_coach or record.x_studio_assitant_coach or record.x_studio_assistant_coach_2 or record.x_studio_contact" class="pbo-staff-list" aria-label="Team staff">
+              <div t-if="record.x_studio_coach" class="pbo-staff-item">
+                <div class="pbo-staff-role">Head Coach</div>
+                <div class="pbo-staff-name"><span t-field="record.x_studio_coach"/></div>
+              </div>
+              <div t-if="record.x_studio_assitant_coach" class="pbo-staff-item">
+                <div class="pbo-staff-role">Assistant</div>
+                <div class="pbo-staff-name"><span t-field="record.x_studio_assitant_coach"/></div>
+              </div>
+              <div t-if="record.x_studio_assistant_coach_2" class="pbo-staff-item">
+                <div class="pbo-staff-role">Assistant 2</div>
+                <div class="pbo-staff-name"><span t-field="record.x_studio_assistant_coach_2"/></div>
+              </div>
+              <div t-if="record.x_studio_contact" class="pbo-staff-item">
+                <div class="pbo-staff-role">Contact</div>
+                <div class="pbo-staff-name"><span t-field="record.x_studio_contact"/></div>
+              </div>
+            </div>
+          </div>
+
+          <figure class="pbo-media mb-0">
+            <div t-if="record.x_studio_image" t-field="record.x_studio_image" t-options-widget="'image'" t-options-qweb_img_raw_data="True" t-options-class="'o_website_image'"/>
+            <div t-else="" class="pbo-image-empty">
+              <span t-field="record.x_name"/>
+            </div>
+          </figure>
+        </section>
+
+        <div class="pbo-content-grid">
+          <section class="pbo-panel" aria-labelledby="pbo-roster-title">
+            <div class="pbo-panel-head">
+              <h2 id="pbo-roster-title" class="pbo-panel-title">Player Stats</h2>
+              <span class="pbo-count"><t t-out="len(players)"/> players</span>
+            </div>
+            <div class="pbo-table-wrap">
+              <table class="pbo-roster-table">
+                <thead>
+                  <tr>
+                    <th>No.</th>
+                    <th>Player</th>
+                    <th>Pos</th>
+                    <th>Pts</th>
+                    <th>Fouls</th>
+                    <th>Q1</th>
+                    <th>Q2</th>
+                    <th>Q3</th>
+                    <th>Q4</th>
+                    <th>OT</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <t t-foreach="players" t-as="player">
+                    <t t-set="stat_count" t-value="0"/>
+                    <t t-set="points" t-value="0"/>
+                    <t t-set="fouls" t-value="0"/>
+                    <t t-set="q1" t-value="0"/>
+                    <t t-set="q2" t-value="0"/>
+                    <t t-set="q3" t-value="0"/>
+                    <t t-set="q4" t-value="0"/>
+                    <t t-set="ot" t-value="0"/>
+                    <t t-foreach="player.x_studio_stats" t-as="stat">
+                      <t t-if="not stat.x_studio_related_field_7hr_1jf0tn6sg or stat.x_studio_related_field_7hr_1jf0tn6sg.id == record.id">
+                        <t t-set="stat_q1" t-value="stat.x_studio_q1 or 0"/>
+                        <t t-set="stat_q2" t-value="stat.x_studio_q2 or 0"/>
+                        <t t-set="stat_q3" t-value="stat.x_studio_q3 or 0"/>
+                        <t t-set="stat_q4" t-value="stat.x_studio_q4 or 0"/>
+                        <t t-set="stat_ot" t-value="stat.x_studio_ot or 0"/>
+                        <t t-set="stat_count" t-value="stat_count + 1"/>
+                        <t t-set="q1" t-value="q1 + stat_q1"/>
+                        <t t-set="q2" t-value="q2 + stat_q2"/>
+                        <t t-set="q3" t-value="q3 + stat_q3"/>
+                        <t t-set="q4" t-value="q4 + stat_q4"/>
+                        <t t-set="ot" t-value="ot + stat_ot"/>
+                        <t t-set="points" t-value="points + (stat.x_studio_total_points or stat_q1 + stat_q2 + stat_q3 + stat_q4 + stat_ot)"/>
+                        <t t-set="fouls" t-value="fouls + (stat.x_studio_fouls or 0)"/>
+                      </t>
+                    </t>
+                    <t t-if="not stat_count and player.x_total_points">
+                      <t t-set="points" t-value="player.x_total_points"/>
+                    </t>
+                    <tr>
+                      <td>
+                        <span class="pbo-jersey">
+                          <t t-if="player.x_studio_jersey_number" t-out="player.x_studio_jersey_number"/>
+                          <t t-else="">--</t>
+                        </span>
+                      </td>
+                      <td>
+                        <div class="pbo-player-cell">
+                          <span t-if="player.x_avatar_image" class="pbo-avatar">
+                            <span t-field="player.x_avatar_image" t-options-widget="'image'" t-options-qweb_img_raw_data="True" t-options-class="'o_website_image'"/>
+                          </span>
+                          <span t-else="" class="pbo-avatar-empty">
+                            <t t-out="(player.x_name or '?')[:1]"/>
+                          </span>
+                          <span class="pbo-player-text">
+                            <span class="pbo-player-name" t-field="player.x_name"/>
+                            <span t-if="player.x_studio_grade or player.x_studio_integer_field_7h_1jf1916jk or player.x_studio_escuela" class="pbo-player-detail">
+                              <span t-if="player.x_studio_grade" t-field="player.x_studio_grade"/>
+                              <t t-if="player.x_studio_grade and player.x_studio_integer_field_7h_1jf1916jk"> / </t>
+                              <t t-if="player.x_studio_integer_field_7h_1jf1916jk">Age <span t-field="player.x_studio_integer_field_7h_1jf1916jk"/></t>
+                              <t t-if="(player.x_studio_grade or player.x_studio_integer_field_7h_1jf1916jk) and player.x_studio_escuela"> / </t>
+                              <span t-if="player.x_studio_escuela" t-field="player.x_studio_escuela"/>
+                            </span>
+                          </span>
+                        </div>
+                      </td>
+                      <td>
+                        <span t-if="player.x_studio_position" class="pbo-pos" t-field="player.x_studio_position"/>
+                        <span t-else="">--</span>
+                      </td>
+                      <td class="pbo-num pbo-num-strong"><t t-out="points"/></td>
+                      <td class="pbo-num"><t t-out="fouls"/></td>
+                      <td class="pbo-num"><t t-out="q1"/></td>
+                      <td class="pbo-num"><t t-out="q2"/></td>
+                      <td class="pbo-num"><t t-out="q3"/></td>
+                      <td class="pbo-num"><t t-out="q4"/></td>
+                      <td class="pbo-num"><t t-out="ot"/></td>
+                    </tr>
+                  </t>
+                </tbody>
+              </table>
+              <div t-if="not players" class="pbo-empty">Player stats appear here after players are assigned to this team.</div>
+            </div>
+          </section>
+
+          <aside class="pbo-panel" aria-labelledby="pbo-schedule-title">
+            <div class="pbo-panel-head">
+              <h2 id="pbo-schedule-title" class="pbo-panel-title">Games</h2>
+              <span class="pbo-count"><t t-out="len(games)"/> games</span>
+            </div>
+            <div class="pbo-schedule-list">
+              <t t-foreach="games" t-as="game">
+                <t t-set="is_home" t-value="game.x_studio_home_team.id == record.id"/>
+                <t t-set="team_score" t-value="(game.x_studio_home_score if is_home else game.x_studio_away_score) or 0"/>
+                <t t-set="opponent_score" t-value="(game.x_studio_away_score if is_home else game.x_studio_home_score) or 0"/>
+                <t t-set="result_label" t-value="'W' if game.x_studio_status == 'Played' and team_score &gt; opponent_score else 'L' if game.x_studio_status == 'Played' and team_score &lt; opponent_score else 'T' if game.x_studio_status == 'Played' else game.x_studio_status"/>
+                <article class="pbo-game">
+                  <div class="pbo-game-date">
+                    <div t-if="game.x_studio_datetime" t-field="game.x_studio_datetime"/>
+                    <div t-else="">TBD</div>
+                    <div t-if="game.x_studio_week">Week <span class="pbo-num" t-field="game.x_studio_week"/></div>
+                  </div>
+                  <div>
+                    <div class="pbo-game-title">
+                      <t t-if="is_home">vs</t>
+                      <t t-else="">@</t>
+                      <span t-if="is_home" t-field="game.x_studio_away_team"/>
+                      <span t-else="" t-field="game.x_studio_home_team"/>
+                    </div>
+                    <div class="pbo-game-meta">
+                      <span t-if="game.x_studio_match_name" t-field="game.x_studio_match_name"/>
+                      <span t-else="" t-field="game.x_name"/>
+                      <t t-if="game.x_studio_location"> / <span t-field="game.x_studio_location"/></t>
+                    </div>
+                  </div>
+                  <div class="pbo-score">
+                    <div class="pbo-score-line">
+                      <t t-if="game.x_studio_status == 'Played' or game.x_studio_status == 'Live'">
+                        <t t-out="team_score"/>-<t t-out="opponent_score"/>
+                      </t>
+                      <t t-else="">--</t>
+                    </div>
+                    <span t-attf-class="pbo-status #{'pbo-status-win' if result_label == 'W' else 'pbo-status-loss' if result_label == 'L' else ''}">
+                      <t t-out="result_label or 'Scheduled'"/>
+                    </span>
+                  </div>
+                </article>
+              </t>
+              <div t-if="not games" class="pbo-empty">Games appear here after they are assigned to this team.</div>
+            </div>
+          </aside>
+        </div>
+
+        <section class="pbo-panel pbo-player-detail-panel" aria-labelledby="pbo-player-detail-title">
+          <div class="pbo-panel-head">
+            <h2 id="pbo-player-detail-title" class="pbo-panel-title">Player Game Detail</h2>
+            <span class="pbo-count">points / fouls / quarters</span>
+          </div>
+
+          <t t-foreach="players" t-as="player">
+            <t t-set="detail_games" t-value="0"/>
+            <t t-set="detail_points" t-value="0"/>
+            <t t-set="detail_fouls" t-value="0"/>
+            <t t-set="detail_q1" t-value="0"/>
+            <t t-set="detail_q2" t-value="0"/>
+            <t t-set="detail_q3" t-value="0"/>
+            <t t-set="detail_q4" t-value="0"/>
+            <t t-set="detail_ot" t-value="0"/>
+            <t t-foreach="player.x_studio_stats" t-as="detail_stat">
+              <t t-if="not detail_stat.x_studio_related_field_7hr_1jf0tn6sg or detail_stat.x_studio_related_field_7hr_1jf0tn6sg.id == record.id">
+                <t t-set="detail_stat_q1" t-value="detail_stat.x_studio_q1 or 0"/>
+                <t t-set="detail_stat_q2" t-value="detail_stat.x_studio_q2 or 0"/>
+                <t t-set="detail_stat_q3" t-value="detail_stat.x_studio_q3 or 0"/>
+                <t t-set="detail_stat_q4" t-value="detail_stat.x_studio_q4 or 0"/>
+                <t t-set="detail_stat_ot" t-value="detail_stat.x_studio_ot or 0"/>
+                <t t-set="detail_games" t-value="detail_games + 1"/>
+                <t t-set="detail_q1" t-value="detail_q1 + detail_stat_q1"/>
+                <t t-set="detail_q2" t-value="detail_q2 + detail_stat_q2"/>
+                <t t-set="detail_q3" t-value="detail_q3 + detail_stat_q3"/>
+                <t t-set="detail_q4" t-value="detail_q4 + detail_stat_q4"/>
+                <t t-set="detail_ot" t-value="detail_ot + detail_stat_ot"/>
+                <t t-set="detail_points" t-value="detail_points + (detail_stat.x_studio_total_points or detail_stat_q1 + detail_stat_q2 + detail_stat_q3 + detail_stat_q4 + detail_stat_ot)"/>
+                <t t-set="detail_fouls" t-value="detail_fouls + (detail_stat.x_studio_fouls or 0)"/>
+              </t>
+            </t>
+            <t t-if="not detail_games and player.x_total_points">
+              <t t-set="detail_points" t-value="player.x_total_points"/>
+            </t>
+
+            <t t-set="shot_count" t-value="0"/>
+            <t t-set="made_shot_count" t-value="0"/>
+            <t t-set="missed_shot_count" t-value="0"/>
+            <t t-foreach="games" t-as="shot_game">
+              <t t-foreach="shot_game.x_studio_game_events" t-as="detail_shot">
+                <t t-if="detail_shot.x_studio_player and detail_shot.x_studio_player.id == player.id and detail_shot.x_studio_shot_value in [2, 3] and detail_shot.x_studio_shot_x and detail_shot.x_studio_shot_y and detail_shot.x_studio_shot_x &gt; 0 and detail_shot.x_studio_shot_y &gt; 0">
+                  <t t-set="shot_count" t-value="shot_count + 1"/>
+                  <t t-if="'made' in (detail_shot.x_studio_action_type or '')">
+                    <t t-set="made_shot_count" t-value="made_shot_count + 1"/>
+                  </t>
+                  <t t-if="'missed' in (detail_shot.x_studio_action_type or '')">
+                    <t t-set="missed_shot_count" t-value="missed_shot_count + 1"/>
+                  </t>
+                </t>
+              </t>
+            </t>
+
+            <details class="pbo-player-detail-card">
+              <summary>
+                <span class="pbo-detail-summary-main">
+                  <span class="pbo-jersey">
+                    <t t-if="player.x_studio_jersey_number" t-out="player.x_studio_jersey_number"/>
+                    <t t-else="">--</t>
+                  </span>
+                  <span class="pbo-player-text">
+                    <span class="pbo-player-name" t-field="player.x_name"/>
+                    <span class="pbo-player-detail">
+                      <span t-if="player.x_studio_position" t-field="player.x_studio_position"/>
+                      <t t-if="player.x_studio_grade"> / <span t-field="player.x_studio_grade"/></t>
+                      <t t-if="player.x_studio_escuela"> / <span t-field="player.x_studio_escuela"/></t>
+                    </span>
+                  </span>
+                </span>
+                <span class="pbo-detail-summary-stats">
+                  <span class="pbo-pill">Games <span class="pbo-num"><t t-out="detail_games"/></span></span>
+                  <span class="pbo-pill">Pts <span class="pbo-num"><t t-out="detail_points"/></span></span>
+                  <span class="pbo-pill">Fouls <span class="pbo-num"><t t-out="detail_fouls"/></span></span>
+                  <span class="pbo-pill">Shots <span class="pbo-num"><t t-out="shot_count"/></span></span>
+                </span>
+              </summary>
+
+              <div class="pbo-detail-body">
+                <div class="pbo-detail-grid">
+                  <div class="pbo-table-wrap">
+                    <table class="pbo-game-log-table">
+                      <thead>
+                        <tr>
+                          <th>Game</th>
+                          <th>Pts</th>
+                          <th>Fouls</th>
+                          <th>Q1</th>
+                          <th>Q2</th>
+                          <th>Q3</th>
+                          <th>Q4</th>
+                          <th>OT</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <t t-foreach="player.x_studio_stats.sorted('id', reverse=True)" t-as="log_stat">
+                          <t t-if="not log_stat.x_studio_related_field_7hr_1jf0tn6sg or log_stat.x_studio_related_field_7hr_1jf0tn6sg.id == record.id">
+                            <tr>
+                              <td>
+                                <span t-if="log_stat.x_studio_game" t-field="log_stat.x_studio_game"/>
+                                <span t-else="" t-field="log_stat.x_name"/>
+                              </td>
+                              <td class="pbo-num pbo-num-strong"><span t-field="log_stat.x_studio_total_points"/></td>
+                              <td class="pbo-num"><span t-field="log_stat.x_studio_fouls"/></td>
+                              <td class="pbo-num"><span t-field="log_stat.x_studio_q1"/></td>
+                              <td class="pbo-num"><span t-field="log_stat.x_studio_q2"/></td>
+                              <td class="pbo-num"><span t-field="log_stat.x_studio_q3"/></td>
+                              <td class="pbo-num"><span t-field="log_stat.x_studio_q4"/></td>
+                              <td class="pbo-num"><span t-field="log_stat.x_studio_ot"/></td>
+                            </tr>
+                          </t>
+                        </t>
+                      </tbody>
+                    </table>
+                    <div t-if="not detail_games" class="pbo-empty">Game-by-game stats appear here after this player is scored.</div>
+                  </div>
+
+                  <aside class="pbo-shot-card" aria-label="Player shot map">
+                    <div class="pbo-shot-summary">
+                      <div class="pbo-shot-stat">
+                        <div class="pbo-shot-label">Shots</div>
+                        <div class="pbo-shot-value"><t t-out="shot_count"/></div>
+                      </div>
+                      <div class="pbo-shot-stat">
+                        <div class="pbo-shot-label">Made</div>
+                        <div class="pbo-shot-value"><t t-out="made_shot_count"/></div>
+                      </div>
+                      <div class="pbo-shot-stat">
+                        <div class="pbo-shot-label">Missed</div>
+                        <div class="pbo-shot-value"><t t-out="missed_shot_count"/></div>
+                      </div>
+                    </div>
+
+                    <svg class="pbo-court" preserveAspectRatio="xMidYMid meet" role="img" shape-rendering="geometricPrecision" viewBox="0 0 760 440" xmlns="http://www.w3.org/2000/svg">
+                      <title>Player shot map</title>
+                      <rect width="760" height="440" fill="#080a0d"/>
+                      <g fill="none" stroke="#d4d4d4" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.7" vector-effect="non-scaling-stroke">
+                        <rect x="42" y="42" width="676" height="356"/>
+                        <line x1="380" x2="380" y1="42" y2="398"/>
+                        <circle cx="380" cy="220" r="45"/>
+                        <path d="M42 75L144 79C328 82 328 358 144 361L42 365"/>
+                        <path d="M42 154H194V286H42"/>
+                        <path d="M194 154A66 66 0 0 1 194 286"/>
+                        <path d="M194 154A66 66 0 0 0 194 286" stroke-dasharray="12 13"/>
+                        <line x1="82" x2="82" y1="190" y2="250"/>
+                        <circle cx="108" cy="220" r="15"/>
+                        <line x1="123" x2="123" y1="198" y2="242"/>
+                        <path d="M108 184A36 36 0 0 1 108 256" stroke-opacity="0.72"/>
+                        <g transform="matrix(-1 0 0 1 760 0)">
+                          <path d="M42 75L144 79C328 82 328 358 144 361L42 365"/>
+                          <path d="M42 154H194V286H42"/>
+                          <path d="M194 154A66 66 0 0 1 194 286"/>
+                          <path d="M194 154A66 66 0 0 0 194 286" stroke-dasharray="12 13"/>
+                          <line x1="82" x2="82" y1="190" y2="250"/>
+                          <circle cx="108" cy="220" r="15"/>
+                          <line x1="123" x2="123" y1="198" y2="242"/>
+                          <path d="M108 184A36 36 0 0 1 108 256" stroke-opacity="0.72"/>
+                        </g>
+                      </g>
+                      <g>
+                        <t t-foreach="games" t-as="map_game">
+                          <t t-foreach="map_game.x_studio_game_events" t-as="shot">
+                            <t t-if="shot.x_studio_player and shot.x_studio_player.id == player.id and shot.x_studio_shot_value in [2, 3] and shot.x_studio_shot_x and shot.x_studio_shot_y and shot.x_studio_shot_x &gt; 0 and shot.x_studio_shot_y &gt; 0">
+                              <g>
+                                <circle t-att-cx="shot.x_studio_shot_x" t-att-cy="shot.x_studio_shot_y" r="8" stroke="#fafafa" stroke-width="2" vector-effect="non-scaling-stroke" t-att-fill="'#84cc16' if 'made' in (shot.x_studio_action_type or '') else '#ef4444'"/>
+                                <text t-att-x="shot.x_studio_shot_x" t-att-y="shot.x_studio_shot_y + 3" fill="#050505" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" font-size="9" font-weight="900" text-anchor="middle">
+                                  <t t-out="shot.x_studio_shot_value"/>
+                                </text>
+                              </g>
+                            </t>
+                          </t>
+                        </t>
+                      </g>
+                    </svg>
+
+                    <div t-if="not shot_count" class="pbo-empty">Shot markers appear here after this player has scored actions from the court.</div>
+                  </aside>
+                </div>
+              </div>
+            </details>
+          </t>
+
+          <div t-if="not players" class="pbo-empty">Player game detail appears here after players are assigned to this team.</div>
+        </section>
+
+      </div>
+
+      <t t-set="editor_message">Drag building blocks to customize the footer of single record pages.</t>
+      <div class="oe_structure oe_empty oe_new" t-att-data-editor-message="editor_message"/>
+    </main>
+  </t>
+</t>

@@ -1,0 +1,966 @@
+<t t-name="website_studio.games-2">
+  <t t-call="website.layout">
+    <style>
+      .pbo-public {
+        --pbo-bg: #0a0a0a;
+        --pbo-panel: #111111;
+        --pbo-panel-soft: #171717;
+        --pbo-border: #262626;
+        --pbo-text: #f5f5f5;
+        --pbo-muted: #a3a3a3;
+        --pbo-subtle: #737373;
+        --pbo-red: #ef4444;
+        --pbo-blue: #3b82f6;
+        --pbo-green: #84cc16;
+        --pbo-amber: #fbbf24;
+        background: var(--pbo-bg);
+        color: var(--pbo-text);
+        padding: 20px 0 40px;
+      }
+
+      .pbo-public a {
+        color: inherit;
+      }
+
+      .pbo-shell {
+        max-width: 1240px;
+      }
+
+      .pbo-breadcrumb {
+        margin: 0 0 14px;
+        padding: 0;
+      }
+
+      .pbo-breadcrumb a {
+        color: var(--pbo-muted);
+        text-decoration: none;
+      }
+
+      .pbo-breadcrumb .active {
+        color: var(--pbo-text);
+      }
+
+      .pbo-board,
+      .pbo-panel,
+      .pbo-collapse {
+        border: 1px solid var(--pbo-border);
+        border-radius: 8px;
+        background: var(--pbo-panel);
+        overflow: hidden;
+      }
+
+      .pbo-board-top {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 16px;
+        align-items: center;
+        border-bottom: 1px solid var(--pbo-border);
+        padding: 14px 16px;
+      }
+
+      .pbo-match-name {
+        margin: 0;
+        color: var(--pbo-text);
+        font-size: clamp(1.35rem, 3vw, 2.6rem);
+        font-weight: 900;
+        line-height: 1;
+      }
+
+      .pbo-status {
+        display: inline-flex;
+        align-items: center;
+        border: 1px solid var(--pbo-border);
+        border-radius: 999px;
+        color: var(--pbo-amber);
+        font-size: 0.75rem;
+        font-weight: 900;
+        min-height: 30px;
+        padding: 5px 10px;
+        text-transform: uppercase;
+        white-space: nowrap;
+      }
+
+      .pbo-score-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 88px minmax(0, 1fr);
+        align-items: stretch;
+      }
+
+      .pbo-team-block {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 18px;
+        align-items: center;
+        min-height: 160px;
+        padding: clamp(18px, 3vw, 32px);
+      }
+
+      .pbo-team-block-home {
+        grid-template-columns: auto minmax(0, 1fr);
+        text-align: right;
+      }
+
+      .pbo-team-label {
+        font-size: 0.75rem;
+        font-weight: 900;
+        text-transform: uppercase;
+      }
+
+      .pbo-away-color {
+        color: var(--pbo-red);
+      }
+
+      .pbo-home-color {
+        color: var(--pbo-blue);
+      }
+
+      .pbo-team-name {
+        margin-top: 6px;
+        color: var(--pbo-text);
+        font-size: clamp(1.35rem, 3vw, 2.4rem);
+        font-weight: 900;
+        line-height: 1.05;
+        overflow-wrap: anywhere;
+      }
+
+      .pbo-team-meta {
+        margin-top: 8px;
+        color: var(--pbo-muted);
+        font-size: 0.8rem;
+        font-weight: 800;
+      }
+
+      .pbo-score {
+        color: var(--pbo-text);
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        font-size: clamp(4rem, 9vw, 6.5rem);
+        font-weight: 900;
+        line-height: 0.9;
+      }
+
+      .pbo-divider {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-inline: 1px solid var(--pbo-border);
+        color: var(--pbo-subtle);
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        font-size: 1.25rem;
+        font-weight: 900;
+        text-transform: uppercase;
+      }
+
+      .pbo-snapshot-grid {
+        display: grid;
+        grid-template-columns: repeat(6, minmax(0, 1fr));
+        gap: 1px;
+        background: var(--pbo-border);
+      }
+
+      .pbo-snapshot {
+        background: var(--pbo-panel-soft);
+        padding: 12px;
+      }
+
+      .pbo-label {
+        color: var(--pbo-subtle);
+        font-size: 0.68rem;
+        font-weight: 900;
+        text-transform: uppercase;
+      }
+
+      .pbo-value {
+        margin-top: 4px;
+        color: var(--pbo-text);
+        font-size: 1rem;
+        font-weight: 900;
+        line-height: 1.15;
+      }
+
+      .pbo-value-mono,
+      .pbo-num {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .pbo-grid-main {
+        display: grid;
+        grid-template-columns: minmax(0, 1.1fr) minmax(320px, 0.9fr);
+        gap: 16px;
+        margin-top: 16px;
+      }
+
+      .pbo-stack {
+        display: grid;
+        gap: 16px;
+      }
+
+      .pbo-collapse {
+        padding: 0;
+      }
+
+      .pbo-collapse summary {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 12px;
+        align-items: center;
+        border-bottom: 1px solid var(--pbo-border);
+        color: var(--pbo-text);
+        cursor: pointer;
+        font-size: 0.85rem;
+        font-weight: 900;
+        list-style: none;
+        padding: 13px 14px;
+        text-transform: uppercase;
+      }
+
+      .pbo-collapse summary::-webkit-details-marker {
+        display: none;
+      }
+
+      .pbo-collapse summary::after {
+        content: "+";
+        color: var(--pbo-muted);
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        font-size: 1rem;
+        font-weight: 900;
+      }
+
+      .pbo-collapse[open] summary::after {
+        content: "-";
+      }
+
+      .pbo-section-body {
+        padding: 14px;
+      }
+
+      .pbo-shot-filter {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-bottom: 12px;
+      }
+
+      .pbo-shot-filter-btn {
+        border: 1px solid var(--pbo-border);
+        border-radius: 999px;
+        background: var(--pbo-panel-soft);
+        color: var(--pbo-muted);
+        font-size: 0.75rem;
+        font-weight: 900;
+        min-height: 34px;
+        padding: 6px 10px;
+        text-transform: uppercase;
+      }
+
+      .pbo-shot-filter-btn.is-active {
+        border-color: var(--pbo-amber);
+        color: var(--pbo-text);
+      }
+
+      .pbo-shot-filter-btn:focus-visible {
+        outline: 2px solid var(--pbo-amber);
+        outline-offset: 2px;
+      }
+
+      .pbo-court-wrap {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 190px;
+        gap: 14px;
+        align-items: stretch;
+      }
+
+      .pbo-court {
+        display: block;
+        width: 100%;
+        aspect-ratio: 760 / 440;
+        height: auto;
+        min-height: 260px;
+        border: 1px solid var(--pbo-border);
+        border-radius: 6px;
+        background: #080a0d;
+      }
+
+      .pbo-zone-list {
+        display: grid;
+        gap: 8px;
+        align-content: start;
+      }
+
+      .pbo-zone {
+        border: 1px solid var(--pbo-border);
+        border-radius: 6px;
+        background: var(--pbo-panel-soft);
+        padding: 10px;
+      }
+
+      .pbo-zone-name {
+        color: var(--pbo-text);
+        font-size: 0.85rem;
+        font-weight: 900;
+      }
+
+      .pbo-zone-meta {
+        color: var(--pbo-muted);
+        font-size: 0.75rem;
+        font-weight: 800;
+      }
+
+      .pbo-event-feed {
+        max-height: 530px;
+        overflow: auto;
+      }
+
+      .pbo-event {
+        display: grid;
+        grid-template-columns: 62px 1fr auto;
+        gap: 10px;
+        align-items: center;
+        border-bottom: 1px solid var(--pbo-border);
+        padding: 10px 12px;
+      }
+
+      .pbo-event:last-child {
+        border-bottom: 0;
+      }
+
+      .pbo-event-time {
+        color: var(--pbo-muted);
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        font-size: 0.8rem;
+        font-weight: 900;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .pbo-event-title {
+        color: var(--pbo-text);
+        font-size: 0.9rem;
+        font-weight: 900;
+        line-height: 1.15;
+      }
+
+      .pbo-event-meta {
+        color: var(--pbo-muted);
+        font-size: 0.75rem;
+        font-weight: 800;
+        line-height: 1.25;
+      }
+
+      .pbo-badge {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border: 1px solid var(--pbo-border);
+        border-radius: 999px;
+        color: var(--pbo-muted);
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        font-size: 0.75rem;
+        font-weight: 900;
+        min-width: 42px;
+        padding: 4px 8px;
+        text-transform: uppercase;
+      }
+
+      .pbo-badge-made {
+        color: var(--pbo-green);
+      }
+
+      .pbo-badge-missed {
+        color: var(--pbo-red);
+      }
+
+      .pbo-badge-info {
+        color: var(--pbo-amber);
+      }
+
+      .pbo-table-wrap {
+        overflow-x: auto;
+      }
+
+      .pbo-box-table {
+        width: 100%;
+        min-width: 720px;
+        border-collapse: collapse;
+      }
+
+      .pbo-box-table th,
+      .pbo-box-table td {
+        border-bottom: 1px solid var(--pbo-border);
+        color: var(--pbo-muted);
+        font-size: 0.78rem;
+        font-weight: 800;
+        padding: 9px 8px;
+        text-align: right;
+        white-space: nowrap;
+      }
+
+      .pbo-box-table th:first-child,
+      .pbo-box-table td:first-child {
+        color: var(--pbo-text);
+        text-align: left;
+      }
+
+      .pbo-box-table th {
+        color: var(--pbo-subtle);
+        font-size: 0.68rem;
+        text-transform: uppercase;
+      }
+
+      .pbo-empty {
+        border: 1px dashed #404040;
+        border-radius: 6px;
+        color: var(--pbo-muted);
+        font-size: 0.9rem;
+        font-weight: 800;
+        padding: 14px;
+        text-align: center;
+      }
+
+      .pbo-description {
+        border: 1px solid var(--pbo-border);
+        border-radius: 8px;
+        background: var(--pbo-panel);
+        color: var(--pbo-muted);
+        padding: 16px;
+      }
+
+      .pbo-description h1,
+      .pbo-description h2,
+      .pbo-description h3,
+      .pbo-description h4 {
+        color: var(--pbo-text);
+      }
+
+      .pbo-shot-map-lead {
+        margin-top: 16px;
+        margin-bottom: 16px;
+      }
+
+      .pbo-empty[hidden] {
+        display: none;
+      }
+
+      @media (max-width: 991.98px) {
+        .pbo-grid-main {
+          grid-template-columns: 1fr;
+        }
+
+        .pbo-snapshot-grid {
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+
+        .pbo-court-wrap {
+          grid-template-columns: 1fr;
+        }
+
+        .pbo-zone-list {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
+
+      @media (max-width: 767.98px) {
+        .pbo-board-top,
+        .pbo-score-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .pbo-team-block,
+        .pbo-team-block-home {
+          grid-template-columns: minmax(0, 1fr) auto;
+          min-height: auto;
+          text-align: left;
+        }
+
+        .pbo-team-block-home .pbo-score {
+          order: 2;
+        }
+
+        .pbo-divider {
+          border-block: 1px solid var(--pbo-border);
+          border-inline: 0;
+          padding: 8px;
+        }
+
+        .pbo-event {
+          grid-template-columns: 54px 1fr;
+        }
+
+        .pbo-event .pbo-badge {
+          grid-column: 2;
+          justify-self: start;
+        }
+      }
+
+      @media (max-width: 575.98px) {
+        .pbo-public {
+          padding: 16px 0 32px;
+        }
+
+        .pbo-snapshot-grid,
+        .pbo-zone-list {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+
+    <main id="o_website_record_page" class="pbo-public">
+      <t t-set="editor_message">Drag building blocks to customize the header of single record pages.</t>
+      <div class="oe_structure oe_empty oe_new" t-att-data-editor-message="editor_message"/>
+
+      <div class="container pbo-shell">
+        <t t-set="game_events" t-value="record.x_studio_game_events.sorted('id', reverse=True)"/>
+        <t t-set="player_stats" t-value="record.x_studio_stats.sorted('id', reverse=True)"/>
+        <t t-set="away_score" t-value="record.x_studio_away_score or 0"/>
+        <t t-set="home_score" t-value="record.x_studio_home_score or 0"/>
+        <t t-set="total_points" t-value="away_score + home_score"/>
+        <t t-set="lead_margin" t-value="away_score - home_score if away_score &gt;= home_score else home_score - away_score"/>
+        <t t-set="leader_name" t-value="record.x_studio_away_team.display_name if away_score &gt; home_score else record.x_studio_home_team.display_name if home_score &gt; away_score else 'Tied'"/>
+        <t t-set="shot_count" t-value="0"/>
+        <t t-set="made_shot_count" t-value="0"/>
+        <t t-set="missed_shot_count" t-value="0"/>
+        <t t-set="two_point_shot_count" t-value="0"/>
+        <t t-set="three_point_shot_count" t-value="0"/>
+        <t t-set="paint_shot_count" t-value="0"/>
+        <t t-set="perimeter_shot_count" t-value="0"/>
+        <t t-foreach="game_events" t-as="shot_metric">
+          <t t-if="shot_metric.x_studio_shot_value in [2, 3] and shot_metric.x_studio_shot_x and shot_metric.x_studio_shot_y and shot_metric.x_studio_shot_x &gt; 0 and shot_metric.x_studio_shot_y &gt; 0">
+            <t t-set="shot_count" t-value="shot_count + 1"/>
+            <t t-if="'made' in (shot_metric.x_studio_action_type or '')">
+              <t t-set="made_shot_count" t-value="made_shot_count + 1"/>
+            </t>
+            <t t-if="'missed' in (shot_metric.x_studio_action_type or '')">
+              <t t-set="missed_shot_count" t-value="missed_shot_count + 1"/>
+            </t>
+            <t t-if="shot_metric.x_studio_shot_value == 2">
+              <t t-set="two_point_shot_count" t-value="two_point_shot_count + 1"/>
+            </t>
+            <t t-if="shot_metric.x_studio_shot_value == 3">
+              <t t-set="three_point_shot_count" t-value="three_point_shot_count + 1"/>
+            </t>
+            <t t-if="shot_metric.x_studio_shot_zone == 'Paint'">
+              <t t-set="paint_shot_count" t-value="paint_shot_count + 1"/>
+            </t>
+            <t t-if="shot_metric.x_studio_shot_zone != 'Paint'">
+              <t t-set="perimeter_shot_count" t-value="perimeter_shot_count + 1"/>
+            </t>
+          </t>
+        </t>
+
+        <ol t-if="listing" class="breadcrumb pbo-breadcrumb">
+          <li class="breadcrumb-item o_not_editable">
+            <a t-att-href="listing['href']">
+              <span t-out="listing['name']"/>
+            </a>
+          </li>
+          <li class="breadcrumb-item active">
+            <span t-field="record.x_name"/>
+          </li>
+        </ol>
+
+        <section class="pbo-board" aria-labelledby="pbo-match-record-title">
+          <div class="pbo-board-top">
+            <h1 id="pbo-match-record-title" class="pbo-match-name">
+              <span t-if="record.x_studio_match_name" t-field="record.x_studio_match_name"/>
+              <span t-else="" t-field="record.x_name"/>
+            </h1>
+            <span class="pbo-status">
+              <span t-field="record.x_studio_status"/>
+            </span>
+          </div>
+
+          <div class="pbo-score-grid">
+            <div class="pbo-team-block">
+              <div>
+                <div class="pbo-team-label pbo-away-color">Away</div>
+                <div class="pbo-team-name">
+                  <span t-field="record.x_studio_away_team"/>
+                </div>
+                <div class="pbo-team-meta">
+                  Fouls <span class="pbo-num" t-field="record.x_studio_away_team_fouls"/> / TO <span class="pbo-num" t-field="record.x_studio_away_timeouts"/>
+                </div>
+              </div>
+              <div class="pbo-score">
+                <span t-field="record.x_studio_away_score"/>
+              </div>
+            </div>
+
+            <div class="pbo-divider">vs</div>
+
+            <div class="pbo-team-block pbo-team-block-home">
+              <div class="pbo-score">
+                <span t-field="record.x_studio_home_score"/>
+              </div>
+              <div>
+                <div class="pbo-team-label pbo-home-color">Home</div>
+                <div class="pbo-team-name">
+                  <span t-field="record.x_studio_home_team"/>
+                </div>
+                <div class="pbo-team-meta">
+                  Fouls <span class="pbo-num" t-field="record.x_studio_home_team_fouls"/> / TO <span class="pbo-num" t-field="record.x_studio_home_timeouts"/>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="pbo-snapshot-grid">
+            <div class="pbo-snapshot">
+              <div class="pbo-label">Leader</div>
+              <div class="pbo-value">
+                <t t-out="leader_name"/>
+              </div>
+            </div>
+            <div class="pbo-snapshot">
+              <div class="pbo-label">Margin</div>
+              <div class="pbo-value pbo-value-mono">
+                <t t-out="lead_margin"/>
+              </div>
+            </div>
+            <div class="pbo-snapshot">
+              <div class="pbo-label">Total Points</div>
+              <div class="pbo-value pbo-value-mono">
+                <t t-out="total_points"/>
+              </div>
+            </div>
+            <div class="pbo-snapshot">
+              <div class="pbo-label">Clock</div>
+              <div class="pbo-value pbo-value-mono">
+                <t t-set="clock_seconds" t-value="record.x_studio_game_clock_seconds or 0"/>
+                <t t-out="'%02d:%02d' % (clock_seconds // 60, clock_seconds % 60)"/>
+              </div>
+            </div>
+            <div class="pbo-snapshot">
+              <div class="pbo-label">Shot Clock</div>
+              <div class="pbo-value pbo-value-mono">
+                <span t-field="record.x_studio_shot_clock_seconds"/>
+              </div>
+            </div>
+            <div class="pbo-snapshot">
+              <div class="pbo-label">Period</div>
+              <div class="pbo-value pbo-value-mono">
+                <span t-field="record.x_studio_period"/>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <details class="pbo-collapse pbo-shot-map-lead" data-pbo-shot-map="1" open="open">
+          <summary>Shot Hot Zone Map</summary>
+          <div class="pbo-section-body">
+            <div class="pbo-shot-filter" aria-label="Filter shot map by team">
+              <button type="button" class="pbo-shot-filter-btn is-active" data-pbo-shot-filter="all" aria-pressed="true">All Teams</button>
+              <button t-if="record.x_studio_away_team" type="button" class="pbo-shot-filter-btn" t-att-data-pbo-shot-filter="record.x_studio_away_team.id" aria-pressed="false">
+                Away: <span t-field="record.x_studio_away_team"/>
+              </button>
+              <button t-if="record.x_studio_home_team" type="button" class="pbo-shot-filter-btn" t-att-data-pbo-shot-filter="record.x_studio_home_team.id" aria-pressed="false">
+                Home: <span t-field="record.x_studio_home_team"/>
+              </button>
+            </div>
+
+            <div class="pbo-court-wrap">
+              <svg class="pbo-court" preserveAspectRatio="xMidYMid meet" role="img" shape-rendering="geometricPrecision" viewBox="0 0 760 440" xmlns="http://www.w3.org/2000/svg">
+                <title>Shot map</title>
+                <rect width="760" height="440" fill="#080a0d"/>
+                <g fill="none" stroke="#d4d4d4" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.7" vector-effect="non-scaling-stroke">
+                  <rect x="42" y="42" width="676" height="356"/>
+                  <line x1="380" x2="380" y1="42" y2="398"/>
+                  <circle cx="380" cy="220" r="45"/>
+                  <path d="M42 75L144 79C328 82 328 358 144 361L42 365"/>
+                  <path d="M42 154H194V286H42"/>
+                  <path d="M194 154A66 66 0 0 1 194 286"/>
+                  <path d="M194 154A66 66 0 0 0 194 286" stroke-dasharray="12 13"/>
+                  <line x1="82" x2="82" y1="190" y2="250"/>
+                  <circle cx="108" cy="220" r="15"/>
+                  <line x1="123" x2="123" y1="198" y2="242"/>
+                  <path d="M108 184A36 36 0 0 1 108 256" stroke-opacity="0.72"/>
+                  <g transform="matrix(-1 0 0 1 760 0)">
+                    <path d="M42 75L144 79C328 82 328 358 144 361L42 365"/>
+                    <path d="M42 154H194V286H42"/>
+                    <path d="M194 154A66 66 0 0 1 194 286"/>
+                    <path d="M194 154A66 66 0 0 0 194 286" stroke-dasharray="12 13"/>
+                    <line x1="82" x2="82" y1="190" y2="250"/>
+                    <circle cx="108" cy="220" r="15"/>
+                    <line x1="123" x2="123" y1="198" y2="242"/>
+                    <path d="M108 184A36 36 0 0 1 108 256" stroke-opacity="0.72"/>
+                  </g>
+                </g>
+                <g>
+                  <t t-foreach="game_events" t-as="shot">
+                    <t t-if="shot.x_studio_shot_value in [2, 3] and shot.x_studio_shot_x and shot.x_studio_shot_y and shot.x_studio_shot_x &gt; 0 and shot.x_studio_shot_y &gt; 0">
+                      <g data-pbo-shot-marker="1" t-att-data-team-id="shot.x_studio_team.id or ''" t-att-data-shot-value="shot.x_studio_shot_value" t-att-data-shot-zone="shot.x_studio_shot_zone or ''" t-att-data-made="'1' if 'made' in (shot.x_studio_action_type or '') else '0'" t-att-data-missed="'1' if 'missed' in (shot.x_studio_action_type or '') else '0'">
+                        <circle t-att-cx="shot.x_studio_shot_x" t-att-cy="shot.x_studio_shot_y" r="8" stroke="#fafafa" stroke-width="2" vector-effect="non-scaling-stroke" t-att-fill="'#84cc16' if 'made' in (shot.x_studio_action_type or '') else '#ef4444'"/>
+                        <text t-att-x="shot.x_studio_shot_x" t-att-y="shot.x_studio_shot_y + 3" fill="#050505" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" font-size="9" font-weight="900" text-anchor="middle">
+                          <t t-out="shot.x_studio_shot_value"/>
+                        </text>
+                      </g>
+                    </t>
+                  </t>
+                </g>
+              </svg>
+
+              <aside class="pbo-zone-list" aria-label="Shot map summary">
+                <div class="pbo-zone">
+                  <div class="pbo-zone-name">FG</div>
+                  <div class="pbo-zone-meta">
+                    <span class="pbo-num" data-pbo-stat="made"><t t-out="made_shot_count"/></span>/<span class="pbo-num" data-pbo-stat="attempts"><t t-out="shot_count"/></span>
+                    (<span class="pbo-num" data-pbo-stat="fg_pct"><t t-out="'%d%%' % ((made_shot_count * 100 // shot_count) if shot_count else 0)"/></span>)
+                  </div>
+                </div>
+                <div class="pbo-zone">
+                  <div class="pbo-zone-name">2PT</div>
+                  <div class="pbo-zone-meta"><span class="pbo-num" data-pbo-stat="two_point"><t t-out="two_point_shot_count"/></span> attempts</div>
+                </div>
+                <div class="pbo-zone">
+                  <div class="pbo-zone-name">3PT</div>
+                  <div class="pbo-zone-meta"><span class="pbo-num" data-pbo-stat="three_point"><t t-out="three_point_shot_count"/></span> attempts</div>
+                </div>
+                <div class="pbo-zone">
+                  <div class="pbo-zone-name">Paint</div>
+                  <div class="pbo-zone-meta"><span class="pbo-num" data-pbo-stat="paint"><t t-out="paint_shot_count"/></span> attempts</div>
+                </div>
+                <div class="pbo-zone">
+                  <div class="pbo-zone-name">Perimeter</div>
+                  <div class="pbo-zone-meta"><span class="pbo-num" data-pbo-stat="perimeter"><t t-out="perimeter_shot_count"/></span> attempts</div>
+                </div>
+                <div class="pbo-zone">
+                  <div class="pbo-zone-name">Missed</div>
+                  <div class="pbo-zone-meta"><span class="pbo-num" data-pbo-stat="missed"><t t-out="missed_shot_count"/></span> shots</div>
+                </div>
+              </aside>
+            </div>
+            <div class="pbo-empty mt-3" data-pbo-filter-empty="1" t-att-hidden="'hidden' if shot_count else None">Shot markers appear here for the selected team after events are scored from the court.</div>
+          </div>
+        </details>
+
+        <div class="pbo-grid-main">
+          <div class="pbo-stack">
+            <details class="pbo-collapse" open="open">
+              <summary>Player Box Score</summary>
+              <div class="pbo-table-wrap">
+                <table class="pbo-box-table">
+                  <thead>
+                    <tr>
+                      <th>Player</th>
+                      <th>PTS</th>
+                      <th>2P</th>
+                      <th>3P</th>
+                      <th>FT</th>
+                      <th>REB</th>
+                      <th>AST</th>
+                      <th>STL</th>
+                      <th>BLK</th>
+                      <th>TO</th>
+                      <th>F</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <t t-set="box_player_ids" t-value="[]"/>
+                    <t t-foreach="player_stats" t-as="stat">
+                      <t t-if="stat.x_studio_player and stat.x_studio_player.id not in box_player_ids">
+                        <t t-set="box_player_ids" t-value="box_player_ids + [stat.x_studio_player.id]"/>
+                        <tr>
+                          <td><span t-field="stat.x_studio_player"/></td>
+                          <td class="pbo-num"><span t-field="stat.x_studio_total_points"/></td>
+                          <td class="pbo-num"><span t-field="stat.x_studio_2pm"/>/<span t-field="stat.x_studio_2pa"/></td>
+                          <td class="pbo-num"><span t-field="stat.x_studio_3pm"/>/<span t-field="stat.x_studio_3pa"/></td>
+                          <td class="pbo-num"><span t-field="stat.x_studio_ftm"/>/<span t-field="stat.x_studio_fta"/></td>
+                          <td class="pbo-num"><t t-out="(stat.x_studio_off_rebounds or 0) + (stat.x_studio_def_rebounds or 0)"/></td>
+                          <td class="pbo-num"><span t-field="stat.x_studio_assists"/></td>
+                          <td class="pbo-num"><span t-field="stat.x_studio_steals"/></td>
+                          <td class="pbo-num"><span t-field="stat.x_studio_blocks"/></td>
+                          <td class="pbo-num"><span t-field="stat.x_studio_turnovers"/></td>
+                          <td class="pbo-num"><span t-field="stat.x_studio_fouls"/></td>
+                        </tr>
+                      </t>
+                    </t>
+                  </tbody>
+                </table>
+                <div t-if="not player_stats" class="pbo-empty m-3">Player box score will populate after scorer actions sync.</div>
+              </div>
+            </details>
+          </div>
+
+          <aside class="pbo-stack">
+            <details class="pbo-collapse" open="open">
+              <summary>Event Feed</summary>
+              <div class="pbo-event-feed">
+                <t t-foreach="game_events" t-as="event">
+                  <article class="pbo-event">
+                    <div class="pbo-event-time">
+                      <t t-set="event_clock" t-value="event.x_studio_clock_seconds or 0"/>
+                      <t t-out="'%02d:%02d' % (event_clock // 60, event_clock % 60)"/>
+                    </div>
+                    <div>
+                      <div class="pbo-event-title">
+                        <span t-field="event.x_name"/>
+                      </div>
+                      <div class="pbo-event-meta">
+                        P<span class="pbo-num" t-field="event.x_studio_period"/> / <span t-field="event.x_studio_player"/> / <span t-field="event.x_studio_team"/>
+                        <t t-if="event.x_studio_shot_zone"> / <span t-field="event.x_studio_shot_zone"/></t>
+                      </div>
+                    </div>
+                    <span t-attf-class="pbo-badge #{'pbo-badge-missed' if 'missed' in (event.x_studio_action_type or '') else 'pbo-badge-made' if event.x_studio_points else 'pbo-badge-info'}">
+                      <t t-if="event.x_studio_score_after" t-out="event.x_studio_score_after"/>
+                      <t t-else="" t-out="event.x_studio_points"/>
+                    </span>
+                  </article>
+                </t>
+                <div t-if="not game_events" class="pbo-empty m-3">Live play-by-play appears here after the first saved event.</div>
+              </div>
+            </details>
+
+            <details class="pbo-collapse">
+              <summary>Game Details</summary>
+              <div class="pbo-section-body">
+                <div class="pbo-snapshot-grid">
+                  <div class="pbo-snapshot">
+                    <div class="pbo-label">Date</div>
+                    <div class="pbo-value"><span t-field="record.x_studio_datetime"/></div>
+                  </div>
+                  <div class="pbo-snapshot">
+                    <div class="pbo-label">Location</div>
+                    <div class="pbo-value"><span t-field="record.x_studio_location"/></div>
+                  </div>
+                  <div class="pbo-snapshot">
+                    <div class="pbo-label">Week</div>
+                    <div class="pbo-value"><span t-field="record.x_studio_week"/></div>
+                  </div>
+                  <div class="pbo-snapshot">
+                    <div class="pbo-label">Possession</div>
+                    <div class="pbo-value"><span t-field="record.x_studio_possession_team"/></div>
+                  </div>
+                  <div class="pbo-snapshot">
+                    <div class="pbo-label">Away Timeouts</div>
+                    <div class="pbo-value pbo-value-mono"><span t-field="record.x_studio_away_timeouts"/></div>
+                  </div>
+                  <div class="pbo-snapshot">
+                    <div class="pbo-label">Home Timeouts</div>
+                    <div class="pbo-value pbo-value-mono"><span t-field="record.x_studio_home_timeouts"/></div>
+                  </div>
+                </div>
+              </div>
+            </details>
+
+            <details class="pbo-collapse">
+              <summary>Notes</summary>
+              <div class="pbo-section-body">
+                <div class="pbo-description">
+                  <div class="o_website_html" t-field="record.x_studio_website_description" data-editor-message="Drag building blocks to edit the website description of this record."/>
+                </div>
+              </div>
+            </details>
+          </aside>
+        </div>
+
+      </div>
+
+      <script>
+        <![CDATA[
+          (function () {
+            function initShotMapFilters() {
+              var maps = document.querySelectorAll("[data-pbo-shot-map]");
+
+              Array.prototype.forEach.call(maps, function (map) {
+                var buttons = map.querySelectorAll("[data-pbo-shot-filter]");
+                var markers = map.querySelectorAll("[data-pbo-shot-marker]");
+                var empty = map.querySelector("[data-pbo-filter-empty]");
+
+                function setStat(name, value) {
+                  var stat = map.querySelector('[data-pbo-stat="' + name + '"]');
+
+                  if (stat) {
+                    stat.textContent = value;
+                  }
+                }
+
+                function render(teamId) {
+                  var counts = {
+                    attempts: 0,
+                    made: 0,
+                    missed: 0,
+                    twoPoint: 0,
+                    threePoint: 0,
+                    paint: 0,
+                    perimeter: 0
+                  };
+
+                  Array.prototype.forEach.call(markers, function (marker) {
+                    var isVisible = teamId === "all" || marker.getAttribute("data-team-id") === teamId;
+                    var shotValue = parseInt(marker.getAttribute("data-shot-value") || "0", 10);
+                    var shotZone = marker.getAttribute("data-shot-zone") || "";
+
+                    marker.style.display = isVisible ? "" : "none";
+
+                    if (!isVisible) {
+                      return;
+                    }
+
+                    counts.attempts += 1;
+
+                    if (marker.getAttribute("data-made") === "1") {
+                      counts.made += 1;
+                    }
+
+                    if (marker.getAttribute("data-missed") === "1") {
+                      counts.missed += 1;
+                    }
+
+                    if (shotValue === 2) {
+                      counts.twoPoint += 1;
+                    }
+
+                    if (shotValue === 3) {
+                      counts.threePoint += 1;
+                    }
+
+                    if (shotZone === "Paint") {
+                      counts.paint += 1;
+                    } else {
+                      counts.perimeter += 1;
+                    }
+                  });
+
+                  Array.prototype.forEach.call(buttons, function (button) {
+                    var isActive = button.getAttribute("data-pbo-shot-filter") === teamId;
+
+                    button.classList.toggle("is-active", isActive);
+                    button.setAttribute("aria-pressed", isActive ? "true" : "false");
+                  });
+
+                  setStat("made", counts.made);
+                  setStat("attempts", counts.attempts);
+                  setStat("fg_pct", counts.attempts ? Math.floor(counts.made * 100 / counts.attempts) + "%" : "0%");
+                  setStat("two_point", counts.twoPoint);
+                  setStat("three_point", counts.threePoint);
+                  setStat("paint", counts.paint);
+                  setStat("perimeter", counts.perimeter);
+                  setStat("missed", counts.missed);
+
+                  if (empty) {
+                    empty.hidden = counts.attempts !== 0;
+                  }
+                }
+
+                Array.prototype.forEach.call(buttons, function (button) {
+                  button.addEventListener("click", function () {
+                    render(button.getAttribute("data-pbo-shot-filter") || "all");
+                  });
+                });
+
+                render("all");
+              });
+            }
+
+            if (document.readyState === "loading") {
+              document.addEventListener("DOMContentLoaded", initShotMapFilters);
+            } else {
+              initShotMapFilters();
+            }
+          }());
+        ]]>
+      </script>
+
+      <t t-set="editor_message">Drag building blocks to customize the footer of single record pages.</t>
+      <div class="oe_structure oe_empty oe_new" t-att-data-editor-message="editor_message"/>
+    </main>
+  </t>
+</t>
