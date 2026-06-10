@@ -1,6 +1,7 @@
 import {
   Activity,
   ArrowLeft,
+  ArrowUpDown,
   Blocks,
   Check,
   ChevronDown,
@@ -162,6 +163,7 @@ const STORAGE_KEYS = {
   mode: "pbo:mode",
   courtSides: "pbo:courtSides",
   openingJumpWinner: "pbo:openingJumpWinner",
+  possessionArrow: "pbo:possessionArrow",
   overtimeSeconds: "pbo:overtimeSeconds",
   periodCount: "pbo:periodCount:v2",
   periodSeconds: "pbo:periodSeconds:v2",
@@ -210,6 +212,13 @@ function App() {
   const [openingJumpWinner, setOpeningJumpWinner] = useState<TeamId>(() =>
     readStoredTeam(STORAGE_KEYS.openingJumpWinner, "home"),
   );
+  const [possessionArrow, setPossessionArrow] = useState<TeamId>(() =>
+    readStoredTeam(
+      STORAGE_KEYS.possessionArrow,
+      oppositeTeam(readStoredTeam(STORAGE_KEYS.openingJumpWinner, "home")),
+    ),
+  );
+  const [jumpBallOpen, setJumpBallOpen] = useState(false);
   const [selectedPlayers, setSelectedPlayers] = useState<PlayerSelection>(() =>
     readStoredJson<PlayerSelection>(STORAGE_KEYS.selectedPlayers) ?? {},
   );
@@ -230,6 +239,7 @@ function App() {
   const [syncLog, setSyncLog] = useState<SyncLogEntry[]>(() =>
     readStoredSyncLog(apiConfig.enabled),
   );
+  const arrowChangedThisPeriodRef = useRef(false);
   const canceledEventIdsRef = useRef(new Set<number>());
   const clockRunningRef = useRef(false);
   const inFlightRefreshRef = useRef(false);
@@ -478,6 +488,10 @@ function App() {
   }, [openingJumpWinner]);
 
   useEffect(() => {
+    writeStoredText(STORAGE_KEYS.possessionArrow, possessionArrow);
+  }, [possessionArrow]);
+
+  useEffect(() => {
     writeStoredText(STORAGE_KEYS.mode, statsMode);
   }, [statsMode]);
 
@@ -516,10 +530,7 @@ function App() {
     const selectedKey = selectedPlayers[match.possession];
     return selectedKey ? findPlayerByKey(match[match.possession], selectedKey) : undefined;
   }, [match, selectedPlayers]);
-  const foulBallTeam = useMemo(
-    () => getFoulBallTeam(openingJumpWinner, match.period),
-    [openingJumpWinner, match.period],
-  );
+  const foulBallTeam = possessionArrow;
   const summary = useMemo(
     () => [
       { label: "Status", value: match.status },
@@ -632,6 +643,18 @@ function App() {
 
   function setPeriod(period: LiveMatch["period"]) {
     setIsClockRunning(false);
+    const periodChanged = period !== matchRef.current.period;
+
+    // A new quarter flips the possession arrow (alternating possession), but only
+    // if a jump ball during the quarter that just ended did not already change it.
+    if (periodChanged) {
+      if (arrowChangedThisPeriodRef.current) {
+        arrowChangedThisPeriodRef.current = false;
+      } else {
+        setPossessionArrow((current) => oppositeTeam(current));
+      }
+    }
+
     const nextMatch = {
       ...matchRef.current,
       clock: secondsToClock(getDefaultClockSeconds(period, periodSettings)),
@@ -772,11 +795,35 @@ function App() {
 
   function toggleOpeningJumpWinner() {
     const nextWinner = oppositeTeam(openingJumpWinner);
+    const nextArrow = oppositeTeam(nextWinner);
     setOpeningJumpWinner(nextWinner);
+    // The opening tip sets the initial arrow (the team that lost the tip gets the
+    // next jump-ball possession). This is the baseline, not an in-quarter change.
+    setPossessionArrow(nextArrow);
+    arrowChangedThisPeriodRef.current = false;
     appendLog(createLog(
       "info",
       "Opening jump set",
-      `${matchRef.current[nextWinner].label} won the opening jump.`,
+      `${matchRef.current[nextWinner].label} won the opening jump. Arrow: ${matchRef.current[nextArrow].label}.`,
+    ));
+  }
+
+  function openJumpBall() {
+    setJumpBallOpen(true);
+  }
+
+  function recordJumpBall(took: TeamId) {
+    const nextArrow = oppositeTeam(took);
+    setPossessionArrow(nextArrow);
+    // A jump ball during the quarter counts as the arrow change for this period,
+    // so the upcoming quarter break will not flip it again.
+    arrowChangedThisPeriodRef.current = true;
+    setJumpBallOpen(false);
+    setPossession(took);
+    appendLog(createLog(
+      "info",
+      "Jump ball",
+      `${matchRef.current[took].label} took possession. Arrow: ${matchRef.current[nextArrow].label}.`,
     ));
   }
 
@@ -1325,6 +1372,7 @@ function App() {
             onEndGame={endGame}
             onFreeThrow={recordFreeThrow}
             isActionAllowed={(action) => isActionAllowedForMode(action, statsMode)}
+            onJumpBall={openJumpBall}
             onOpenSubstitution={openSubstitution}
             onPeriodChange={setPeriod}
             onPeriodSettingsChange={updatePeriodSettings}
@@ -1345,6 +1393,15 @@ function App() {
           team={match[substitutionTeam]}
           onClose={closeSubstitution}
           onSubstitute={handleSubstitute}
+        />
+      )}
+
+      {jumpBallOpen && (
+        <JumpBallDialog
+          arrowTeam={possessionArrow}
+          teams={{ away: match.away, home: match.home }}
+          onClose={() => setJumpBallOpen(false)}
+          onChoose={recordJumpBall}
         />
       )}
     </main>
@@ -1798,9 +1855,9 @@ function ScoreHeader({
             <PossessionArrow possession={possession} />
           </button>
           <button
-            aria-label="Switch opening jump winner"
+            aria-label="Set opening jump winner"
             className="flex h-9 min-w-0 items-center justify-center gap-1.5 rounded-lg border border-neutral-800 bg-neutral-900 text-[11px] font-black uppercase tracking-wide text-neutral-300 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500 xl:h-7 xl:rounded-md"
-            title={`Foul ball alternates by period. Opening jump: ${openingJumpWinner}.`}
+            title={`Possession arrow (next jump-ball possession). Tap to set the opening jump winner; the arrow goes to the other team. Opening jump: ${openingJumpWinner}.`}
             type="button"
             onClick={onToggleOpeningJumpWinner}
           >
@@ -2542,6 +2599,86 @@ function SubstitutionColumn({
   );
 }
 
+function JumpBallDialog({
+  arrowTeam,
+  teams,
+  onClose,
+  onChoose,
+}: {
+  arrowTeam: TeamId;
+  teams: Record<TeamId, Team>;
+  onClose: () => void;
+  onChoose: (team: TeamId) => void;
+}) {
+  return (
+    <div
+      aria-modal="true"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
+      role="dialog"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-md overflow-hidden rounded-2xl border border-neutral-700 bg-neutral-900 shadow-2xl shadow-black/60"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="flex items-center justify-between gap-3 border-b border-neutral-800 px-4 py-3">
+          <div className="min-w-0">
+            <div className="text-[10px] font-black uppercase tracking-widest text-amber-400">Jump Ball</div>
+            <h2 className="truncate text-lg font-black text-neutral-50">Who took possession?</h2>
+          </div>
+          <button
+            aria-label="Close jump ball"
+            className="flex size-9 items-center justify-center rounded-lg border border-neutral-800 bg-neutral-950 text-neutral-400 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500"
+            type="button"
+            onClick={onClose}
+          >
+            <CircleX size={18} />
+          </button>
+        </div>
+
+        <div className="px-4 py-2 text-[11px] font-semibold text-neutral-400">
+          Arrow points to <span className="font-black text-neutral-200">{teams[arrowTeam].name}</span>.
+          Recording who takes the ball flips the arrow to the other team.
+        </div>
+
+        <div className="grid gap-px bg-neutral-800 sm:grid-cols-2">
+          {(["away", "home"] as TeamId[]).map((id) => (
+            <button
+              className={cn(
+                "flex flex-col items-center justify-center gap-1.5 bg-neutral-900 px-4 py-6 transition-colors hover:bg-neutral-800 focus:outline-none focus:ring-2 focus:ring-inset",
+                id === "away" ? "focus:ring-red-500/50" : "focus:ring-blue-500/50",
+              )}
+              key={id}
+              type="button"
+              onClick={() => onChoose(id)}
+            >
+              <span className={cn("text-[10px] font-black uppercase tracking-wide", id === "away" ? "text-red-400" : "text-blue-400")}>
+                {teams[id].label}
+              </span>
+              <span className="max-w-full truncate text-base font-black text-neutral-50">{teams[id].name}</span>
+              {id === arrowTeam && (
+                <span className="rounded-full border border-amber-500/50 bg-amber-500/10 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-amber-300">
+                  Arrow
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+
+        <div className="border-t border-neutral-800 px-4 py-3 text-right">
+          <button
+            className="h-10 rounded-lg border border-neutral-800 bg-neutral-950 px-4 text-xs font-black uppercase tracking-wide text-neutral-300 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500"
+            type="button"
+            onClick={onClose}
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function BottomPanel({
   ballHandlerName,
   events,
@@ -2707,6 +2844,7 @@ function ActionPanel({
   onEndGame,
   onFreeThrow,
   isActionAllowed,
+  onJumpBall,
   onOpenSubstitution,
   onPeriodChange,
   onPeriodSettingsChange,
@@ -2744,6 +2882,7 @@ function ActionPanel({
   onEndGame: () => void;
   onFreeThrow: (made: boolean) => void;
   isActionAllowed: (action: ActionKey) => boolean;
+  onJumpBall: () => void;
   onOpenSubstitution: () => void;
   onPeriodChange: (period: LiveMatch["period"]) => void;
   onPeriodSettingsChange: (settings: Partial<PeriodSettings>) => void;
@@ -2945,14 +3084,24 @@ function ActionPanel({
             })}
           </div>
 
-          <button
-            className="flex h-12 items-center justify-center gap-2 rounded-xl border border-neutral-800 bg-neutral-900 text-xs font-black uppercase text-neutral-100 transition-colors hover:bg-neutral-800 focus:outline-none focus:ring-2 focus:ring-neutral-500 xl:h-9 xl:rounded-md"
-            type="button"
-            onClick={onOpenSubstitution}
-          >
-            <Shuffle size={18} />
-            Substitution
-          </button>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              className="flex h-12 items-center justify-center gap-2 rounded-xl border border-neutral-800 bg-neutral-900 text-xs font-black uppercase text-neutral-100 transition-colors hover:bg-neutral-800 focus:outline-none focus:ring-2 focus:ring-neutral-500 xl:h-9 xl:rounded-md"
+              type="button"
+              onClick={onOpenSubstitution}
+            >
+              <Shuffle size={18} />
+              Sub
+            </button>
+            <button
+              className="flex h-12 items-center justify-center gap-2 rounded-xl border border-amber-500/40 bg-amber-500/10 text-xs font-black uppercase tracking-wide text-amber-200 transition-colors hover:bg-amber-500/20 focus:outline-none focus:ring-2 focus:ring-amber-500/50 xl:h-9 xl:rounded-md"
+              type="button"
+              onClick={onJumpBall}
+            >
+              <ArrowUpDown size={18} />
+              Jump Ball
+            </button>
+          </div>
 
           <button
             className="flex h-12 items-center justify-center gap-2 rounded-xl border border-red-500/40 bg-red-500/10 text-xs font-black uppercase tracking-wide text-red-200 transition-colors hover:bg-red-500/20 focus:outline-none focus:ring-2 focus:ring-red-500/50 xl:h-9 xl:rounded-md"
@@ -3821,10 +3970,6 @@ function oppositeTeam(team: TeamId): TeamId {
 
 function getCourtSideForTeam(courtSides: CourtSides, team: TeamId): CourtSide {
   return courtSides.left === team ? "left" : "right";
-}
-
-function getFoulBallTeam(openingJumpWinner: TeamId, period: LiveMatch["period"]) {
-  return period % 2 === 1 ? oppositeTeam(openingJumpWinner) : openingJumpWinner;
 }
 
 function getPlayerPeriodKey(period: LiveMatch["period"]): "q1" | "q2" | "q3" | "q4" | "ot" {
