@@ -1,7 +1,6 @@
 import {
   Activity,
   ArrowLeft,
-  BarChart3,
   Blocks,
   Check,
   ChevronRight,
@@ -2238,16 +2237,18 @@ function RosterPanel({
           {starterCount}/5
         </span>
       </button>
-      {/* On Court: prefer to show all 5 without scrolling; only scroll if the panel is too short. */}
-      <div className="shrink-0 border-b border-neutral-800 bg-neutral-900/60 px-4 py-1 text-[10px] font-black uppercase tracking-wide text-neutral-500">
-        On Court
+      {/* On Court: pinned so all 5 starters are always visible without scrolling. */}
+      <div className="flex shrink-0 items-center justify-between border-b border-neutral-800 bg-neutral-900/60 px-4 py-1 text-[10px] font-black uppercase tracking-wide text-neutral-500">
+        <span>On Court</span>
+        <span className="font-mono tabular-nums text-neutral-400">{starterCount}/5</span>
       </div>
-      <div className="min-h-0 shrink overflow-y-auto scrollbar-slim">
+      <div className="shrink-0 overflow-y-auto scrollbar-slim">
         {team.players.length > 0 ? (
           team.players.map((player) => (
             <PlayerRow
               accent={accent}
               borderAccent={borderAccent}
+              compact
               key={getPlayerKey(player)}
               player={player}
               selected={selectedTeam && selectedPlayerKey === getPlayerKey(player)}
@@ -2262,12 +2263,12 @@ function RosterPanel({
           </div>
         )}
       </div>
-      {/* Bench: always keeps a visible, scrollable area below the starters. */}
-      <div className="flex shrink-0 items-center justify-between border-y border-neutral-800 bg-neutral-900/95 px-4 py-1.5 text-[11px] font-black uppercase tracking-wide text-neutral-500">
+      {/* Bench: takes the remaining space below the starters and scrolls. */}
+      <div className="flex shrink-0 items-center justify-between border-y border-neutral-800 bg-neutral-900/95 px-4 py-1 text-[11px] font-black uppercase tracking-wide text-neutral-500">
         <span>Bench</span>
         <span className="font-mono tabular-nums text-neutral-400">{team.bench.length}</span>
       </div>
-      <div className="min-h-[88px] flex-1 overflow-y-auto scrollbar-slim">
+      <div className="min-h-0 flex-1 overflow-y-auto scrollbar-slim">
         {team.bench.length > 0 ? (
           team.bench.map((player) => (
             <PlayerRow
@@ -2287,15 +2288,6 @@ function RosterPanel({
             No bench players.
           </div>
         )}
-      </div>
-      <div className="shrink-0 border-t border-neutral-800 p-2 xl:p-1.5">
-        <button
-          className="flex h-11 w-full items-center justify-center gap-2 rounded-lg border border-neutral-800 bg-neutral-900 text-xs font-black uppercase tracking-wide text-neutral-300 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500 xl:h-8 xl:rounded-md"
-          type="button"
-        >
-          <BarChart3 size={16} />
-          Team Stats
-        </button>
       </div>
     </aside>
   );
