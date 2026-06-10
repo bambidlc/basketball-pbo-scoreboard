@@ -1620,7 +1620,7 @@ function ScoreHeader({
         onClick={() => onSelectTeam("away")}
       />
 
-      <div className="flex flex-col items-center justify-center gap-2 border-y border-neutral-800 px-3 py-3 text-center md:border-x md:border-y-0 xl:gap-1.5 xl:py-2">
+      <div className="flex flex-col items-center justify-center gap-2 border-y border-neutral-800 px-3 py-3 text-center md:border-x md:border-y-0 xl:gap-1 xl:py-1.5">
         <div className="flex w-full items-center justify-between gap-2">
           <button
             aria-label="Back to dashboard"
@@ -1738,7 +1738,7 @@ function TeamHeaderBlock({
   return (
     <button
       className={cn(
-        "relative flex items-center gap-3 px-3 py-3 text-left transition-colors hover:bg-neutral-900/70 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-neutral-500 sm:px-4 sm:gap-4 xl:py-2.5",
+        "relative flex items-center gap-3 px-3 py-3 text-left transition-colors hover:bg-neutral-900/70 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-neutral-500 sm:px-4 sm:gap-4 xl:py-1.5",
         align === "right" ? "justify-start sm:justify-end sm:text-right" : "justify-start",
         selected && selectedTint,
       )}
@@ -1753,9 +1753,9 @@ function TeamHeaderBlock({
       )}
       <div className={cn("min-w-0 max-w-52", align === "right" && "sm:flex sm:flex-col sm:items-end")}>
         <div className={cn("text-[11px] font-black uppercase tracking-wide", accent)}>{label}</div>
-        <div className="mt-0.5 truncate text-xl font-bold text-neutral-50 sm:text-2xl xl:text-2xl">{name}</div>
-        {record && <div className="mt-0.5 text-xs font-semibold text-neutral-500 tabular-nums">{record}</div>}
-        <div className={cn("mt-2 flex items-center gap-2", align === "right" && "sm:justify-end")}>
+        <div className="mt-0.5 truncate text-xl font-bold text-neutral-50 sm:text-2xl xl:text-xl">{name}</div>
+        {record && <div className="mt-0.5 text-xs font-semibold text-neutral-500 tabular-nums xl:hidden">{record}</div>}
+        <div className={cn("mt-2 flex items-center gap-2 xl:mt-1", align === "right" && "sm:justify-end")}>
           <span className="text-[10px] font-black uppercase tracking-wide text-neutral-500">Fouls</span>
           <span className="font-mono text-lg font-black tabular-nums text-neutral-200">{fouls}</span>
           <span className="ml-1 text-[10px] font-black uppercase tracking-wide text-neutral-500">TO</span>
@@ -1782,7 +1782,7 @@ function TeamHeaderBlock({
 
 function ScoreNumber({ value }: { value: number }) {
   return (
-    <span className="font-mono text-5xl font-black leading-none text-neutral-100 tabular-nums xl:text-6xl">
+    <span className="font-mono text-5xl font-black leading-none text-neutral-100 tabular-nums xl:text-5xl">
       {value}
     </span>
   );
@@ -2090,7 +2090,8 @@ function RosterPanel({
           {starterCount}/5
         </span>
       </button>
-      <div className="min-h-0 flex-1 overflow-y-auto scrollbar-slim">
+      {/* Starters: pinned, always visible so the current 5 never scroll out of view. */}
+      <div className="shrink-0">
         {team.players.map((player) => (
           <PlayerRow
             accent={accent}
@@ -2103,30 +2104,32 @@ function RosterPanel({
             onToggleStarter={() => onToggleStarter(side, player)}
           />
         ))}
-        {team.bench.length > 0 && (
-          <>
-            <div className="sticky top-0 z-10 border-y border-neutral-800 bg-neutral-900/95 px-4 py-1.5 text-[11px] font-black uppercase tracking-wide text-neutral-500 backdrop-blur">
-              Bench
-            </div>
-            {team.bench.map((player) => (
-              <PlayerRow
-                accent={accent}
-                borderAccent={borderAccent}
-                compact
-                key={getPlayerKey(player)}
-                player={player}
-                selected={selectedTeam && selectedPlayerKey === getPlayerKey(player)}
-                starterDisabled={starterCount >= 5}
-                onClick={() => onSelectPlayer(side, player)}
-                onToggleStarter={() => onToggleStarter(side, player)}
-              />
-            ))}
-          </>
-        )}
       </div>
-      <div className="border-t border-neutral-800 p-2">
+      {/* Bench: scrolls in whatever space is left below the starters. */}
+      {team.bench.length > 0 && (
+        <div className="min-h-0 flex-1 overflow-y-auto scrollbar-slim">
+          <div className="sticky top-0 z-10 border-y border-neutral-800 bg-neutral-900/95 px-4 py-1 text-[11px] font-black uppercase tracking-wide text-neutral-500 backdrop-blur">
+            Bench
+          </div>
+          {team.bench.map((player) => (
+            <PlayerRow
+              accent={accent}
+              borderAccent={borderAccent}
+              compact
+              key={getPlayerKey(player)}
+              player={player}
+              selected={selectedTeam && selectedPlayerKey === getPlayerKey(player)}
+              starterDisabled={starterCount >= 5}
+              onClick={() => onSelectPlayer(side, player)}
+              onToggleStarter={() => onToggleStarter(side, player)}
+            />
+          ))}
+        </div>
+      )}
+      {team.bench.length === 0 && <div className="min-h-0 flex-1" />}
+      <div className="shrink-0 border-t border-neutral-800 p-2 xl:p-1.5">
         <button
-          className="flex h-11 w-full items-center justify-center gap-2 rounded-lg border border-neutral-800 bg-neutral-900 text-xs font-black uppercase tracking-wide text-neutral-300 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500 xl:h-9 xl:rounded-md"
+          className="flex h-11 w-full items-center justify-center gap-2 rounded-lg border border-neutral-800 bg-neutral-900 text-xs font-black uppercase tracking-wide text-neutral-300 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500 xl:h-8 xl:rounded-md"
           type="button"
         >
           <BarChart3 size={16} />
@@ -2171,7 +2174,7 @@ function PlayerRow({
       <button
         className={cn(
           "grid min-w-0 grid-cols-[52px_1fr_28px] items-center bg-transparent text-left transition-colors hover:bg-neutral-900/70 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-neutral-500",
-          compact ? "h-12 xl:h-11" : "h-16 xl:h-14",
+          compact ? "h-12 xl:h-10" : "h-16 xl:h-12",
         )}
         type="button"
         onClick={onClick}
