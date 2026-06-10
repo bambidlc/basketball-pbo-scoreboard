@@ -2238,25 +2238,37 @@ function RosterPanel({
           {starterCount}/5
         </span>
       </button>
-      <div className="min-h-0 flex-1 overflow-y-auto scrollbar-slim">
-        {team.players.map((player) => (
-          <PlayerRow
-            accent={accent}
-            borderAccent={borderAccent}
-            key={getPlayerKey(player)}
-            player={player}
-            selected={selectedTeam && selectedPlayerKey === getPlayerKey(player)}
-            starterDisabled={false}
-            onClick={() => onSelectPlayer(side, player)}
-            onToggleStarter={() => onToggleStarter(side, player)}
-          />
-        ))}
-        {team.bench.length > 0 && (
-          <>
-            <div className="sticky top-0 z-10 border-y border-neutral-800 bg-neutral-900/95 px-4 py-1.5 text-[11px] font-black uppercase tracking-wide text-neutral-500 backdrop-blur">
-              Bench
+      <div className="flex min-h-0 flex-1 flex-col">
+        <div className="shrink-0 border-b border-neutral-800 bg-neutral-900/60 px-4 py-1 text-[10px] font-black uppercase tracking-wide text-neutral-500">
+          On Court
+        </div>
+        <div className="min-h-0 flex-[3] overflow-y-auto scrollbar-slim">
+          {team.players.length > 0 ? (
+            team.players.map((player) => (
+              <PlayerRow
+                accent={accent}
+                borderAccent={borderAccent}
+                key={getPlayerKey(player)}
+                player={player}
+                selected={selectedTeam && selectedPlayerKey === getPlayerKey(player)}
+                starterDisabled={false}
+                onClick={() => onSelectPlayer(side, player)}
+                onToggleStarter={() => onToggleStarter(side, player)}
+              />
+            ))
+          ) : (
+            <div className="px-4 py-4 text-center text-[11px] font-semibold text-neutral-500">
+              No starters selected.
             </div>
-            {team.bench.map((player) => (
+          )}
+        </div>
+        <div className="flex shrink-0 items-center justify-between border-y border-neutral-800 bg-neutral-900/95 px-4 py-1.5 text-[11px] font-black uppercase tracking-wide text-neutral-500">
+          <span>Bench</span>
+          <span className="font-mono tabular-nums text-neutral-400">{team.bench.length}</span>
+        </div>
+        <div className="min-h-[88px] flex-[2] overflow-y-auto scrollbar-slim">
+          {team.bench.length > 0 ? (
+            team.bench.map((player) => (
               <PlayerRow
                 accent={accent}
                 borderAccent={borderAccent}
@@ -2268,9 +2280,13 @@ function RosterPanel({
                 onClick={() => onSelectPlayer(side, player)}
                 onToggleStarter={() => onToggleStarter(side, player)}
               />
-            ))}
-          </>
-        )}
+            ))
+          ) : (
+            <div className="px-4 py-4 text-center text-[11px] font-semibold text-neutral-500">
+              No bench players.
+            </div>
+          )}
+        </div>
       </div>
       <div className="border-t border-neutral-800 p-2">
         <button
