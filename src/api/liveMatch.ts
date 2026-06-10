@@ -393,6 +393,35 @@ export async function saveMatchFlowState(
   }
 }
 
+export async function saveMatchStatus(
+  client: OdooClient,
+  match: LiveMatch,
+  status: string,
+): Promise<SaveMatchActionResult> {
+  if (!client.enabled || !match.gameId) {
+    return {
+      log: createLog("warning", "Status kept locally", "No live connection is configured."),
+      saved: false,
+    };
+  }
+
+  try {
+    const capabilities = await getSchemaCapabilities(client);
+    await client.write(MODELS.game, [match.gameId], { [GAME.status]: status });
+    const flowMessage = await saveGameFlowFields(client, match, capabilities);
+
+    return {
+      log: createLog("success", `Game marked ${status}`, flowMessage || `Status set to ${status}.`),
+      saved: true,
+    };
+  } catch (error) {
+    return {
+      log: createLog("error", "Status sync failed", getErrorMessage(error)),
+      saved: false,
+    };
+  }
+}
+
 export async function saveGameEventLabel(
   client: OdooClient,
   event: GameEvent,

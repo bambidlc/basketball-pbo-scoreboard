@@ -39,6 +39,7 @@ import {
   loadMatchOptions,
   saveMatchCorrection,
   saveMatchAction,
+  saveMatchStatus,
   saveGameEventLabel,
   saveMatchFlowState,
   type ActionKey,
@@ -84,6 +85,9 @@ type ActionDetail = {
   shotMade?: boolean;
   shotType?: ShotType;
   shotValue?: 1 | 2 | 3;
+  subInKey?: string;
+  subOutKey?: string;
+  subTeam?: TeamId;
 };
 
 type RefreshOptions = {
@@ -217,6 +221,7 @@ function App() {
   const [timeoutClockSeconds, setTimeoutClockSeconds] = useState(0);
   const [timeoutTeam, setTimeoutTeam] = useState<TeamId | undefined>(undefined);
   const [isClockRunning, setIsClockRunning] = useState(false);
+  const [substitutionTeam, setSubstitutionTeam] = useState<TeamId | undefined>(undefined);
   const [undoStack, setUndoStack] = useState<UndoItem[]>([]);
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>(
     apiConfig.enabled ? "syncing" : "local",
@@ -992,6 +997,139 @@ function App() {
     });
   }
 
+  function openSubstitution() {
+    setSubstitutionTeam(selectedTeam);
+  }
+
+  function closeSubstitution() {
+    setSubstitutionTeam(undefined);
+  }
+
+  function commitSubstitution(team: TeamId, outPlayer: Player, inPlayer: Player) {
+    const outKey = getPlayerKey(outPlayer);
+    const inKey = getPlayerKey(inPlayer);
+    if (outKey === inKey) {
+      return;
+    }
+
+    const current = matchRef.current;
+    const label = `${formatPlayer(inPlayer)} in / ${formatPlayer(outPlayer)} out`;
+    const detail: ActionDetail = {
+      action: "substitution",
+      label,
+      points: 0,
+      subInKey: inKey,
+      subOutKey: outKey,
+      subTeam: team,
+    };
+    const event: GameEvent = {
+      action: "substitution",
+      icon: getEventIcon("substitution", 0),
+      id: Date.now(),
+      label,
+      period: current.period,
+      player: formatPlayer(inPlayer),
+      playerId: inPlayer.id,
+      points: 0,
+      team,
+      time: current.clock,
+    };
+    const undoItem: UndoItem = {
+      detail,
+      event,
+      eventId: event.id,
+      period: current.period,
+      playerKey: inKey,
+      previousPossession: current.possession,
+      previousShotClock: current.shotClock,
+      selectedTeam: team,
+    };
+    const swapped = withSubstitution(current, team, outKey, inKey);
+    const nextMatch = { ...swapped, events: [event, ...swapped.events] };
+
+    matchRef.current = nextMatch;
+    setMatch(nextMatch);
+    setUndoStack((stack) => [undoItem, ...stack].slice(0, UNDO_LIMIT));
+
+    if (selectedPlayersRef.current[team] === outKey) {
+      const nextSelectedPlayers = { ...selectedPlayersRef.current, [team]: inKey };
+      selectedPlayersRef.current = nextSelectedPlayers;
+      setSelectedPlayers(nextSelectedPlayers);
+    }
+
+    setSubstitutionTeam(undefined);
+    appendLog(createLog("info", "Substitution", `${nextMatch[team].name}: ${label}`));
+
+    void saveMatchAction(apiClient, {
+      action: "substitution",
+      label,
+      match: nextMatch,
+      nextAwayScore: nextMatch.awayScore,
+      nextHomeScore: nextMatch.homeScore,
+      player: inPlayer,
+      points: 0,
+      selectedTeam: team,
+    }).then((result) => {
+      if (result.eventId) {
+        setUndoStack((stack) =>
+          stack.map((item) =>
+            item.eventId === event.id ? { ...item, serverEventId: result.eventId } : item,
+          ),
+        );
+        setMatch((latest) => {
+          const withServerId = {
+            ...latest,
+            events: latest.events.map((savedEvent) =>
+              savedEvent.id === event.id
+                ? { ...savedEvent, serverEventId: result.eventId }
+                : savedEvent,
+            ),
+          };
+          matchRef.current = withServerId;
+          return withServerId;
+        });
+      }
+
+      appendLog(result.log);
+      setConnectionStatus(result.log.level === "error" ? "error" : result.saved ? "connected" : "local");
+    });
+  }
+
+  function handleSubstitute(outPlayer: Player, inPlayer: Player) {
+    if (!substitutionTeam) {
+      return;
+    }
+
+    commitSubstitution(substitutionTeam, outPlayer, inPlayer);
+  }
+
+  function endGame() {
+    const current = matchRef.current;
+    const winner =
+      current.homeScore === current.awayScore
+        ? "Tie game"
+        : current.homeScore > current.awayScore
+          ? `${current.home.name} win`
+          : `${current.away.name} win`;
+    const confirmed = window.confirm(
+      `End the game?\n\nFinal: ${current.away.name} ${current.awayScore} - ${current.homeScore} ${current.home.name}\n${winner}`,
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    setIsClockRunning(false);
+    const nextMatch = { ...current, status: "Final" };
+    matchRef.current = nextMatch;
+    setMatch(nextMatch);
+    appendLog(createLog("success", "Game ended", `${winner} (${current.awayScore}-${current.homeScore})`));
+
+    void saveMatchStatus(apiClient, nextMatch, "Final").then((result) => {
+      appendLog(result.log);
+      setConnectionStatus(result.log.level === "error" ? "error" : result.saved ? "connected" : "local");
+    });
+  }
+
   function undoEvent(eventId: number) {
     const event = matchRef.current.events.find((candidate) => candidate.id === eventId);
     const undoItem =
@@ -1184,8 +1322,10 @@ function App() {
             onAdjustTimeoutDuration={adjustTimeoutDuration}
             onAction={recordStatAction}
             onAdjustClock={adjustGameClock}
+            onEndGame={endGame}
             onFreeThrow={recordFreeThrow}
             isActionAllowed={(action) => isActionAllowedForMode(action, statsMode)}
+            onOpenSubstitution={openSubstitution}
             onPeriodChange={setPeriod}
             onPeriodSettingsChange={updatePeriodSettings}
             onRefresh={() => refreshMatch(undefined, { force: true, loadOptions: true })}
@@ -1199,6 +1339,14 @@ function App() {
           />
         </div>
       </section>
+
+      {substitutionTeam && (
+        <SubstitutionDialog
+          team={match[substitutionTeam]}
+          onClose={closeSubstitution}
+          onSubstitute={handleSubstitute}
+        />
+      )}
     </main>
   );
 }
@@ -2225,6 +2373,158 @@ function PlayerRow({
   );
 }
 
+function SubstitutionDialog({
+  team,
+  onClose,
+  onSubstitute,
+}: {
+  team: Team;
+  onClose: () => void;
+  onSubstitute: (outPlayer: Player, inPlayer: Player) => void;
+}) {
+  const [outKey, setOutKey] = useState<string | undefined>(undefined);
+  const [inKey, setInKey] = useState<string | undefined>(undefined);
+  const outPlayer = team.players.find((player) => getPlayerKey(player) === outKey);
+  const inPlayer = team.bench.find((player) => getPlayerKey(player) === inKey);
+  const canConfirm = Boolean(outPlayer && inPlayer);
+
+  function confirm() {
+    if (outPlayer && inPlayer) {
+      onSubstitute(outPlayer, inPlayer);
+    }
+  }
+
+  return (
+    <div
+      aria-modal="true"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
+      role="dialog"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-2xl overflow-hidden rounded-2xl border border-neutral-700 bg-neutral-900 shadow-2xl shadow-black/60"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="flex items-center justify-between gap-3 border-b border-neutral-800 px-4 py-3">
+          <div className="min-w-0">
+            <div className="text-[10px] font-black uppercase tracking-widest text-amber-400">Substitution</div>
+            <h2 className="truncate text-lg font-black text-neutral-50">{team.name}</h2>
+          </div>
+          <button
+            aria-label="Close substitution"
+            className="flex size-9 items-center justify-center rounded-lg border border-neutral-800 bg-neutral-950 text-neutral-400 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500"
+            type="button"
+            onClick={onClose}
+          >
+            <CircleX size={18} />
+          </button>
+        </div>
+
+        <div className="grid gap-px bg-neutral-800 sm:grid-cols-2">
+          <SubstitutionColumn
+            accent="red"
+            emptyLabel="No players on court."
+            label="Out (on court)"
+            players={team.players}
+            selectedKey={outKey}
+            onSelect={setOutKey}
+          />
+          <SubstitutionColumn
+            accent="lime"
+            emptyLabel="No bench players available."
+            label="In (bench)"
+            players={team.bench}
+            selectedKey={inKey}
+            onSelect={setInKey}
+          />
+        </div>
+
+        <div className="flex items-center justify-between gap-3 border-t border-neutral-800 px-4 py-3">
+          <div className="min-w-0 truncate text-xs font-semibold text-neutral-400">
+            {canConfirm
+              ? `${formatPlayer(inPlayer!)} in for ${formatPlayer(outPlayer!)}`
+              : "Pick one player out and one player in."}
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            <button
+              className="h-10 rounded-lg border border-neutral-800 bg-neutral-950 px-4 text-xs font-black uppercase tracking-wide text-neutral-300 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500"
+              type="button"
+              onClick={onClose}
+            >
+              Cancel
+            </button>
+            <button
+              className="flex h-10 items-center gap-2 rounded-lg border border-lime-500/40 bg-lime-500/15 px-4 text-xs font-black uppercase tracking-wide text-lime-200 transition-colors hover:bg-lime-500/25 focus:outline-none focus:ring-2 focus:ring-lime-500/50 disabled:cursor-not-allowed disabled:opacity-40"
+              disabled={!canConfirm}
+              type="button"
+              onClick={confirm}
+            >
+              <Shuffle size={16} />
+              Confirm Sub
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SubstitutionColumn({
+  accent,
+  emptyLabel,
+  label,
+  players,
+  selectedKey,
+  onSelect,
+}: {
+  accent: "red" | "lime";
+  emptyLabel: string;
+  label: string;
+  players: Player[];
+  selectedKey?: string;
+  onSelect: (key: string) => void;
+}) {
+  const selectedRing =
+    accent === "red"
+      ? "border-red-500/60 bg-red-500/10 text-red-100"
+      : "border-lime-500/60 bg-lime-500/10 text-lime-100";
+
+  return (
+    <div className="bg-neutral-900">
+      <div className="px-4 py-2 text-[11px] font-black uppercase tracking-wide text-neutral-500">{label}</div>
+      <div className="max-h-72 overflow-y-auto scrollbar-slim px-2 pb-2">
+        {players.length === 0 ? (
+          <div className="px-2 py-6 text-center text-xs font-semibold text-neutral-500">{emptyLabel}</div>
+        ) : (
+          players.map((player) => {
+            const key = getPlayerKey(player);
+            const selected = key === selectedKey;
+            return (
+              <button
+                className={cn(
+                  "mb-1 grid w-full grid-cols-[44px_minmax(0,1fr)] items-center gap-2 rounded-lg border border-neutral-800 bg-neutral-950 px-2 py-2 text-left transition-colors hover:bg-neutral-800 focus:outline-none focus:ring-2 focus:ring-neutral-500",
+                  selected && selectedRing,
+                )}
+                key={key}
+                type="button"
+                onClick={() => onSelect(key)}
+              >
+                <span className="font-mono text-xl font-black tabular-nums text-neutral-100">{player.number}</span>
+                <span className="min-w-0">
+                  <span className="block truncate text-sm font-bold text-neutral-100">{player.name}</span>
+                  <span className="block text-[11px] font-black uppercase tracking-wide text-neutral-500 tabular-nums">
+                    {player.points} PTS · {player.fouls} F
+                  </span>
+                </span>
+              </button>
+            );
+          })
+        )}
+      </div>
+    </div>
+  );
+}
+
 function BottomPanel({
   ballHandlerName,
   events,
@@ -2387,8 +2687,10 @@ function ActionPanel({
   onAdjustTimeoutDuration,
   onAction,
   onAdjustClock,
+  onEndGame,
   onFreeThrow,
   isActionAllowed,
+  onOpenSubstitution,
   onPeriodChange,
   onPeriodSettingsChange,
   onRefresh,
@@ -2422,8 +2724,10 @@ function ActionPanel({
   onAdjustTimeoutDuration: (seconds: number) => void;
   onAction: (action: ActionKey) => void;
   onAdjustClock: (seconds: number) => void;
+  onEndGame: () => void;
   onFreeThrow: (made: boolean) => void;
   isActionAllowed: (action: ActionKey) => boolean;
+  onOpenSubstitution: () => void;
   onPeriodChange: (period: LiveMatch["period"]) => void;
   onPeriodSettingsChange: (settings: Partial<PeriodSettings>) => void;
   onRefresh: () => void;
@@ -2627,10 +2931,19 @@ function ActionPanel({
           <button
             className="flex h-12 items-center justify-center gap-2 rounded-xl border border-neutral-800 bg-neutral-900 text-xs font-black uppercase text-neutral-100 transition-colors hover:bg-neutral-800 focus:outline-none focus:ring-2 focus:ring-neutral-500 xl:h-9 xl:rounded-md"
             type="button"
-            onClick={() => onAction("substitution")}
+            onClick={onOpenSubstitution}
           >
             <Shuffle size={18} />
             Substitution
+          </button>
+
+          <button
+            className="flex h-12 items-center justify-center gap-2 rounded-xl border border-red-500/40 bg-red-500/10 text-xs font-black uppercase tracking-wide text-red-200 transition-colors hover:bg-red-500/20 focus:outline-none focus:ring-2 focus:ring-red-500/50 xl:h-9 xl:rounded-md"
+            type="button"
+            onClick={onEndGame}
+          >
+            <Trophy size={18} />
+            End Game
           </button>
         </div>
 
@@ -3190,6 +3503,34 @@ function withStarterKeys(match: LiveMatch, team: TeamId, starterKeys: string[]):
   };
 }
 
+function withSubstitution(
+  match: LiveMatch,
+  team: TeamId,
+  outKey: string,
+  inKey: string,
+): LiveMatch {
+  const side = match[team];
+  const incoming = side.bench.find((player) => getPlayerKey(player) === inKey);
+  const outgoing = side.players.find((player) => getPlayerKey(player) === outKey);
+
+  if (!incoming || !outgoing) {
+    return match;
+  }
+
+  return {
+    ...match,
+    [team]: {
+      ...side,
+      bench: side.bench.map((player) =>
+        getPlayerKey(player) === inKey ? { ...outgoing, active: false } : player,
+      ),
+      players: side.players.map((player) =>
+        getPlayerKey(player) === outKey ? { ...incoming, active: true } : player,
+      ),
+    },
+  };
+}
+
 function withPlayerStatId(match: LiveMatch, team: TeamId, playerKey: string, statId: number): LiveMatch {
   const side = match[team];
   const updatePlayer = (player: Player): Player =>
@@ -3299,6 +3640,15 @@ function updateMatchAfterAction(
 
 function revertMatchAfterAction(match: LiveMatch, undoItem: UndoItem): LiveMatch {
   const { detail, event, period, playerKey, previousPossession, previousShotClock, selectedTeam } = undoItem;
+
+  if (detail.action === "substitution" && detail.subTeam && detail.subInKey && detail.subOutKey) {
+    const reverted = withSubstitution(match, detail.subTeam, detail.subInKey, detail.subOutKey);
+    return {
+      ...reverted,
+      events: reverted.events.filter((candidate) => candidate.id !== event.id),
+    };
+  }
+
   const periodKey = getPlayerPeriodKey(period);
   const foulValue = detail.action === "personal foul" || detail.action === "tech foul" ? 1 : 0;
   const side = match[selectedTeam];
