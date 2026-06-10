@@ -2239,12 +2239,12 @@ function RosterPanel({
           {starterCount}/5
         </span>
       </button>
-      {/* On Court: pinned so all 5 starters are always visible without scrolling. */}
+      {/* On Court: pinned (all 5 visible) when the bench is collapsed; yields/scrolls only when the bench is open. */}
       <div className="flex shrink-0 items-center justify-between border-b border-neutral-800 bg-neutral-900/60 px-4 py-1 text-[10px] font-black uppercase tracking-wide text-neutral-500">
         <span>On Court</span>
         <span className="font-mono tabular-nums text-neutral-400">{starterCount}/5</span>
       </div>
-      <div className="shrink-0 overflow-y-auto scrollbar-slim">
+      <div className={cn("overflow-y-auto scrollbar-slim", benchCollapsed ? "shrink-0" : "min-h-0 shrink")}>
         {team.players.length > 0 ? (
           team.players.map((player) => (
             <PlayerRow
@@ -2279,7 +2279,7 @@ function RosterPanel({
         <span className="font-mono tabular-nums text-neutral-400">{team.bench.length}</span>
       </button>
       {!benchCollapsed && (
-        <div className="min-h-0 flex-1 overflow-y-auto scrollbar-slim">
+        <div className="min-h-[140px] flex-1 overflow-y-auto scrollbar-slim">
           {team.bench.length > 0 ? (
             team.bench.map((player) => (
               <PlayerRow
