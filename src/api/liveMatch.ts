@@ -137,7 +137,9 @@ export type LiveMatch = {
   possession: TeamId;
   referee?: string;
   refereeAssistant?: string;
+  referee3?: string;
   scorekeeper?: string;
+  scorekeeper2?: string;
   shotClock: number;
   status: string;
   syncMessage: string;
@@ -946,7 +948,9 @@ async function normalizeGameRecord(
     possession,
     referee: stringValue(game[GAME.refereeName]) || undefined,
     refereeAssistant: stringValue(game[GAME.refereeAssistant]) || undefined,
+    referee3: stringValue(game[GAME.referee3]) || undefined,
     scorekeeper: stringValue(game[GAME.scorekeeper]) || undefined,
+    scorekeeper2: stringValue(game[GAME.scorekeeper2]) || undefined,
     shotClock: numberValue(game[GAME.shotClockSeconds], fallbackMatch.shotClock),
     status: stringValue(game[GAME.status]) || "Scheduled",
     syncMessage: "Live data connected",
@@ -1395,7 +1399,9 @@ async function saveGameSetupFields(
     {
       [GAME.refereeName]: match.referee ?? "",
       [GAME.refereeAssistant]: match.refereeAssistant ?? "",
+      [GAME.referee3]: match.referee3 ?? "",
       [GAME.scorekeeper]: match.scorekeeper ?? "",
+      [GAME.scorekeeper2]: match.scorekeeper2 ?? "",
       [GAME.awayPresent]: match.away.presentCount,
       [GAME.homePresent]: match.home.presentCount,
     },

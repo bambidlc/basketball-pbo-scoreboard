@@ -70,6 +70,9 @@ type StarterSelection = Partial<Record<TeamId, string[]>>;
 type StarterSelectionStore = Record<string, StarterSelection>;
 type AttendanceSelection = Partial<Record<TeamId, Record<string, boolean>>>;
 type AttendanceSelectionStore = Record<string, AttendanceSelection>;
+type OfficialKey = "referee" | "refereeAssistant" | "referee3" | "scorekeeper" | "scorekeeper2";
+type OfficialsSelection = Partial<Record<OfficialKey, string>>;
+type OfficialsSelectionStore = Record<string, OfficialsSelection>;
 type StatsMode = "professional" | "youth";
 
 type PeriodSettings = {
@@ -167,6 +170,7 @@ const logLevelClass: Record<SyncLogEntry["level"], string> = {
 
 const STORAGE_KEYS = {
   attendance: "pbo:attendance",
+  officials: "pbo:officials",
   foulOnShot: "pbo:foulOnShot",
   mode: "pbo:mode",
   courtSides: "pbo:courtSides",
@@ -331,7 +335,7 @@ function App() {
             };
           }
 
-          const loadedMatch = applyStoredAttendance(applyStoredStarters(result.match));
+          const loadedMatch = applyStoredOfficials(applyStoredAttendance(applyStoredStarters(result.match)));
 
           return {
             ...loadedMatch,
@@ -674,10 +678,12 @@ function App() {
     writeStoredAttendance(nextMatch, team);
   }
 
-  function setOfficial(field: "referee" | "refereeAssistant" | "scorekeeper", value: string) {
+  function setOfficial(field: OfficialKey, value: string) {
     const nextMatch = { ...matchRef.current, [field]: value };
     matchRef.current = nextMatch;
     setMatch(nextMatch);
+    // Remember officials locally so they survive polls/reloads (and offline).
+    writeStoredOfficials(nextMatch);
   }
 
   function savePreGame() {
@@ -2810,7 +2816,7 @@ function PreGameDialog({
   onToggleStarter,
 }: {
   match: LiveMatch;
-  onChangeOfficial: (field: "referee" | "refereeAssistant" | "scorekeeper", value: string) => void;
+  onChangeOfficial: (field: OfficialKey, value: string) => void;
   onClose: () => void;
   onSave: () => void;
   onTogglePresent: (team: TeamId, player: Player) => void;
@@ -2849,22 +2855,38 @@ function PreGameDialog({
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto scrollbar-slim">
-          <div className="grid gap-2 border-b border-neutral-800 px-4 py-3 sm:grid-cols-3">
-            <OfficialField
-              label="Referee"
-              value={match.referee ?? ""}
-              onChange={(value) => onChangeOfficial("referee", value)}
-            />
-            <OfficialField
-              label="Assistant Referee"
-              value={match.refereeAssistant ?? ""}
-              onChange={(value) => onChangeOfficial("refereeAssistant", value)}
-            />
-            <OfficialField
-              label="Scorekeeper"
-              value={match.scorekeeper ?? ""}
-              onChange={(value) => onChangeOfficial("scorekeeper", value)}
-            />
+          <div className="border-b border-neutral-800 px-4 py-3">
+            <div className="mb-1.5 text-[10px] font-black uppercase tracking-widest text-neutral-500">Referees</div>
+            <div className="grid gap-2 sm:grid-cols-3">
+              <OfficialField
+                label="Referee 1"
+                value={match.referee ?? ""}
+                onChange={(value) => onChangeOfficial("referee", value)}
+              />
+              <OfficialField
+                label="Referee 2"
+                value={match.refereeAssistant ?? ""}
+                onChange={(value) => onChangeOfficial("refereeAssistant", value)}
+              />
+              <OfficialField
+                label="Referee 3"
+                value={match.referee3 ?? ""}
+                onChange={(value) => onChangeOfficial("referee3", value)}
+              />
+            </div>
+            <div className="mb-1.5 mt-3 text-[10px] font-black uppercase tracking-widest text-neutral-500">Scorer's Table</div>
+            <div className="grid gap-2 sm:grid-cols-2">
+              <OfficialField
+                label="Scorekeeper 1"
+                value={match.scorekeeper ?? ""}
+                onChange={(value) => onChangeOfficial("scorekeeper", value)}
+              />
+              <OfficialField
+                label="Scorekeeper 2"
+                value={match.scorekeeper2 ?? ""}
+                onChange={(value) => onChangeOfficial("scorekeeper2", value)}
+              />
+            </div>
           </div>
 
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-neutral-800 bg-neutral-950/60 px-4 py-2.5">
@@ -3274,6 +3296,22 @@ function ActionPanel({
         )
       : statActions;
 
+  const [editingClock, setEditingClock] = useState(false);
+  const [clockDraft, setClockDraft] = useState(clock);
+
+  function startClockEdit() {
+    setClockDraft(clock);
+    setEditingClock(true);
+  }
+
+  function commitClockEdit() {
+    const seconds = parseClockInput(clockDraft);
+    if (seconds !== undefined) {
+      onSetGameClock(seconds);
+    }
+    setEditingClock(false);
+  }
+
   return (
     <aside className="order-5 flex min-h-0 flex-col bg-neutral-950 p-3 md:col-span-2 xl:col-span-1 xl:col-start-4 xl:row-span-3 xl:row-start-1 xl:h-full xl:overflow-y-auto xl:p-2">
       <div className="mb-3 flex items-center justify-between gap-3 xl:mb-2">
@@ -3318,12 +3356,37 @@ function ActionPanel({
           <div className="rounded-xl border border-neutral-800 bg-gradient-to-b from-neutral-900 to-neutral-900/40 p-3 shadow-sm shadow-black/20 xl:rounded-md xl:p-2">
             <div className="flex items-center justify-between gap-3">
               <span className="text-[11px] font-black uppercase tracking-wide text-neutral-500">Game Clock</span>
-              <span className={cn(
-                "font-mono text-3xl font-black leading-none tabular-nums xl:text-xl",
-                isClockRunning ? "text-lime-400" : "text-neutral-100",
-              )}>
-                {clock}
-              </span>
+              {editingClock ? (
+                <input
+                  aria-label="Edit remaining time (mm:ss)"
+                  autoFocus
+                  className="w-28 rounded-md border border-lime-500/50 bg-neutral-950 px-2 text-right font-mono text-3xl font-black leading-none tabular-nums text-lime-300 outline-none focus:ring-2 focus:ring-lime-500/50 xl:w-20 xl:text-xl"
+                  inputMode="numeric"
+                  value={clockDraft}
+                  onBlur={commitClockEdit}
+                  onChange={(event) => setClockDraft(event.currentTarget.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      commitClockEdit();
+                    } else if (event.key === "Escape") {
+                      setEditingClock(false);
+                    }
+                  }}
+                />
+              ) : (
+                <button
+                  aria-label="Edit remaining time"
+                  className={cn(
+                    "rounded-md font-mono text-3xl font-black leading-none tabular-nums transition-colors hover:text-lime-300 focus:outline-none focus:ring-2 focus:ring-neutral-500 xl:text-xl",
+                    isClockRunning ? "text-lime-400" : "text-neutral-100",
+                  )}
+                  title="Click to set the remaining time (mm:ss)"
+                  type="button"
+                  onClick={startClockEdit}
+                >
+                  {clock}
+                </button>
+              )}
             </div>
             <div className="mt-3 grid grid-cols-5 gap-1.5 xl:mt-1 xl:gap-1">
               <TimerButton label="-10" onClick={() => onAdjustClock(-10)}>
@@ -3365,11 +3428,12 @@ function ActionPanel({
                 Reset Q
               </button>
               <button
-                className="h-10 rounded-lg border border-neutral-800 bg-neutral-950 text-[11px] font-black uppercase text-neutral-300 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500 xl:h-7 xl:rounded-md"
+                className="flex h-10 items-center justify-center gap-1 rounded-lg border border-neutral-800 bg-neutral-950 text-[11px] font-black uppercase text-neutral-300 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500 xl:h-7 xl:rounded-md"
                 type="button"
-                onClick={() => onSetGameClock(getDefaultClockSeconds(period, periodSettings))}
+                onClick={startClockEdit}
               >
-                Set Time
+                <Pencil size={12} />
+                Edit Time
               </button>
             </div>
             <div className="mt-3 flex items-center justify-between xl:mt-2">
@@ -3866,6 +3930,36 @@ function secondsToClock(totalSeconds: number) {
   return `${minutes.toString().padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`;
 }
 
+// Accepts "M:SS" / "MM:SS" or a plain seconds count; returns total seconds or undefined.
+function parseClockInput(value: string): number | undefined {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+
+  if (trimmed.includes(":")) {
+    const [rawMinutes, rawSeconds = "0"] = trimmed.split(":");
+    const minutes = Number(rawMinutes);
+    const seconds = Number(rawSeconds);
+    if (
+      !Number.isFinite(minutes) ||
+      !Number.isFinite(seconds) ||
+      minutes < 0 ||
+      seconds < 0 ||
+      seconds >= 60
+    ) {
+      return undefined;
+    }
+    return clampWholeNumber(minutes * 60 + seconds, 0, 99 * 60 + 59);
+  }
+
+  const asSeconds = Number(trimmed);
+  if (!Number.isFinite(asSeconds) || asSeconds < 0) {
+    return undefined;
+  }
+  return clampWholeNumber(asSeconds, 0, 99 * 60 + 59);
+}
+
 function secondsToMinutes(seconds: number) {
   return Math.round((seconds / 60) * 10) / 10;
 }
@@ -4066,6 +4160,42 @@ function writeStoredAttendance(match: LiveMatch, team: TeamId) {
       ...store[matchKey],
       [team]: presentByKey,
     },
+  });
+}
+
+const OFFICIAL_KEYS: OfficialKey[] = [
+  "referee",
+  "refereeAssistant",
+  "referee3",
+  "scorekeeper",
+  "scorekeeper2",
+];
+
+function applyStoredOfficials(match: LiveMatch): LiveMatch {
+  const store = readStoredJson<OfficialsSelectionStore>(STORAGE_KEYS.officials) ?? {};
+  const selection = store[getStarterStorageId(match)];
+
+  if (!selection) {
+    return match;
+  }
+
+  return OFFICIAL_KEYS.reduce<LiveMatch>((nextMatch, key) => {
+    const stored = selection[key];
+    return stored === undefined ? nextMatch : { ...nextMatch, [key]: stored };
+  }, match);
+}
+
+function writeStoredOfficials(match: LiveMatch) {
+  const store = readStoredJson<OfficialsSelectionStore>(STORAGE_KEYS.officials) ?? {};
+  const matchKey = getStarterStorageId(match);
+  const officials = OFFICIAL_KEYS.reduce<OfficialsSelection>((map, key) => {
+    map[key] = match[key] ?? "";
+    return map;
+  }, {});
+
+  writeStoredJson(STORAGE_KEYS.officials, {
+    ...store,
+    [matchKey]: officials,
   });
 }
 
