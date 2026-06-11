@@ -68,6 +68,8 @@ type PlayerSelection = Partial<Record<TeamId, string>>;
 type ScreenMode = "dashboard" | "live";
 type StarterSelection = Partial<Record<TeamId, string[]>>;
 type StarterSelectionStore = Record<string, StarterSelection>;
+type AttendanceSelection = Partial<Record<TeamId, Record<string, boolean>>>;
+type AttendanceSelectionStore = Record<string, AttendanceSelection>;
 type StatsMode = "professional" | "youth";
 
 type PeriodSettings = {
@@ -164,6 +166,7 @@ const logLevelClass: Record<SyncLogEntry["level"], string> = {
 };
 
 const STORAGE_KEYS = {
+  attendance: "pbo:attendance",
   foulOnShot: "pbo:foulOnShot",
   mode: "pbo:mode",
   courtSides: "pbo:courtSides",
@@ -252,6 +255,7 @@ function App() {
   const loadedGameIdRef = useRef<number | undefined>(undefined);
   const matchRef = useRef<LiveMatch>(fallbackMatch);
   const matchOptionsLoadedRef = useRef(false);
+  const preGameOpenRef = useRef(false);
   const pendingRefreshRef = useRef<{ gameId?: number; options: RefreshOptions } | null>(null);
   const previousPossessionRef = useRef<{ playerKey?: string; team: TeamId } | null>(null);
   const rateLimitUntilRef = useRef(0);
@@ -327,7 +331,7 @@ function App() {
             };
           }
 
-          const loadedMatch = applyStoredStarters(result.match);
+          const loadedMatch = applyStoredAttendance(applyStoredStarters(result.match));
 
           return {
             ...loadedMatch,
@@ -393,7 +397,8 @@ function App() {
     }
 
     const timerId = window.setInterval(() => {
-      if (document.visibilityState === "visible") {
+      // Don't let a background poll clobber in-progress roster/attendance edits.
+      if (document.visibilityState === "visible" && !preGameOpenRef.current) {
         void refreshMatch();
       }
     }, apiConfig.pollMs);
@@ -640,10 +645,12 @@ function App() {
   }
 
   function openPreGame() {
+    preGameOpenRef.current = true;
     setPreGameOpen(true);
   }
 
   function closePreGame() {
+    preGameOpenRef.current = false;
     setPreGameOpen(false);
   }
 
@@ -663,6 +670,8 @@ function App() {
     };
     matchRef.current = nextMatch;
     setMatch(nextMatch);
+    // Remember attendance locally so it survives polls/reloads and can be changed any time.
+    writeStoredAttendance(nextMatch, team);
   }
 
   function setOfficial(field: "referee" | "refereeAssistant" | "scorekeeper", value: string) {
@@ -682,6 +691,7 @@ function App() {
       setConnectionStatus(result.log.level === "error" ? "error" : result.saved ? "connected" : "local");
     });
 
+    preGameOpenRef.current = false;
     setPreGameOpen(false);
   }
 
@@ -4006,6 +4016,57 @@ function writeStoredStarterKeys(match: LiveMatch, team: TeamId) {
 
 function getStarterStorageId(match: LiveMatch) {
   return match.gameId ? `game:${match.gameId}` : `match:${match.matchName}`;
+}
+
+function applyStoredAttendance(match: LiveMatch): LiveMatch {
+  const store = readStoredJson<AttendanceSelectionStore>(STORAGE_KEYS.attendance) ?? {};
+  const selection = store[getStarterStorageId(match)];
+
+  if (!selection) {
+    return match;
+  }
+
+  return (["away", "home"] as TeamId[]).reduce((nextMatch, team) => {
+    const presentByKey = selection[team];
+    return presentByKey ? withTeamAttendance(nextMatch, team, presentByKey) : nextMatch;
+  }, match);
+}
+
+function withTeamAttendance(
+  match: LiveMatch,
+  team: TeamId,
+  presentByKey: Record<string, boolean>,
+): LiveMatch {
+  const side = match[team];
+  const apply = (player: Player): Player => {
+    const stored = presentByKey[getPlayerKey(player)];
+    return stored === undefined ? player : { ...player, present: stored };
+  };
+  const players = side.players.map(apply);
+  const bench = side.bench.map(apply);
+  const presentCount = [...players, ...bench].filter((player) => player.present ?? true).length;
+
+  return {
+    ...match,
+    [team]: { ...side, bench, players, presentCount },
+  };
+}
+
+function writeStoredAttendance(match: LiveMatch, team: TeamId) {
+  const store = readStoredJson<AttendanceSelectionStore>(STORAGE_KEYS.attendance) ?? {};
+  const matchKey = getStarterStorageId(match);
+  const presentByKey = getRoster(match[team]).reduce<Record<string, boolean>>((map, player) => {
+    map[getPlayerKey(player)] = player.present ?? true;
+    return map;
+  }, {});
+
+  writeStoredJson(STORAGE_KEYS.attendance, {
+    ...store,
+    [matchKey]: {
+      ...store[matchKey],
+      [team]: presentByKey,
+    },
+  });
 }
 
 function withStarterToggled(match: LiveMatch, team: TeamId, playerKey: string): LiveMatch {
