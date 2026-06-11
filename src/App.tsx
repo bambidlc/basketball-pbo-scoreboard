@@ -1963,28 +1963,30 @@ function ScoreHeader({
             <span className="font-mono text-sm font-black tabular-nums text-neutral-100">{shotClock}</span>
           </div>
         </div>
-        <div className="grid w-full grid-cols-2 gap-2 xl:gap-1.5">
-          <button
-            aria-label="Switch live possession"
-            className="flex h-9 min-w-0 items-center justify-center gap-1.5 rounded-lg border border-neutral-800 bg-neutral-900 text-[11px] font-black uppercase tracking-wide text-neutral-300 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500 xl:h-7 xl:rounded-md"
-            title="Switch live possession"
-            type="button"
-            onClick={onTogglePossession}
-          >
-            <span>Poss</span>
-            <PossessionArrow possession={possession} />
-          </button>
-          <button
-            aria-label="Set opening jump winner"
-            className="flex h-9 min-w-0 items-center justify-center gap-1.5 rounded-lg border border-neutral-800 bg-neutral-900 text-[11px] font-black uppercase tracking-wide text-neutral-300 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500 xl:h-7 xl:rounded-md"
-            title={`Possession arrow (next jump-ball possession). Tap to set the opening jump winner; the arrow goes to the other team. Opening jump: ${openingJumpWinner}.`}
-            type="button"
-            onClick={onToggleOpeningJumpWinner}
-          >
-            <span>Foul</span>
-            <PossessionArrow possession={foulBallTeam} />
-          </button>
-        </div>
+        {statsMode !== "youth" && (
+          <div className="grid w-full grid-cols-2 gap-2 xl:gap-1.5">
+            <button
+              aria-label="Switch live possession"
+              className="flex h-9 min-w-0 items-center justify-center gap-1.5 rounded-lg border border-neutral-800 bg-neutral-900 text-[11px] font-black uppercase tracking-wide text-neutral-300 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500 xl:h-7 xl:rounded-md"
+              title="Switch live possession"
+              type="button"
+              onClick={onTogglePossession}
+            >
+              <span>Poss</span>
+              <PossessionArrow possession={possession} />
+            </button>
+            <button
+              aria-label="Set opening jump winner"
+              className="flex h-9 min-w-0 items-center justify-center gap-1.5 rounded-lg border border-neutral-800 bg-neutral-900 text-[11px] font-black uppercase tracking-wide text-neutral-300 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500 xl:h-7 xl:rounded-md"
+              title={`Possession arrow (next jump-ball possession). Tap to set the opening jump winner; the arrow goes to the other team. Opening jump: ${openingJumpWinner}.`}
+              type="button"
+              onClick={onToggleOpeningJumpWinner}
+            >
+              <span>Foul</span>
+              <PossessionArrow possession={foulBallTeam} />
+            </button>
+          </div>
+        )}
         <label className="w-full">
           <span className="sr-only">Select match</span>
           <select
