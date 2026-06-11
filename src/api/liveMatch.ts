@@ -1,4 +1,6 @@
 import {
+  ATTENDANCE,
+  ATTENDANCE_FIELDS,
   GAME,
   GAME_EVENT,
   GAME_EVENT_FIELDS,
@@ -34,6 +36,7 @@ export type ActionKey =
   | "block"
   | "personal foul"
   | "tech foul"
+  | "warning"
   | "substitution";
 
 export type ShotType = "2pt" | "3pt" | "free throw";
@@ -49,6 +52,7 @@ export type ShotLocation = {
 export type Player = {
   active?: boolean;
   assists: number;
+  attendanceId?: number;
   blocks: number;
   defensiveRebounds: number;
   fouls: number;
@@ -60,6 +64,8 @@ export type Player = {
   offensiveRebounds: number;
   points: number;
   position?: string;
+  present?: boolean;
+  starter?: boolean;
   q1: number;
   q2: number;
   q3: number;
@@ -82,14 +88,17 @@ export type Team = {
   label: "Away" | "Home";
   name: string;
   players: Player[];
+  presentCount: number;
   record?: string;
   timeouts: number;
 };
 
 export type GameEvent = {
   action?: ActionKey;
+  equalization?: boolean;
   icon: "made" | "missed" | "turnover" | "rebound";
   id: number;
+  issuedByRef?: boolean;
   label: string;
   period?: number;
   player: string;
@@ -115,6 +124,9 @@ export type LiveMatch = {
   away: Team;
   awayScore: number;
   clock: string;
+  equalizationApplied?: boolean;
+  equalizationPoints?: number;
+  equalizationTeam?: TeamId;
   events: GameEvent[];
   gameId?: number;
   home: Team;
@@ -123,6 +135,9 @@ export type LiveMatch = {
   period: number;
   periodLabel: string;
   possession: TeamId;
+  referee?: string;
+  refereeAssistant?: string;
+  scorekeeper?: string;
   shotClock: number;
   status: string;
   syncMessage: string;
@@ -153,6 +168,7 @@ export type SaveMatchActionInput = {
   foulOnShot?: boolean;
   freeThrowsAttempted?: number;
   freeThrowsMade?: number;
+  issuedByRef?: boolean;
   label: string;
   match: LiveMatch;
   nextAwayScore: number;
@@ -202,6 +218,7 @@ type ModelCapability = {
 
 type SchemaCapabilities = {
   game: ModelCapability;
+  gameAttendance: ModelCapability;
   gameEvent: ModelCapability;
   playerGameStat: ModelCapability;
 };
@@ -221,6 +238,7 @@ export const fallbackMatch: LiveMatch = {
     label: "Away",
     name: "Away",
     players: [],
+    presentCount: 0,
     timeouts: 0,
   },
   awayScore: 0,
@@ -232,6 +250,7 @@ export const fallbackMatch: LiveMatch = {
     label: "Home",
     name: "Home",
     players: [],
+    presentCount: 0,
     timeouts: 0,
   },
   homeScore: 0,
@@ -422,6 +441,78 @@ export async function saveMatchStatus(
   }
 }
 
+export async function saveGameAttendance(
+  client: OdooClient,
+  match: LiveMatch,
+): Promise<SaveMatchActionResult> {
+  if (!client.enabled || !match.gameId) {
+    return {
+      log: createLog("warning", "Roster kept locally", "No live connection is configured."),
+      saved: false,
+    };
+  }
+
+  try {
+    const capabilities = await getSchemaCapabilities(client);
+    if (!capabilities.gameAttendance.exists) {
+      return {
+        log: createLog(
+          "warning",
+          "Roster kept locally",
+          "Run the field script to add the attendance model.",
+        ),
+        saved: false,
+      };
+    }
+
+    let saved = 0;
+    for (const side of ["away", "home"] as TeamId[]) {
+      const team = match[side];
+      const starterIds = new Set(team.players.map((player) => player.id));
+      for (const player of [...team.players, ...team.bench]) {
+        if (!player.id) {
+          continue;
+        }
+
+        const values = filterWritableValues(
+          {
+            [ATTENDANCE.present]: player.present ?? true,
+            // Source of truth for "is a starter" is membership in team.players, not the
+            // load-time player.starter hint (which goes stale after substitutions).
+            [ATTENDANCE.starter]: starterIds.has(player.id),
+            [ATTENDANCE.jersey]: Number(player.number) || 0,
+            [ATTENDANCE.team]: team.id ?? false,
+          },
+          capabilities.gameAttendance,
+        );
+
+        if (Object.keys(values).length === 0) {
+          continue;
+        }
+
+        await upsertAttendanceRow(client, match, player, values);
+        saved += 1;
+      }
+    }
+
+    const setupMessage = await saveGameSetupFields(client, match, capabilities);
+
+    return {
+      log: createLog(
+        "success",
+        "Roster synced",
+        compactMessages([`Saved ${saved} attendance rows.`, setupMessage]),
+      ),
+      saved: true,
+    };
+  } catch (error) {
+    return {
+      log: createLog("error", "Roster sync failed", getErrorMessage(error)),
+      saved: false,
+    };
+  }
+}
+
 export async function saveGameEventLabel(
   client: OdooClient,
   event: GameEvent,
@@ -539,6 +630,31 @@ function sanitizeDashboardText(value: string) {
   return value.replace(/odoo/gi, "server");
 }
 
+// There is only ever one equalization event per game, so a fixed negative id keeps it
+// stable across reloads and out of the way of real Odoo record ids (positive) and
+// locally-stamped event ids (Date.now(), large positive).
+export const EQUALIZATION_EVENT_ID = -101;
+
+export function buildEqualizationEvent(
+  team: TeamId,
+  points: number,
+  period: number,
+  clock: string,
+  teamName: string,
+): GameEvent {
+  return {
+    equalization: true,
+    icon: "made",
+    id: EQUALIZATION_EVENT_ID,
+    label: `Equalization +${points} ${teamName}`,
+    period,
+    player: "—",
+    points,
+    team,
+    time: clock,
+  };
+}
+
 function createPlayer(player: Partial<Player> & Pick<Player, "name" | "number">): Player {
   return {
     assists: 0,
@@ -550,10 +666,12 @@ function createPlayer(player: Partial<Player> & Pick<Player, "name" | "number">)
     offensiveRebounds: 0,
     ot: 0,
     points: 0,
+    present: true,
     q1: 0,
     q2: 0,
     q3: 0,
     q4: 0,
+    starter: false,
     steals: 0,
     threePointersAttempted: 0,
     threePointersMade: 0,
@@ -656,6 +774,31 @@ async function loadStatsForGame(
   }
 }
 
+async function loadAttendanceForGame(
+  client: OdooClient,
+  gameId: number | undefined,
+  capabilities: SchemaCapabilities,
+): Promise<OdooRecord[]> {
+  if (!gameId || !capabilities.gameAttendance.exists) {
+    return [];
+  }
+
+  const fields = filterReadableFields(ATTENDANCE_FIELDS, capabilities.gameAttendance);
+  if (fields.length === 0) {
+    return [];
+  }
+
+  try {
+    return await client.searchRead<OdooRecord>(
+      MODELS.gameAttendance,
+      [[ATTENDANCE.game, "=", gameId]],
+      fields,
+    );
+  } catch {
+    return [];
+  }
+}
+
 async function loadGameEvents(
   client: OdooClient,
   gameId?: number,
@@ -697,7 +840,7 @@ async function normalizeGameRecord(
   const awayTeamId = relationId(game[GAME.awayTeam]);
   const homeTeamId = relationId(game[GAME.homeTeam]);
   const teamIds = [awayTeamId, homeTeamId].filter((id): id is number => Boolean(id));
-  const [teams, players, stats, events] = await Promise.all([
+  const [teams, players, stats, events, attendance] = await Promise.all([
     teamIds.length > 0 ? client.read<OdooRecord>(MODELS.team, teamIds, TEAM_FIELDS) : [],
     teamIds.length > 0
       ? client.searchRead<OdooRecord>(
@@ -709,12 +852,18 @@ async function normalizeGameRecord(
       : [],
     loadStatsForGame(client, gameId, capabilities),
     loadGameEvents(client, gameId, awayTeamId, homeTeamId, capabilities),
+    loadAttendanceForGame(client, gameId, capabilities),
   ]);
 
   const teamsById = new Map(teams.map((team) => [numberValue(team.id), team]));
   const statsByPlayerId = new Map(
     stats
       .map((stat) => [relationId(stat[PLAYER_STAT.player]), stat] as const)
+      .filter(([playerId]) => Boolean(playerId)),
+  );
+  const attendanceByPlayerId = new Map(
+    attendance
+      .map((record) => [relationId(record[ATTENDANCE.player]), record] as const)
       .filter(([playerId]) => Boolean(playerId)),
   );
 
@@ -727,7 +876,7 @@ async function normalizeGameRecord(
     team: awayTeamId ? teamsById.get(awayTeamId) : undefined,
     teamId: awayTeamId,
     timeouts: numberValue(game[GAME.awayTimeouts]),
-  }, players, statsByPlayerId);
+  }, players, statsByPlayerId, attendanceByPlayerId);
 
   const home = normalizeTeam({
     fallback: fallbackMatch.home,
@@ -738,7 +887,7 @@ async function normalizeGameRecord(
     team: homeTeamId ? teamsById.get(homeTeamId) : undefined,
     teamId: homeTeamId,
     timeouts: numberValue(game[GAME.homeTimeouts]),
-  }, players, statsByPlayerId);
+  }, players, statsByPlayerId, attendanceByPlayerId);
 
   const period = normalizePeriod(game[GAME.period], fallbackMatch.period);
   const clockSeconds = numberValue(game[GAME.gameClockSeconds], clockToSeconds(fallbackMatch.clock));
@@ -750,11 +899,40 @@ async function normalizeGameRecord(
         ? "home"
         : fallbackMatch.possession;
 
+  const equalizationTeamId = relationId(game[GAME.equalizationTeam]);
+  const equalizationTeam: TeamId | undefined =
+    equalizationTeamId && equalizationTeamId === awayTeamId
+      ? "away"
+      : equalizationTeamId && equalizationTeamId === homeTeamId
+        ? "home"
+        : undefined;
+  const equalizationApplied = Boolean(game[GAME.equalizationApplied]);
+  const equalizationPoints = optionalNumberValue(game[GAME.equalizationPoints]);
+
+  // Re-inject the equalization line on reload so the play-by-play stays consistent.
+  // The synthetic event is local-only; the authoritative score already includes the points.
+  const eventsWithEqualization =
+    equalizationApplied && equalizationTeam && equalizationPoints
+      ? [
+          buildEqualizationEvent(
+            equalizationTeam,
+            equalizationPoints,
+            period,
+            secondsToClock(clockSeconds),
+            (equalizationTeam === "away" ? away : home).name,
+          ),
+          ...events,
+        ]
+      : events;
+
   return {
     away,
     awayScore: numberValue(game[GAME.awayScore]),
     clock: secondsToClock(clockSeconds),
-    events,
+    equalizationApplied,
+    equalizationPoints,
+    equalizationTeam,
+    events: eventsWithEqualization,
     gameId,
     home,
     homeScore: numberValue(game[GAME.homeScore]),
@@ -766,6 +944,9 @@ async function normalizeGameRecord(
     period,
     periodLabel: getPeriodLabel(period),
     possession,
+    referee: stringValue(game[GAME.refereeName]) || undefined,
+    refereeAssistant: stringValue(game[GAME.refereeAssistant]) || undefined,
+    scorekeeper: stringValue(game[GAME.scorekeeper]) || undefined,
     shotClock: numberValue(game[GAME.shotClockSeconds], fallbackMatch.shotClock),
     status: stringValue(game[GAME.status]) || "Scheduled",
     syncMessage: "Live data connected",
@@ -777,6 +958,7 @@ function normalizeTeam(
   side: TeamSide,
   players: OdooRecord[],
   statsByPlayerId: Map<number | undefined, OdooRecord>,
+  attendanceByPlayerId: Map<number | undefined, OdooRecord>,
 ): Team {
   if (!side.teamId) {
     return side.fallback;
@@ -784,11 +966,32 @@ function normalizeTeam(
 
   const sidePlayers = players
     .filter((player) => relationId(player[PLAYER.team]) === side.teamId)
-    .map((player, index) => normalizePlayer(player, statsByPlayerId, index));
+    .map((player, index) => normalizePlayer(player, statsByPlayerId, index))
+    .map((player) => {
+      const row = player.id ? attendanceByPlayerId.get(player.id) : undefined;
+      return row
+        ? {
+            ...player,
+            attendanceId: numberValue(row.id) || undefined,
+            present: Boolean(row[ATTENDANCE.present]),
+            starter: Boolean(row[ATTENDANCE.starter]),
+          }
+        : player;
+    });
 
   const roster = sidePlayers.length > 0 ? sidePlayers : side.fallback.players;
-  const bench = sidePlayers.length > 0 ? sidePlayers.slice(5) : side.fallback.bench;
-  const activePlayers = roster.slice(0, 5).map((player) => ({ ...player, active: true }));
+  // When attendance rows exist they decide the starting five; otherwise keep the legacy
+  // "first five players are starters, the rest are bench" behavior.
+  const hasAttendance = roster.some((player) => player.attendanceId);
+  const starters = (hasAttendance ? roster.filter((player) => player.starter) : roster).slice(0, 5);
+  const starterSet = new Set(starters);
+  const activePlayers = starters.map((player) => ({ ...player, active: true }));
+  const bench = roster
+    .filter((player) => !starterSet.has(player))
+    .map((player) => ({ ...player, active: false }));
+  const presentCount = hasAttendance
+    ? roster.filter((player) => player.present).length
+    : roster.length;
   const playerFouls = [...activePlayers, ...bench].reduce((total, player) => total + player.fouls, 0);
   const wins = numberValue(side.team?.[TEAM.wins]);
   const losses = numberValue(side.team?.[TEAM.losses]);
@@ -805,6 +1008,7 @@ function normalizeTeam(
       side.relationName ||
       side.fallback.name,
     players: activePlayers,
+    presentCount,
     record: wins || losses ? `${wins}-${losses}` : side.fallback.record,
     timeouts: side.timeouts ?? side.fallback.timeouts,
   };
@@ -1098,6 +1302,7 @@ async function saveGameEvent(
       [GAME_EVENT.shotY]: input.shotLocation?.y ?? 0,
       [GAME_EVENT.shotZone]: input.shotLocation?.zone ?? input.shotType ?? "",
       [GAME_EVENT.team]: input.match[input.selectedTeam].id ?? false,
+      [GAME_EVENT.issuedByRef]: input.issuedByRef ?? false,
     }, capabilities.gameEvent);
 
     if (!values[GAME_EVENT.name]) {
@@ -1128,6 +1333,9 @@ async function saveGameFlowFields(
     [GAME.period]: match.period,
     [GAME.possessionTeam]: match[match.possession].id,
     [GAME.shotClockSeconds]: match.shotClock,
+    [GAME.equalizationPoints]: match.equalizationPoints ?? 0,
+    [GAME.equalizationTeam]: match.equalizationTeam ? match[match.equalizationTeam].id ?? false : false,
+    [GAME.equalizationApplied]: match.equalizationApplied ?? false,
   }, capabilities.game);
 
   if (Object.keys(values).length === 0) {
@@ -1138,6 +1346,69 @@ async function saveGameFlowFields(
     await client.write(MODELS.game, [match.gameId!], values);
 
     return "Game flow saved.";
+  } catch {
+    return "";
+  }
+}
+
+async function upsertAttendanceRow(
+  client: OdooClient,
+  match: LiveMatch,
+  player: Player,
+  values: Record<string, unknown>,
+) {
+  if (player.attendanceId) {
+    await client.write(MODELS.gameAttendance, [player.attendanceId], values);
+    return player.attendanceId;
+  }
+
+  const [existing] = await client.searchRead<OdooRecord>(
+    MODELS.gameAttendance,
+    [
+      [ATTENDANCE.game, "=", match.gameId],
+      [ATTENDANCE.player, "=", player.id],
+    ],
+    ["id"],
+    { limit: 1, order: "id desc" },
+  );
+  const existingId = numberValue(existing?.id);
+
+  if (existingId) {
+    await client.write(MODELS.gameAttendance, [existingId], values);
+    return existingId;
+  }
+
+  return client.create(MODELS.gameAttendance, {
+    ...values,
+    [ATTENDANCE.game]: match.gameId,
+    [ATTENDANCE.player]: player.id,
+    [ATTENDANCE.name]: `${match.matchName} - ${player.name}`,
+  });
+}
+
+async function saveGameSetupFields(
+  client: OdooClient,
+  match: LiveMatch,
+  capabilities: SchemaCapabilities,
+): Promise<string> {
+  const values = filterWritableValues(
+    {
+      [GAME.refereeName]: match.referee ?? "",
+      [GAME.refereeAssistant]: match.refereeAssistant ?? "",
+      [GAME.scorekeeper]: match.scorekeeper ?? "",
+      [GAME.awayPresent]: match.away.presentCount,
+      [GAME.homePresent]: match.home.presentCount,
+    },
+    capabilities.game,
+  );
+
+  if (Object.keys(values).length === 0) {
+    return "";
+  }
+
+  try {
+    await client.write(MODELS.game, [match.gameId!], values);
+    return "Officials saved.";
   } catch {
     return "";
   }
@@ -1181,13 +1452,14 @@ async function discoverSchemaCapabilities(client: OdooClient): Promise<SchemaCap
   const fallback = createFallbackCapabilities();
 
   try {
-    const modelNames = [MODELS.game, MODELS.playerGameStat, MODELS.gameEvent];
+    const modelNames = [MODELS.game, MODELS.playerGameStat, MODELS.gameEvent, MODELS.gameAttendance];
     const fieldNames = uniqueStrings([
       ...GAME_FIELDS,
       ...GAME_OPTIONAL_FIELDS,
       ...PLAYER_STAT_FIELDS,
       ...PLAYER_STAT_OPTIONAL_FIELDS,
       ...GAME_EVENT_FIELDS,
+      ...ATTENDANCE_FIELDS,
     ]);
 
     const [models, fields] = await Promise.all([
@@ -1225,6 +1497,12 @@ async function discoverSchemaCapabilities(client: OdooClient): Promise<SchemaCap
         exists: existingModels.has(MODELS.game),
         fields: mergeKnownCoreFields(fieldsByModel.get(MODELS.game), GAME_FIELDS),
       },
+      gameAttendance: {
+        exists: existingModels.has(MODELS.gameAttendance),
+        // Raw discovered set (no merge): a missing model yields an empty set so every
+        // attendance read/write is skipped until the field script runs.
+        fields: fieldsByModel.get(MODELS.gameAttendance) ?? new Set<string>(),
+      },
       gameEvent: {
         exists: existingModels.has(MODELS.gameEvent),
         fields: discoveredGameEventFields?.size
@@ -1246,6 +1524,12 @@ function createFallbackCapabilities(): SchemaCapabilities {
     game: {
       exists: true,
       fields: new Set(GAME_FIELDS),
+    },
+    gameAttendance: {
+      // Degrade attendance to "kept locally" on a total discovery failure rather than
+      // assuming the model exists and throwing on every save.
+      exists: false,
+      fields: new Set<string>(),
     },
     gameEvent: {
       exists: true,
@@ -1402,6 +1686,7 @@ function normalizeActionKey(value: unknown): ActionKey {
     "block",
     "personal foul",
     "tech foul",
+    "warning",
     "substitution",
   ];
 

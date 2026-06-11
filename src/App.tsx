@@ -24,6 +24,7 @@ import {
   Shuffle,
   Star,
   Target,
+  TriangleAlert,
   Trophy,
   Undo2,
   UserRoundX,
@@ -33,11 +34,13 @@ import {
 import type { LucideIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent, type ReactNode } from "react";
 import {
+  buildEqualizationEvent,
   createLog,
   fallbackMatch,
   getPeriodLabel,
   loadLiveMatch,
   loadMatchOptions,
+  saveGameAttendance,
   saveMatchCorrection,
   saveMatchAction,
   saveMatchStatus,
@@ -78,6 +81,7 @@ type ActionDetail = {
   foulOnShot?: boolean;
   freeThrowsAttempted?: number;
   freeThrowsMade?: number;
+  issuedByRef?: boolean;
   label: string;
   opponentTurnoverPlayer?: Player;
   opponentTurnoverTeam?: TeamId;
@@ -142,6 +146,7 @@ const statActions: Array<{
     color: "text-yellow-400",
   },
   { key: "tech foul", label: "Tech", icon: Trophy, color: "text-amber-400" },
+  { key: "warning", label: "Warning", icon: TriangleAlert, color: "text-amber-300" },
 ];
 
 const eventIconClass: Record<GameEvent["icon"], string> = {
@@ -231,6 +236,7 @@ function App() {
   const [timeoutTeam, setTimeoutTeam] = useState<TeamId | undefined>(undefined);
   const [isClockRunning, setIsClockRunning] = useState(false);
   const [substitutionTeam, setSubstitutionTeam] = useState<TeamId | undefined>(undefined);
+  const [preGameOpen, setPreGameOpen] = useState(false);
   const [undoStack, setUndoStack] = useState<UndoItem[]>([]);
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>(
     apiConfig.enabled ? "syncing" : "local",
@@ -633,6 +639,52 @@ function App() {
     ));
   }
 
+  function openPreGame() {
+    setPreGameOpen(true);
+  }
+
+  function closePreGame() {
+    setPreGameOpen(false);
+  }
+
+  function togglePresent(team: TeamId, player: Player) {
+    const playerKey = getPlayerKey(player);
+    const side = matchRef.current[team];
+    const flip = (candidate: Player): Player =>
+      getPlayerKey(candidate) === playerKey
+        ? { ...candidate, present: !(candidate.present ?? true) }
+        : candidate;
+    const players = side.players.map(flip);
+    const bench = side.bench.map(flip);
+    const presentCount = [...players, ...bench].filter((candidate) => candidate.present ?? true).length;
+    const nextMatch = {
+      ...matchRef.current,
+      [team]: { ...side, bench, players, presentCount },
+    };
+    matchRef.current = nextMatch;
+    setMatch(nextMatch);
+  }
+
+  function setOfficial(field: "referee" | "refereeAssistant" | "scorekeeper", value: string) {
+    const nextMatch = { ...matchRef.current, [field]: value };
+    matchRef.current = nextMatch;
+    setMatch(nextMatch);
+  }
+
+  function savePreGame() {
+    // Keep starters in localStorage too, so they survive an offline reload.
+    writeStoredStarterKeys(matchRef.current, "away");
+    writeStoredStarterKeys(matchRef.current, "home");
+    appendLog(createLog("info", "Saving roster", "Attendance, starters and officials."));
+
+    void saveGameAttendance(apiClient, matchRef.current).then((result) => {
+      appendLog(result.log);
+      setConnectionStatus(result.log.level === "error" ? "error" : result.saved ? "connected" : "local");
+    });
+
+    setPreGameOpen(false);
+  }
+
   function switchCourtSides() {
     setCourtSides((current) => ({
       left: current.right,
@@ -655,13 +707,30 @@ function App() {
       }
     }
 
-    const nextMatch = {
+    const baseMatch = {
       ...matchRef.current,
       clock: secondsToClock(getDefaultClockSeconds(period, periodSettings)),
       period,
       periodLabel: getPeriodLabel(period, periodSettings.periodCount),
       shotClock: FULL_SHOT_CLOCK,
     };
+
+    // Equalization (puntos de equiparación): at the start of the 3rd quarter the
+    // short-handed team receives 2 points per missing player, evaluated against the
+    // attendance as it stands right now. Applied once and undoable from the feed.
+    let nextMatch = baseMatch;
+    if (period === 3 && !matchRef.current.equalizationApplied) {
+      const equalization = computeEqualization(baseMatch);
+      if (equalization) {
+        nextMatch = applyEqualization(baseMatch, equalization);
+        appendLog(createLog(
+          "success",
+          "Equalization applied",
+          `${baseMatch[equalization.team].name} +${equalization.points} (attendance ${baseMatch.away.presentCount}-${baseMatch.home.presentCount}).`,
+        ));
+      }
+    }
+
     matchRef.current = nextMatch;
     setMatch(nextMatch);
     syncFlowState("Period changed", nextMatch);
@@ -880,6 +949,7 @@ function App() {
       action: committedDetail.action,
       icon: getEventIcon(committedDetail.action, committedDetail.points),
       id: Date.now(),
+      issuedByRef: committedDetail.issuedByRef,
       label: committedDetail.label,
       period: match.period,
       player: formatPlayer(currentPlayer),
@@ -1039,6 +1109,7 @@ function App() {
 
     commitAction({
       action,
+      issuedByRef: action === "tech foul" || action === "warning",
       label: titleCase(action),
       points: 0,
     });
@@ -1179,6 +1250,18 @@ function App() {
 
   function undoEvent(eventId: number) {
     const event = matchRef.current.events.find((candidate) => candidate.id === eventId);
+
+    // The equalization line has no player/action, so it can't run through the normal
+    // revert path. Subtract the points, clear the flag, and re-sync.
+    if (event?.equalization) {
+      const nextMatch = removeEqualization(matchRef.current);
+      matchRef.current = nextMatch;
+      setMatch(nextMatch);
+      appendLog(createLog("info", "Equalization removed", event.label));
+      syncFlowState("Equalization removed", nextMatch);
+      return;
+    }
+
     const undoItem =
       undoStack.find((item) => item.eventId === eventId) ??
       (event ? createUndoItemFromEvent(matchRef.current, event) : undefined);
@@ -1281,6 +1364,9 @@ function App() {
             away={match.away}
             awayScore={match.awayScore}
             clock={match.clock}
+            equalizationApplied={match.equalizationApplied}
+            equalizationPoints={match.equalizationPoints}
+            equalizationTeam={match.equalizationTeam}
             home={match.home}
             homeScore={match.homeScore}
             foulBallTeam={foulBallTeam}
@@ -1373,6 +1459,7 @@ function App() {
             onFreeThrow={recordFreeThrow}
             isActionAllowed={(action) => isActionAllowedForMode(action, statsMode)}
             onJumpBall={openJumpBall}
+            onOpenPreGame={openPreGame}
             onOpenSubstitution={openSubstitution}
             onPeriodChange={setPeriod}
             onPeriodSettingsChange={updatePeriodSettings}
@@ -1402,6 +1489,17 @@ function App() {
           teams={{ away: match.away, home: match.home }}
           onClose={() => setJumpBallOpen(false)}
           onChoose={recordJumpBall}
+        />
+      )}
+
+      {preGameOpen && (
+        <PreGameDialog
+          match={match}
+          onChangeOfficial={setOfficial}
+          onClose={closePreGame}
+          onSave={savePreGame}
+          onTogglePresent={togglePresent}
+          onToggleStarter={toggleStarter}
         />
       )}
     </main>
@@ -1769,6 +1867,9 @@ function ScoreHeader({
   away,
   awayScore,
   clock,
+  equalizationApplied,
+  equalizationPoints,
+  equalizationTeam,
   foulBallTeam,
   home,
   homeScore,
@@ -1791,6 +1892,9 @@ function ScoreHeader({
   away: Team;
   awayScore: number;
   clock: string;
+  equalizationApplied?: boolean;
+  equalizationPoints?: number;
+  equalizationTeam?: TeamId;
   foulBallTeam: TeamId;
   home: Team;
   homeScore: number;
@@ -1887,6 +1991,14 @@ function ScoreHeader({
         <div className="rounded-full bg-amber-400/10 px-3 py-0.5 text-[11px] font-black uppercase tracking-wide text-amber-300">
           {periodLabel}
         </div>
+        {equalizationApplied && equalizationPoints ? (
+          <div
+            className="rounded-full border border-amber-500/50 bg-amber-500/10 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wide text-amber-300"
+            title="Equalization points awarded for uneven attendance"
+          >
+            EQ +{equalizationPoints} {(equalizationTeam ? (equalizationTeam === "away" ? away : home).label : "")}
+          </div>
+        ) : null}
         <div className="flex max-w-full items-center gap-1.5 text-[10px] font-black uppercase tracking-wide text-neutral-500 xl:hidden">
           <Activity size={12} />
           <span className="truncate">{status}</span>
@@ -2679,6 +2791,251 @@ function JumpBallDialog({
   );
 }
 
+function PreGameDialog({
+  match,
+  onChangeOfficial,
+  onClose,
+  onSave,
+  onTogglePresent,
+  onToggleStarter,
+}: {
+  match: LiveMatch;
+  onChangeOfficial: (field: "referee" | "refereeAssistant" | "scorekeeper", value: string) => void;
+  onClose: () => void;
+  onSave: () => void;
+  onTogglePresent: (team: TeamId, player: Player) => void;
+  onToggleStarter: (team: TeamId, player: Player) => void;
+}) {
+  const awayPresent = match.away.presentCount;
+  const homePresent = match.home.presentCount;
+  const diff = Math.abs(awayPresent - homePresent);
+  const shortTeam = diff === 0 ? undefined : awayPresent < homePresent ? match.away : match.home;
+  const eqPoints = diff * 2;
+
+  return (
+    <div
+      aria-modal="true"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
+      role="dialog"
+      onClick={onClose}
+    >
+      <div
+        className="flex max-h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-neutral-700 bg-neutral-900 shadow-2xl shadow-black/60"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="flex items-center justify-between gap-3 border-b border-neutral-800 px-4 py-3">
+          <div className="min-w-0">
+            <div className="text-[10px] font-black uppercase tracking-widest text-amber-400">Pre-Game Setup</div>
+            <h2 className="truncate text-lg font-black text-neutral-50">{match.matchName}</h2>
+          </div>
+          <button
+            aria-label="Close pre-game"
+            className="flex size-9 items-center justify-center rounded-lg border border-neutral-800 bg-neutral-950 text-neutral-400 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500"
+            type="button"
+            onClick={onClose}
+          >
+            <CircleX size={18} />
+          </button>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto scrollbar-slim">
+          <div className="grid gap-2 border-b border-neutral-800 px-4 py-3 sm:grid-cols-3">
+            <OfficialField
+              label="Referee"
+              value={match.referee ?? ""}
+              onChange={(value) => onChangeOfficial("referee", value)}
+            />
+            <OfficialField
+              label="Assistant Referee"
+              value={match.refereeAssistant ?? ""}
+              onChange={(value) => onChangeOfficial("refereeAssistant", value)}
+            />
+            <OfficialField
+              label="Scorekeeper"
+              value={match.scorekeeper ?? ""}
+              onChange={(value) => onChangeOfficial("scorekeeper", value)}
+            />
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-neutral-800 bg-neutral-950/60 px-4 py-2.5">
+            <div className="text-[11px] font-black uppercase tracking-wide text-neutral-500 tabular-nums">
+              Attendance · {match.away.label} {awayPresent} vs {match.home.label} {homePresent}
+            </div>
+            <div className="text-xs font-bold">
+              {shortTeam ? (
+                <span className="rounded-full border border-amber-500/50 bg-amber-500/10 px-2.5 py-1 text-amber-300">
+                  {shortTeam.name} +{eqPoints} at Q3 · equiparación
+                </span>
+              ) : (
+                <span className="text-neutral-500">Even rosters — no equalization</span>
+              )}
+            </div>
+          </div>
+
+          <div className="grid gap-px bg-neutral-800 sm:grid-cols-2">
+            <PreGameTeamColumn
+              accent="red"
+              side="away"
+              team={match.away}
+              onTogglePresent={onTogglePresent}
+              onToggleStarter={onToggleStarter}
+            />
+            <PreGameTeamColumn
+              accent="blue"
+              side="home"
+              team={match.home}
+              onTogglePresent={onTogglePresent}
+              onToggleStarter={onToggleStarter}
+            />
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between gap-3 border-t border-neutral-800 px-4 py-3">
+          <div className="min-w-0 truncate text-xs font-semibold text-neutral-400 tabular-nums">
+            {match.away.players.length}/5 · {match.home.players.length}/5 starters set
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            <button
+              className="h-10 rounded-lg border border-neutral-800 bg-neutral-950 px-4 text-xs font-black uppercase tracking-wide text-neutral-300 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500"
+              type="button"
+              onClick={onClose}
+            >
+              Cancel
+            </button>
+            <button
+              className="flex h-10 items-center gap-2 rounded-lg border border-amber-500/40 bg-amber-500/15 px-4 text-xs font-black uppercase tracking-wide text-amber-200 transition-colors hover:bg-amber-500/25 focus:outline-none focus:ring-2 focus:ring-amber-500/50"
+              type="button"
+              onClick={onSave}
+            >
+              <ClipboardList size={16} />
+              Save Roster
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function OfficialField({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label className="block">
+      <span className="mb-1 block text-[10px] font-black uppercase tracking-wide text-neutral-500">{label}</span>
+      <input
+        className="h-10 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 text-sm font-semibold text-neutral-100 outline-none placeholder:text-neutral-600 focus:ring-2 focus:ring-neutral-500"
+        placeholder={label}
+        type="text"
+        value={value}
+        onChange={(event) => onChange(event.currentTarget.value)}
+      />
+    </label>
+  );
+}
+
+function PreGameTeamColumn({
+  accent,
+  side,
+  team,
+  onTogglePresent,
+  onToggleStarter,
+}: {
+  accent: "red" | "blue";
+  side: TeamId;
+  team: Team;
+  onTogglePresent: (team: TeamId, player: Player) => void;
+  onToggleStarter: (team: TeamId, player: Player) => void;
+}) {
+  const roster = [...team.players, ...team.bench].sort(
+    (a, b) => (Number(a.number) || 0) - (Number(b.number) || 0),
+  );
+  const starterKeys = new Set(team.players.map(getPlayerKey));
+  const starterFull = team.players.length >= 5;
+  const accentText = accent === "red" ? "text-red-400" : "text-blue-400";
+
+  return (
+    <div className="bg-neutral-900">
+      <div className="flex items-center justify-between gap-2 px-4 py-2">
+        <span className={cn("min-w-0 truncate text-[11px] font-black uppercase tracking-wide", accentText)}>
+          {team.label} · {team.name}
+        </span>
+        <span className="shrink-0 text-[11px] font-black uppercase tracking-wide text-neutral-500 tabular-nums">
+          {team.players.length}/5 · {team.presentCount} present
+        </span>
+      </div>
+      <div className="max-h-[46vh] overflow-y-auto scrollbar-slim px-2 pb-2">
+        {roster.length === 0 ? (
+          <div className="px-2 py-6 text-center text-xs font-semibold text-neutral-500">
+            No roster loaded for this team.
+          </div>
+        ) : (
+          roster.map((player) => {
+            const key = getPlayerKey(player);
+            const isStarter = starterKeys.has(key);
+            const present = player.present ?? true;
+            return (
+              <div
+                className={cn(
+                  "mb-1 grid grid-cols-[40px_minmax(0,1fr)_auto] items-center gap-2 rounded-lg border border-neutral-800 bg-neutral-950 px-2 py-2",
+                  !present && "opacity-50",
+                )}
+                key={key}
+              >
+                <span className="font-mono text-lg font-black tabular-nums text-neutral-100">{player.number}</span>
+                <span className="min-w-0">
+                  <span className="block truncate text-sm font-bold text-neutral-100">{player.name}</span>
+                  <span className="block text-[10px] font-black uppercase tracking-wide text-neutral-500">
+                    {present ? "Present" : "Absent"}
+                    {isStarter ? " · Starter" : ""}
+                  </span>
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <button
+                    aria-label={present ? "Mark absent" : "Mark present"}
+                    className={cn(
+                      "flex h-8 items-center gap-1 rounded-md border px-2 text-[10px] font-black uppercase tracking-wide transition-colors focus:outline-none focus:ring-2",
+                      present
+                        ? "border-lime-500/40 bg-lime-500/10 text-lime-300 hover:bg-lime-500/20 focus:ring-lime-500/50"
+                        : "border-neutral-700 bg-neutral-900 text-neutral-500 hover:bg-neutral-800 focus:ring-neutral-500",
+                    )}
+                    type="button"
+                    onClick={() => onTogglePresent(side, player)}
+                  >
+                    <Check size={13} />
+                    {present ? "Here" : "Out"}
+                  </button>
+                  <button
+                    aria-label={isStarter ? "Remove starter" : "Add starter"}
+                    className={cn(
+                      "flex size-8 items-center justify-center rounded-md border transition-colors focus:outline-none focus:ring-2",
+                      isStarter
+                        ? "border-amber-500/50 bg-amber-500/15 text-amber-300 focus:ring-amber-500/50"
+                        : "border-neutral-700 bg-neutral-900 text-neutral-500 hover:bg-neutral-800 focus:ring-neutral-500",
+                      !isStarter && starterFull && "cursor-not-allowed opacity-40",
+                    )}
+                    disabled={!isStarter && starterFull}
+                    type="button"
+                    onClick={() => onToggleStarter(side, player)}
+                  >
+                    <Star className={isStarter ? "fill-amber-300" : ""} size={15} />
+                  </button>
+                </span>
+              </div>
+            );
+          })
+        )}
+      </div>
+    </div>
+  );
+}
+
 function BottomPanel({
   ballHandlerName,
   events,
@@ -2845,6 +3202,7 @@ function ActionPanel({
   onFreeThrow,
   isActionAllowed,
   onJumpBall,
+  onOpenPreGame,
   onOpenSubstitution,
   onPeriodChange,
   onPeriodSettingsChange,
@@ -2883,6 +3241,7 @@ function ActionPanel({
   onFreeThrow: (made: boolean) => void;
   isActionAllowed: (action: ActionKey) => boolean;
   onJumpBall: () => void;
+  onOpenPreGame: () => void;
   onOpenSubstitution: () => void;
   onPeriodChange: (period: LiveMatch["period"]) => void;
   onPeriodSettingsChange: (settings: Partial<PeriodSettings>) => void;
@@ -2897,7 +3256,12 @@ function ActionPanel({
 }) {
   const visibleActions =
     mode === "youth"
-      ? statActions.filter((action) => action.key === "personal foul" || action.key === "tech foul")
+      ? statActions.filter(
+          (action) =>
+            action.key === "personal foul" ||
+            action.key === "tech foul" ||
+            action.key === "warning",
+        )
       : statActions;
 
   return (
@@ -2910,6 +3274,15 @@ function ActionPanel({
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
+          <button
+            aria-label="Open pre-game roster, attendance and officials"
+            className="flex size-10 items-center justify-center rounded-lg border border-amber-500/40 bg-amber-500/10 text-amber-300 transition-colors hover:bg-amber-500/20 hover:text-amber-200 focus:outline-none focus:ring-2 focus:ring-amber-500/50 xl:size-8 xl:rounded-md"
+            title="Pre-game: attendance, starters, referee/scorekeeper, equalization"
+            type="button"
+            onClick={onOpenPreGame}
+          >
+            <ClipboardList size={17} />
+          </button>
           <button
             aria-label="Reset local match controls"
             className="flex size-10 items-center justify-center rounded-lg border border-neutral-800 bg-neutral-900 text-neutral-400 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500 xl:size-8 xl:rounded-md"
@@ -3712,6 +4085,56 @@ function withPlayerStatId(match: LiveMatch, team: TeamId, playerKey: string, sta
   };
 }
 
+function computeEqualization(match: LiveMatch): { points: number; team: TeamId } | undefined {
+  const awayPresent = match.away.presentCount;
+  const homePresent = match.home.presentCount;
+  const diff = Math.abs(awayPresent - homePresent);
+  if (diff === 0) {
+    return undefined;
+  }
+
+  // The short-handed team (fewer present players) receives 2 points per missing player.
+  return { points: diff * 2, team: awayPresent < homePresent ? "away" : "home" };
+}
+
+function applyEqualization(
+  match: LiveMatch,
+  equalization: { points: number; team: TeamId },
+): LiveMatch {
+  const event = buildEqualizationEvent(
+    equalization.team,
+    equalization.points,
+    match.period,
+    match.clock,
+    match[equalization.team].name,
+  );
+
+  return {
+    ...match,
+    awayScore: match.awayScore + (equalization.team === "away" ? equalization.points : 0),
+    homeScore: match.homeScore + (equalization.team === "home" ? equalization.points : 0),
+    equalizationApplied: true,
+    equalizationPoints: equalization.points,
+    equalizationTeam: equalization.team,
+    events: [event, ...match.events],
+  };
+}
+
+function removeEqualization(match: LiveMatch): LiveMatch {
+  const points = match.equalizationPoints ?? 0;
+  const team = match.equalizationTeam;
+
+  return {
+    ...match,
+    awayScore: match.awayScore - (team === "away" ? points : 0),
+    homeScore: match.homeScore - (team === "home" ? points : 0),
+    equalizationApplied: false,
+    equalizationPoints: 0,
+    equalizationTeam: undefined,
+    events: match.events.filter((event) => !event.equalization),
+  };
+}
+
 function updateMatchAfterAction(
   match: LiveMatch,
   selectedTeam: TeamId,
@@ -3945,6 +4368,7 @@ function isActionAllowedForMode(action: ActionKey, mode: StatsMode) {
       action === "missed 3pt" ||
       action === "personal foul" ||
       action === "tech foul" ||
+      action === "warning" ||
       action === "substitution"
     );
   }

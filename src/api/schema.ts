@@ -1,5 +1,6 @@
 export const MODELS = {
   game: "x_game",
+  gameAttendance: "x_game_attendance",
   gameEvent: "x_game_event",
   team: "x_team",
   tournament: "x_tournament",
@@ -29,6 +30,15 @@ export const GAME = {
   status: "x_studio_status",
   websiteDescription: "x_studio_website_description",
   week: "x_studio_week",
+  refereeName: "x_studio_referee",
+  refereeAssistant: "x_studio_referee_2",
+  scorekeeper: "x_studio_scorekeeper",
+  awayPresent: "x_studio_away_present",
+  homePresent: "x_studio_home_present",
+  equalizationPoints: "x_studio_equalization_points",
+  equalizationTeam: "x_studio_equalization_team",
+  equalizationApplied: "x_studio_equalization_applied",
+  attendanceIds: "x_studio_attendance_ids",
 } as const;
 
 export const TEAM = {
@@ -114,6 +124,18 @@ export const GAME_EVENT = {
   shotY: "x_studio_shot_y",
   shotZone: "x_studio_shot_zone",
   team: "x_studio_team",
+  issuedByRef: "x_studio_issued_by_ref",
+} as const;
+
+export const ATTENDANCE = {
+  active: "x_active",
+  name: "x_name",
+  game: "x_studio_game",
+  player: "x_studio_player",
+  team: "x_studio_team",
+  present: "x_studio_present",
+  starter: "x_studio_starter",
+  jersey: "x_studio_jersey",
 } as const;
 
 export const GAME_FIELDS = [
@@ -140,6 +162,14 @@ export const GAME_OPTIONAL_FIELDS = [
   GAME.period,
   GAME.possessionTeam,
   GAME.shotClockSeconds,
+  GAME.refereeName,
+  GAME.refereeAssistant,
+  GAME.scorekeeper,
+  GAME.awayPresent,
+  GAME.homePresent,
+  GAME.equalizationPoints,
+  GAME.equalizationTeam,
+  GAME.equalizationApplied,
 ] as const;
 
 export const TEAM_FIELDS = [
@@ -218,4 +248,18 @@ export const GAME_EVENT_FIELDS = [
   GAME_EVENT.shotY,
   GAME_EVENT.shotZone,
   GAME_EVENT.team,
+  GAME_EVENT.issuedByRef,
+] as const;
+
+export const ATTENDANCE_FIELDS = [
+  "id",
+  "display_name",
+  ATTENDANCE.active,
+  ATTENDANCE.name,
+  ATTENDANCE.game,
+  ATTENDANCE.player,
+  ATTENDANCE.team,
+  ATTENDANCE.present,
+  ATTENDANCE.starter,
+  ATTENDANCE.jersey,
 ] as const;

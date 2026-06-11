@@ -8,6 +8,7 @@
   },
   "scripts": {
     "odoo:add-scoring-fields": "node scripts/add-scoring-fields.mjs",
+    "odoo:add-ref-attendance-fields": "node scripts/add-ref-attendance-fields.mjs",
     "odoo:fix-access-rights": "node scripts/fix-access-rights.mjs",
     "dev": "vite --host 0.0.0.0",
     "build": "tsc -b && vite build",
