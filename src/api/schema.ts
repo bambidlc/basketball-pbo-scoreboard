@@ -1,4 +1,5 @@
 export const MODELS = {
+  club: "x_club",
   game: "x_game",
   gameAttendance: "x_game_attendance",
   gameEvent: "x_game_event",
@@ -52,6 +53,7 @@ export const TEAM = {
   assistantCoach: "x_studio_assitant_coach",
   awayGames: "x_studio_away_games",
   category: "x_studio_categoria",
+  club: "x_studio_club_id",
   coachCertificate: "x_studio_certificado_coach",
   coach: "x_studio_coach",
   contact: "x_studio_contact",
@@ -63,6 +65,15 @@ export const TEAM = {
   tournament: "x_studio_tournament",
   winPct: "x_win_pct",
   wins: "x_wins",
+} as const;
+
+// Team colors are defined on the Club (x_club), shared by every team in that club,
+// and reached from a team via TEAM.club. Stored as hex char fields.
+export const CLUB = {
+  name: "x_name",
+  primaryColor: "x_studio_primary_color", // "Color de Camisa" (shirt) — main identity color
+  secondaryColor: "x_studio_secondary_color", // "Color de Letra" (text on shirt)
+  accentColor: "x_studio_accent_color", // "Color de Pantalon" (pants)
 } as const;
 
 export const PLAYER = {
@@ -180,6 +191,7 @@ export const TEAM_FIELDS = [
   "id",
   "display_name",
   TEAM.name,
+  TEAM.club,
   TEAM.gamesPlayed,
   TEAM.losses,
   TEAM.category,
@@ -188,6 +200,14 @@ export const TEAM_FIELDS = [
   TEAM.sequence,
   TEAM.winPct,
   TEAM.wins,
+] as const;
+
+export const CLUB_FIELDS = [
+  "id",
+  "display_name",
+  CLUB.primaryColor,
+  CLUB.secondaryColor,
+  CLUB.accentColor,
 ] as const;
 
 export const PLAYER_FIELDS = [

@@ -1,6 +1,8 @@
 import {
   ATTENDANCE,
   ATTENDANCE_FIELDS,
+  CLUB,
+  CLUB_FIELDS,
   GAME,
   GAME_EVENT,
   GAME_EVENT_FIELDS,
@@ -81,8 +83,13 @@ export type Player = {
 };
 
 export type Team = {
+  accentColor?: string;
   bench: Player[];
   category?: string;
+  // Team identity colors sourced from the team's club (x_club). `color` is the shirt
+  // color used as the team accent; `textColor` is the club's letter color for text that
+  // sits on top of `color`. Both are undefined when the club has no color set.
+  color?: string;
   fouls: number;
   id?: number;
   label: "Away" | "Home";
@@ -90,12 +97,14 @@ export type Team = {
   players: Player[];
   presentCount: number;
   record?: string;
+  textColor?: string;
   timeouts: number;
 };
 
 export type GameEvent = {
   action?: ActionKey;
   equalization?: boolean;
+  foulBall?: boolean;
   icon: "made" | "missed" | "turnover" | "rebound";
   id: number;
   issuedByRef?: boolean;
@@ -203,6 +212,8 @@ export type SaveMatchCorrectionInput = {
 };
 
 type TeamSide = {
+  accentColor?: string;
+  color?: string;
   fallback: Team;
   fouls?: number;
   label: "Away" | "Home";
@@ -210,6 +221,7 @@ type TeamSide = {
   side: TeamId;
   team?: OdooRecord;
   teamId?: number;
+  textColor?: string;
   timeouts?: number;
 };
 
@@ -858,6 +870,7 @@ async function normalizeGameRecord(
   ]);
 
   const teamsById = new Map(teams.map((team) => [numberValue(team.id), team]));
+  const clubColorsByTeamId = await loadTeamClubColors(client, teams);
   const statsByPlayerId = new Map(
     stats
       .map((stat) => [relationId(stat[PLAYER_STAT.player]), stat] as const)
@@ -869,7 +882,12 @@ async function normalizeGameRecord(
       .filter(([playerId]) => Boolean(playerId)),
   );
 
+  const awayColors = awayTeamId ? clubColorsByTeamId.get(awayTeamId) : undefined;
+  const homeColors = homeTeamId ? clubColorsByTeamId.get(homeTeamId) : undefined;
+
   const away = normalizeTeam({
+    accentColor: awayColors?.accentColor,
+    color: awayColors?.color,
     fallback: fallbackMatch.away,
     fouls: optionalNumberValue(game[GAME.awayTeamFouls]),
     label: "Away",
@@ -877,10 +895,13 @@ async function normalizeGameRecord(
     side: "away",
     team: awayTeamId ? teamsById.get(awayTeamId) : undefined,
     teamId: awayTeamId,
+    textColor: awayColors?.textColor,
     timeouts: numberValue(game[GAME.awayTimeouts]),
   }, players, statsByPlayerId, attendanceByPlayerId);
 
   const home = normalizeTeam({
+    accentColor: homeColors?.accentColor,
+    color: homeColors?.color,
     fallback: fallbackMatch.home,
     fouls: optionalNumberValue(game[GAME.homeTeamFouls]),
     label: "Home",
@@ -888,6 +909,7 @@ async function normalizeGameRecord(
     side: "home",
     team: homeTeamId ? teamsById.get(homeTeamId) : undefined,
     teamId: homeTeamId,
+    textColor: homeColors?.textColor,
     timeouts: numberValue(game[GAME.homeTimeouts]),
   }, players, statsByPlayerId, attendanceByPlayerId);
 
@@ -1001,8 +1023,10 @@ function normalizeTeam(
   const losses = numberValue(side.team?.[TEAM.losses]);
 
   return {
+    accentColor: side.accentColor,
     bench,
     category: stringValue(side.team?.[TEAM.category]),
+    color: side.color,
     fouls: side.fouls ?? playerFouls,
     id: side.teamId,
     label: side.label,
@@ -1014,8 +1038,69 @@ function normalizeTeam(
     players: activePlayers,
     presentCount,
     record: wins || losses ? `${wins}-${losses}` : side.fallback.record,
+    textColor: side.textColor,
     timeouts: side.timeouts ?? side.fallback.timeouts,
   };
+}
+
+type TeamClubColors = {
+  accentColor?: string;
+  color?: string;
+  textColor?: string;
+};
+
+// Team colors live on the club (x_club), so resolve each team's club, read the club
+// color fields once, and map them back to the owning team id. Best-effort: any failure
+// (missing club link, model not present, read error) simply yields no colors.
+async function loadTeamClubColors(
+  client: OdooClient,
+  teams: OdooRecord[],
+): Promise<Map<number, TeamClubColors>> {
+  const byTeamId = new Map<number, TeamClubColors>();
+  const clubIdByTeamId = new Map<number, number>();
+
+  for (const team of teams) {
+    const teamId = numberValue(team.id);
+    const clubId = relationId(team[TEAM.club]);
+    if (teamId && clubId) {
+      clubIdByTeamId.set(teamId, clubId);
+    }
+  }
+
+  const clubIds = uniqueNumbers([...clubIdByTeamId.values()]);
+  if (clubIds.length === 0) {
+    return byTeamId;
+  }
+
+  try {
+    const clubs = await client.read<OdooRecord>(MODELS.club, clubIds, CLUB_FIELDS);
+    const colorsByClubId = new Map<number, TeamClubColors>();
+
+    for (const club of clubs) {
+      const clubId = numberValue(club.id);
+      if (!clubId) {
+        continue;
+      }
+
+      const color = normalizeHexColor(club[CLUB.primaryColor]);
+      const textColor = normalizeHexColor(club[CLUB.secondaryColor]);
+      const accentColor = normalizeHexColor(club[CLUB.accentColor]);
+      if (color || textColor || accentColor) {
+        colorsByClubId.set(clubId, { accentColor, color, textColor });
+      }
+    }
+
+    for (const [teamId, clubId] of clubIdByTeamId) {
+      const colors = colorsByClubId.get(clubId);
+      if (colors) {
+        byTeamId.set(teamId, colors);
+      }
+    }
+  } catch {
+    return byTeamId;
+  }
+
+  return byTeamId;
 }
 
 function normalizePlayer(
@@ -1295,7 +1380,7 @@ async function saveGameEvent(
       [GAME_EVENT.actionType]: input.action,
       [GAME_EVENT.clockSeconds]: clockToSeconds(input.match.clock),
       [GAME_EVENT.game]: input.match.gameId,
-      [GAME_EVENT.name]: `${input.match.clock} ${input.player.number} ${input.player.name} ${input.label}`,
+      [GAME_EVENT.name]: `${input.match.clock} #${input.player.number} ${input.label}`,
       [GAME_EVENT.note]: input.foulOnShot ? "Shooting foul/free throws included" : "",
       [GAME_EVENT.period]: input.match.period,
       [GAME_EVENT.player]: input.player.id ?? false,
@@ -1570,6 +1655,27 @@ function filterWritableValues(
 
 function uniqueStrings(values: readonly string[]) {
   return [...new Set(values)];
+}
+
+function uniqueNumbers(values: readonly number[]) {
+  return [...new Set(values)];
+}
+
+// Accepts a hex color from the club color fields and returns a normalized #rrggbb /
+// #rgb string, or undefined for anything that is not a usable hex value. A leading "#"
+// is optional in the stored data, so it is added when missing.
+function normalizeHexColor(value: unknown): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+
+  const withHash = trimmed.startsWith("#") ? trimmed : `#${trimmed}`;
+  return /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(withHash) ? withHash.toLowerCase() : undefined;
 }
 
 function uniquePlayers(players: Array<Player | undefined>) {

@@ -2,16 +2,20 @@ import {
   Activity,
   ArrowLeft,
   ArrowUpDown,
+  BarChart3,
   Blocks,
+  CalendarDays,
   Check,
   ChevronDown,
   ChevronRight,
   CircleX,
   Clock3,
   ClipboardList,
+  Crown,
   Gauge,
   Hand,
   Handshake,
+  MapPin,
   OctagonAlert,
   Minus,
   Pause,
@@ -32,7 +36,7 @@ import {
   WifiOff,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent, type ReactNode } from "react";
 import {
   buildEqualizationEvent,
   createLog,
@@ -221,14 +225,8 @@ function App() {
   const [selectedTeam, setSelectedTeam] = useState<TeamId>(() =>
     readStoredTeam(STORAGE_KEYS.selectedTeam, "home"),
   );
-  const [openingJumpWinner, setOpeningJumpWinner] = useState<TeamId>(() =>
-    readStoredTeam(STORAGE_KEYS.openingJumpWinner, "home"),
-  );
   const [possessionArrow, setPossessionArrow] = useState<TeamId>(() =>
-    readStoredTeam(
-      STORAGE_KEYS.possessionArrow,
-      oppositeTeam(readStoredTeam(STORAGE_KEYS.openingJumpWinner, "home")),
-    ),
+    readStoredTeam(STORAGE_KEYS.possessionArrow, "away"),
   );
   const [jumpBallOpen, setJumpBallOpen] = useState(false);
   const [selectedPlayers, setSelectedPlayers] = useState<PlayerSelection>(() =>
@@ -243,6 +241,7 @@ function App() {
   const [timeoutTeam, setTimeoutTeam] = useState<TeamId | undefined>(undefined);
   const [isClockRunning, setIsClockRunning] = useState(false);
   const [substitutionTeam, setSubstitutionTeam] = useState<TeamId | undefined>(undefined);
+  const [boxScoreOpen, setBoxScoreOpen] = useState(false);
   const [preGameOpen, setPreGameOpen] = useState(false);
   const [undoStack, setUndoStack] = useState<UndoItem[]>([]);
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>(
@@ -499,10 +498,6 @@ function App() {
   }, [selectedTeam]);
 
   useEffect(() => {
-    writeStoredText(STORAGE_KEYS.openingJumpWinner, openingJumpWinner);
-  }, [openingJumpWinner]);
-
-  useEffect(() => {
     writeStoredText(STORAGE_KEYS.possessionArrow, possessionArrow);
   }, [possessionArrow]);
 
@@ -541,10 +536,6 @@ function App() {
     () => resolveSelectedPlayer(currentRoster, selectedPlayers[selectedTeam]),
     [currentRoster, selectedPlayers, selectedTeam],
   );
-  const ballHandler = useMemo(() => {
-    const selectedKey = selectedPlayers[match.possession];
-    return selectedKey ? findPlayerByKey(match[match.possession], selectedKey) : undefined;
-  }, [match, selectedPlayers]);
   const foulBallTeam = possessionArrow;
   const summary = useMemo(
     () => [
@@ -874,23 +865,34 @@ function App() {
     syncFlowState(`${current[team].label} ball`, nextMatch);
   }
 
-  function togglePossession() {
-    setPossession(oppositeTeam(matchRef.current.possession));
+  // Foul-ball (alternating possession) arrow changes are logged to the event feed so the
+  // book has a record of every arrow swing, the same way subs and techs are recorded.
+  function buildFoulBallEvent(current: LiveMatch, team: TeamId, label: string): GameEvent {
+    return {
+      foulBall: true,
+      icon: "rebound",
+      id: Date.now(),
+      label,
+      period: current.period,
+      player: "—",
+      points: 0,
+      team,
+      time: current.clock,
+    };
   }
 
-  function toggleOpeningJumpWinner() {
-    const nextWinner = oppositeTeam(openingJumpWinner);
-    const nextArrow = oppositeTeam(nextWinner);
-    setOpeningJumpWinner(nextWinner);
-    // The opening tip sets the initial arrow (the team that lost the tip gets the
-    // next jump-ball possession). This is the baseline, not an in-quarter change.
-    setPossessionArrow(nextArrow);
-    arrowChangedThisPeriodRef.current = false;
-    appendLog(createLog(
-      "info",
-      "Opening jump set",
-      `${matchRef.current[nextWinner].label} won the opening jump. Arrow: ${matchRef.current[nextArrow].label}.`,
-    ));
+  function toggleFoulBall() {
+    const current = matchRef.current;
+    const nextTeam = oppositeTeam(possessionArrow);
+    setPossessionArrow(nextTeam);
+    // A manual change counts as this period's arrow change, so the quarter break won't flip it.
+    arrowChangedThisPeriodRef.current = true;
+    const label = `Foul ball arrow → ${current[nextTeam].name}`;
+    const event = buildFoulBallEvent(current, nextTeam, label);
+    const nextMatch = { ...current, events: [event, ...current.events] };
+    matchRef.current = nextMatch;
+    setMatch(nextMatch);
+    appendLog(createLog("info", "Foul ball", label));
   }
 
   function openJumpBall() {
@@ -905,11 +907,13 @@ function App() {
     arrowChangedThisPeriodRef.current = true;
     setJumpBallOpen(false);
     setPossession(took);
-    appendLog(createLog(
-      "info",
-      "Jump ball",
-      `${matchRef.current[took].label} took possession. Arrow: ${matchRef.current[nextArrow].label}.`,
-    ));
+    const current = matchRef.current;
+    const label = `Jump ball — foul ball arrow → ${current[nextArrow].name}`;
+    const event = buildFoulBallEvent(current, nextArrow, label);
+    const nextMatch = { ...current, events: [event, ...current.events] };
+    matchRef.current = nextMatch;
+    setMatch(nextMatch);
+    appendLog(createLog("info", "Jump ball", label));
   }
 
   function getStealTurnoverContext(stealingTeam: TeamId) {
@@ -1005,7 +1009,7 @@ function App() {
     setMatch(nextMatch);
     setUndoStack((current) => [undoItem, ...current].slice(0, UNDO_LIMIT));
     previousPossessionRef.current = null;
-    appendLog(createLog("info", "Action queued", `${committedDetail.label} - ${currentPlayer.name}`));
+    appendLog(createLog("info", "Action queued", `${committedDetail.label} - ${formatPlayer(currentPlayer)}`));
 
     void saveMatchAction(apiClient, {
       ...committedDetail,
@@ -1139,102 +1143,149 @@ function App() {
     setSubstitutionTeam(undefined);
   }
 
-  function commitSubstitution(team: TeamId, outPlayer: Player, inPlayer: Player) {
-    const outKey = getPlayerKey(outPlayer);
-    const inKey = getPlayerKey(inPlayer);
-    if (outKey === inKey) {
+  function openBoxScore() {
+    setBoxScoreOpen(true);
+  }
+
+  function closeBoxScore() {
+    setBoxScoreOpen(false);
+  }
+
+  // The coach picks the five who should be on the floor; we diff that against the players
+  // currently on court to derive who is coming IN and who is going OUT, then log every swap
+  // (one event each, so each stays individually undoable) and persist them.
+  function commitLineupChange(team: TeamId, nextKeys: string[]) {
+    const current = matchRef.current;
+    const side = current[team];
+    const roster = getRoster(side);
+    const playersByKey = new Map(roster.map((player) => [getPlayerKey(player), player]));
+    const rosterOrder = new Map(roster.map((player, index) => [getPlayerKey(player), index]));
+
+    const nextSet = new Set(nextKeys.filter((key) => playersByKey.has(key)));
+    const onCourtSet = new Set(side.players.map(getPlayerKey));
+
+    const outgoing = side.players.filter((player) => !nextSet.has(getPlayerKey(player)));
+    const incoming = roster.filter(
+      (player) => nextSet.has(getPlayerKey(player)) && !onCourtSet.has(getPlayerKey(player)),
+    );
+
+    // No net change, or a selection we cannot pair into clean swaps — just close the dialog.
+    if (outgoing.length === 0 || outgoing.length !== incoming.length) {
+      setSubstitutionTeam(undefined);
       return;
     }
 
-    const current = matchRef.current;
-    const label = `${formatPlayer(inPlayer)} in / ${formatPlayer(outPlayer)} out`;
-    const detail: ActionDetail = {
-      action: "substitution",
-      label,
-      points: 0,
-      subInKey: inKey,
-      subOutKey: outKey,
-      subTeam: team,
-    };
-    const event: GameEvent = {
+    // Keep the on-court list in a stable roster order rather than tap order.
+    const orderedKeys = [...nextSet].sort(
+      (a, b) => (rosterOrder.get(a) ?? 0) - (rosterOrder.get(b) ?? 0),
+    );
+
+    // Date.now() can repeat across a tight loop, so stamp each event from a single base id.
+    const baseId = Date.now();
+    const pairs = outgoing.map((outPlayer, index) => ({ outPlayer, inPlayer: incoming[index] }));
+    const events: GameEvent[] = pairs.map((pair, index) => ({
       action: "substitution",
       icon: getEventIcon("substitution", 0),
-      id: Date.now(),
-      label,
+      id: baseId + index,
+      label: `${formatPlayer(pair.inPlayer)} in / ${formatPlayer(pair.outPlayer)} out`,
       period: current.period,
-      player: formatPlayer(inPlayer),
-      playerId: inPlayer.id,
+      player: formatPlayer(pair.inPlayer),
+      playerId: pair.inPlayer.id,
       points: 0,
       team,
       time: current.clock,
-    };
-    const undoItem: UndoItem = {
-      detail,
-      event,
-      eventId: event.id,
+    }));
+    const undoItems: UndoItem[] = pairs.map((pair, index) => ({
+      detail: {
+        action: "substitution",
+        label: events[index].label,
+        points: 0,
+        subInKey: getPlayerKey(pair.inPlayer),
+        subOutKey: getPlayerKey(pair.outPlayer),
+        subTeam: team,
+      },
+      event: events[index],
+      eventId: events[index].id,
       period: current.period,
-      playerKey: inKey,
+      playerKey: getPlayerKey(pair.inPlayer),
       previousPossession: current.possession,
       previousShotClock: current.shotClock,
       selectedTeam: team,
-    };
-    const swapped = withSubstitution(current, team, outKey, inKey);
-    const nextMatch = { ...swapped, events: [event, ...swapped.events] };
+    }));
+
+    const lineup = withStarterKeys(current, team, orderedKeys);
+    const nextMatch = { ...lineup, events: [...events, ...lineup.events] };
 
     matchRef.current = nextMatch;
     setMatch(nextMatch);
-    setUndoStack((stack) => [undoItem, ...stack].slice(0, UNDO_LIMIT));
+    setUndoStack((stack) => [...undoItems, ...stack].slice(0, UNDO_LIMIT));
 
-    if (selectedPlayersRef.current[team] === outKey) {
-      const nextSelectedPlayers = { ...selectedPlayersRef.current, [team]: inKey };
+    // If the player chosen for stat entry just left the floor, follow the first sub in.
+    const selectedKey = selectedPlayersRef.current[team];
+    if (selectedKey && outgoing.some((player) => getPlayerKey(player) === selectedKey)) {
+      const nextSelectedPlayers = { ...selectedPlayersRef.current, [team]: getPlayerKey(incoming[0]) };
       selectedPlayersRef.current = nextSelectedPlayers;
       setSelectedPlayers(nextSelectedPlayers);
     }
 
     setSubstitutionTeam(undefined);
-    appendLog(createLog("info", "Substitution", `${nextMatch[team].name}: ${label}`));
+    const summary =
+      pairs.length === 1
+        ? events[0].label
+        : `IN ${incoming.map(formatPlayer).join(" ")} · OUT ${outgoing.map(formatPlayer).join(" ")}`;
+    appendLog(
+      createLog(
+        "info",
+        pairs.length === 1 ? "Substitution" : `Lineup change (${pairs.length})`,
+        `${nextMatch[team].name}: ${summary}`,
+      ),
+    );
 
-    void saveMatchAction(apiClient, {
-      action: "substitution",
-      label,
-      match: nextMatch,
-      nextAwayScore: nextMatch.awayScore,
-      nextHomeScore: nextMatch.homeScore,
-      player: inPlayer,
-      points: 0,
-      selectedTeam: team,
-    }).then((result) => {
-      if (result.eventId) {
-        setUndoStack((stack) =>
-          stack.map((item) =>
-            item.eventId === event.id ? { ...item, serverEventId: result.eventId } : item,
-          ),
-        );
-        setMatch((latest) => {
-          const withServerId = {
-            ...latest,
-            events: latest.events.map((savedEvent) =>
-              savedEvent.id === event.id
-                ? { ...savedEvent, serverEventId: result.eventId }
-                : savedEvent,
+    // Persist each swap as its own event/undo record, mirroring the single-sub path.
+    pairs.forEach((pair, index) => {
+      const event = events[index];
+      void saveMatchAction(apiClient, {
+        action: "substitution",
+        label: event.label,
+        match: nextMatch,
+        nextAwayScore: nextMatch.awayScore,
+        nextHomeScore: nextMatch.homeScore,
+        player: pair.inPlayer,
+        points: 0,
+        selectedTeam: team,
+      }).then((result) => {
+        if (result.eventId) {
+          setUndoStack((stack) =>
+            stack.map((item) =>
+              item.eventId === event.id ? { ...item, serverEventId: result.eventId } : item,
             ),
-          };
-          matchRef.current = withServerId;
-          return withServerId;
-        });
-      }
+          );
+          setMatch((latest) => {
+            const withServerId = {
+              ...latest,
+              events: latest.events.map((savedEvent) =>
+                savedEvent.id === event.id
+                  ? { ...savedEvent, serverEventId: result.eventId }
+                  : savedEvent,
+              ),
+            };
+            matchRef.current = withServerId;
+            return withServerId;
+          });
+        }
 
-      appendLog(result.log);
-      setConnectionStatus(result.log.level === "error" ? "error" : result.saved ? "connected" : "local");
+        appendLog(result.log);
+        setConnectionStatus(result.log.level === "error" ? "error" : result.saved ? "connected" : "local");
+      });
     });
   }
 
-  function handleSubstitute(outPlayer: Player, inPlayer: Player) {
+  function handleApplyLineup(nextKeys: string[]) {
     if (!substitutionTeam) {
       return;
     }
 
-    commitSubstitution(substitutionTeam, outPlayer, inPlayer);
+    commitLineupChange(substitutionTeam, nextKeys);
   }
 
   function endGame() {
@@ -1275,6 +1326,19 @@ function App() {
       setMatch(nextMatch);
       appendLog(createLog("info", "Equalization removed", event.label));
       syncFlowState("Equalization removed", nextMatch);
+      return;
+    }
+
+    // Foul-ball lines are local annotations: drop the line and swing the arrow back.
+    if (event?.foulBall) {
+      const nextMatch = {
+        ...matchRef.current,
+        events: matchRef.current.events.filter((candidate) => candidate.id !== eventId),
+      };
+      matchRef.current = nextMatch;
+      setMatch(nextMatch);
+      setPossessionArrow(oppositeTeam(event.team));
+      appendLog(createLog("info", "Foul ball undone", event.label));
       return;
     }
 
@@ -1373,9 +1437,12 @@ function App() {
   }
 
   return (
-    <main className="min-h-dvh bg-neutral-950 p-2 text-neutral-100 [font-family:Inter,ui-sans-serif,system-ui,sans-serif] sm:p-3 xl:h-dvh xl:overflow-hidden">
-      <section className="mx-auto max-w-[1640px] overflow-hidden rounded-xl border border-neutral-800 bg-neutral-800 shadow-2xl shadow-black/50 ring-1 ring-white/5 xl:h-full">
-        <div className="grid gap-px bg-neutral-800 md:grid-cols-2 xl:h-full xl:min-h-0 xl:grid-cols-[230px_minmax(0,1fr)_230px_320px] xl:grid-rows-[auto_minmax(0,1fr)_166px] 2xl:grid-cols-[260px_minmax(0,1fr)_260px_350px] 2xl:grid-rows-[auto_minmax(0,1fr)_182px]">
+    <main
+      className="min-h-dvh bg-neutral-950 p-2 text-neutral-100 [font-family:Inter,ui-sans-serif,system-ui,sans-serif] sm:p-3 lg:h-dvh lg:overflow-hidden"
+      style={teamColorVars(match.away, match.home)}
+    >
+      <section className="mx-auto max-w-[1640px] overflow-hidden rounded-xl border border-neutral-800 bg-neutral-800 shadow-2xl shadow-black/50 ring-1 ring-white/5 lg:h-full">
+        <div className="grid gap-px bg-neutral-800 md:grid-cols-2 lg:h-full lg:min-h-0 lg:grid-cols-[148px_minmax(0,1fr)_148px_280px] lg:grid-rows-[auto_minmax(0,1fr)_150px] xl:grid-cols-[170px_minmax(0,1fr)_170px_320px] xl:grid-rows-[auto_minmax(0,1fr)_166px] 2xl:grid-cols-[200px_minmax(0,1fr)_200px_350px] 2xl:grid-rows-[auto_minmax(0,1fr)_182px]">
           <ScoreHeader
             away={match.away}
             awayScore={match.awayScore}
@@ -1388,9 +1455,7 @@ function App() {
             foulBallTeam={foulBallTeam}
             matchName={match.matchName}
             matchOptions={matchOptions}
-            openingJumpWinner={openingJumpWinner}
             periodLabel={getPeriodLabel(match.period, periodSettings.periodCount)}
-            possession={match.possession}
             selectedGameId={selectedGameId}
             selectedTeam={selectedTeam}
             shotClock={match.shotClock}
@@ -1399,12 +1464,10 @@ function App() {
             onBackToDashboard={() => setScreenMode("dashboard")}
             onGameSelect={handleGameSelect}
             onSelectTeam={setSelectedTeam}
-            onToggleOpeningJumpWinner={toggleOpeningJumpWinner}
-            onTogglePossession={togglePossession}
+            onToggleFoulBall={toggleFoulBall}
           />
 
           <CourtPanel
-            canRecordShot={Boolean(currentPlayer)}
             courtSides={courtSides}
             currentPlayer={currentPlayer}
             events={match.events}
@@ -1412,6 +1475,7 @@ function App() {
             selectedTeam={selectedTeam}
             teams={{ away: match.away, home: match.home }}
             onCourtShot={recordCourtShot}
+            onSelectPlayer={selectPlayer}
             onSwitchCourtSides={switchCourtSides}
           />
 
@@ -1436,14 +1500,9 @@ function App() {
           />
 
           <BottomPanel
-            ballHandlerName={ballHandler ? formatPlayer(ballHandler) : "Unassigned"}
             events={match.events}
-            foulBallTeam={foulBallTeam}
-            possession={match.possession}
-            possessionTeam={match[match.possession].name}
-            score={`${match.awayScore}-${match.homeScore}`}
-            shotClock={match.shotClock}
             summary={summary}
+            teams={{ away: match.away, home: match.home }}
             onEditEvent={editEvent}
             onUndoEvent={undoEvent}
           />
@@ -1475,6 +1534,7 @@ function App() {
             onFreeThrow={recordFreeThrow}
             isActionAllowed={(action) => isActionAllowedForMode(action, statsMode)}
             onJumpBall={openJumpBall}
+            onOpenBoxScore={openBoxScore}
             onOpenPreGame={openPreGame}
             onOpenSubstitution={openSubstitution}
             onPeriodChange={setPeriod}
@@ -1493,9 +1553,21 @@ function App() {
 
       {substitutionTeam && (
         <SubstitutionDialog
+          key={substitutionTeam}
+          side={substitutionTeam}
           team={match[substitutionTeam]}
+          onApply={handleApplyLineup}
           onClose={closeSubstitution}
-          onSubstitute={handleSubstitute}
+        />
+      )}
+
+      {boxScoreOpen && (
+        <BoxScoreDialog
+          initialTeam={selectedTeam}
+          match={match}
+          mode={statsMode}
+          periodCount={periodSettings.periodCount}
+          onClose={closeBoxScore}
         />
       )}
 
@@ -1520,6 +1592,111 @@ function App() {
       )}
     </main>
   );
+}
+
+type GameLocationGroup = {
+  games: MatchOption[];
+  hasLocation: boolean;
+  key: string;
+  location: string;
+};
+
+type GameDateGroup = {
+  dateKey: string;
+  dateLabel: string;
+  hasDate: boolean;
+  locations: GameLocationGroup[];
+  total: number;
+};
+
+function gameDateKey(datetime?: string): string {
+  const trimmed = datetime?.trim() ?? "";
+  // Odoo datetimes arrive as "YYYY-MM-DD HH:MM:SS" — the leading 10 chars are the date.
+  const datePart = trimmed.slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(datePart) ? datePart : "";
+}
+
+function formatGameDateHeading(dateKey: string): string {
+  if (!dateKey) {
+    return "Date pending";
+  }
+  const date = new Date(`${dateKey}T00:00:00`);
+  if (Number.isNaN(date.getTime())) {
+    return dateKey;
+  }
+  return date.toLocaleDateString(undefined, {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+}
+
+function formatGameTime(datetime?: string): string {
+  const match = datetime?.trim().match(/\b(\d{2}):(\d{2})\b/);
+  return match ? `${match[1]}:${match[2]}` : "";
+}
+
+function groupGamesByDateAndLocation(options: MatchOption[]): GameDateGroup[] {
+  const byDate = new Map<string, MatchOption[]>();
+  for (const option of options) {
+    const key = gameDateKey(option.datetime);
+    const bucket = byDate.get(key);
+    if (bucket) {
+      bucket.push(option);
+    } else {
+      byDate.set(key, [option]);
+    }
+  }
+
+  const groups: GameDateGroup[] = [];
+  for (const [dateKey, games] of byDate) {
+    const byLocation = new Map<string, MatchOption[]>();
+    for (const game of games) {
+      const locationKey = (game.location ?? "").trim();
+      const bucket = byLocation.get(locationKey);
+      if (bucket) {
+        bucket.push(game);
+      } else {
+        byLocation.set(locationKey, [game]);
+      }
+    }
+
+    const locations: GameLocationGroup[] = [];
+    for (const [locationKey, locationGames] of byLocation) {
+      locations.push({
+        games: locationGames,
+        hasLocation: Boolean(locationKey),
+        key: locationKey || "__pending__",
+        location: locationKey || "Location pending",
+      });
+    }
+    // Named courts first (alphabetical), then any games without a location.
+    locations.sort((a, b) => {
+      if (a.hasLocation !== b.hasLocation) {
+        return a.hasLocation ? -1 : 1;
+      }
+      return a.location.localeCompare(b.location);
+    });
+
+    groups.push({
+      dateKey,
+      dateLabel: formatGameDateHeading(dateKey),
+      hasDate: Boolean(dateKey),
+      locations,
+      total: games.length,
+    });
+  }
+
+  // Most recent date first, with undated games last.
+  groups.sort((a, b) => {
+    if (a.hasDate !== b.hasDate) {
+      return a.hasDate ? -1 : 1;
+    }
+    return b.dateKey.localeCompare(a.dateKey);
+  });
+
+  return groups;
 }
 
 function GameDashboard({
@@ -1554,6 +1731,7 @@ function GameDashboard({
   onStatsModeChange: (mode: StatsMode) => void;
 }) {
   const selectedOption = matchOptions.find((option) => option.id === selectedGameId);
+  const dateGroups = useMemo(() => groupGamesByDateAndLocation(matchOptions), [matchOptions]);
   const statusText =
     connectionStatus === "connected"
       ? "Live"
@@ -1670,15 +1848,48 @@ function GameDashboard({
             )}
           </div>
 
-          <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {matchOptions.map((option) => (
-              <GameCard
-                key={option.id}
-                option={option}
-                selected={option.id === selectedGameId}
-                onActivate={onActivate}
-                onSelect={() => onGameSelect(option.id)}
-              />
+          <div className="mt-4 grid gap-6">
+            {dateGroups.map((group) => (
+              <div key={group.dateKey || "__pending__"} className="grid gap-3">
+                <div className="flex items-center gap-2 border-b border-neutral-800 pb-2">
+                  <CalendarDays className="text-amber-400" size={16} />
+                  <h3 className="text-sm font-black uppercase tracking-wide text-neutral-100">
+                    {group.dateLabel}
+                  </h3>
+                  <span className="ml-auto text-[11px] font-bold text-neutral-500 tabular-nums">
+                    {group.total} {group.total === 1 ? "game" : "games"}
+                  </span>
+                </div>
+                {group.locations.map((locationGroup) => (
+                  <div key={locationGroup.key} className="grid gap-2.5">
+                    <div className="flex items-center gap-1.5">
+                      <MapPin className="text-neutral-500" size={13} />
+                      <span
+                        className={cn(
+                          "text-[11px] font-black uppercase tracking-wide",
+                          locationGroup.hasLocation ? "text-neutral-300" : "text-neutral-600",
+                        )}
+                      >
+                        {locationGroup.location}
+                      </span>
+                      <span className="text-[11px] font-semibold text-neutral-600 tabular-nums">
+                        · {locationGroup.games.length}
+                      </span>
+                    </div>
+                    <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+                      {locationGroup.games.map((option) => (
+                        <GameCard
+                          key={option.id}
+                          option={option}
+                          selected={option.id === selectedGameId}
+                          onActivate={onActivate}
+                          onSelect={() => onGameSelect(option.id)}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
             ))}
           </div>
 
@@ -1759,9 +1970,13 @@ function GameCard({
           <GameTeamLine label="Away" name={option.awayName} score={option.awayScore} team="away" />
           <GameTeamLine label="Home" name={option.homeName} score={option.homeScore} team="home" />
         </div>
-        <div className="mt-3 grid gap-1 text-xs text-neutral-500">
-          <div className="truncate">{option.datetime || "Date pending"}</div>
-          <div className="truncate">{option.location || "Location pending"}</div>
+        <div className="mt-3 flex items-center gap-1.5 text-xs text-neutral-500">
+          <Clock3 size={12} />
+          <span className="truncate">
+            {formatGameTime(option.datetime)
+              ? `Tip-off ${formatGameTime(option.datetime)}`
+              : option.datetime || "Time pending"}
+          </span>
         </div>
       </button>
       <div className="mt-4 grid grid-cols-2 gap-2">
@@ -1797,7 +2012,7 @@ function GameTeamLine({
 }) {
   return (
     <div className="grid grid-cols-[44px_minmax(0,1fr)_36px] items-center gap-2 rounded-lg border border-neutral-800 bg-neutral-900 px-3 py-2">
-      <span className={cn("text-[10px] font-black uppercase tracking-wide", team === "away" ? "text-red-400" : "text-blue-400")}>
+      <span className="text-[10px] font-black uppercase tracking-wide" style={{ color: `var(--c-${team}-soft)` }}>
         {label}
       </span>
       <span className="truncate text-sm font-bold text-neutral-200">{name}</span>
@@ -1814,7 +2029,7 @@ function PeriodSettingsControls({
   onChange: (settings: Partial<PeriodSettings>) => void;
 }) {
   return (
-    <div className="rounded-xl border border-neutral-800 bg-neutral-950 p-3 xl:rounded-md xl:p-2">
+    <div className="rounded-xl border border-neutral-800 bg-neutral-950 p-3 lg:rounded-md lg:p-2">
       <div className="mb-2 flex items-center gap-2 text-[11px] font-black uppercase tracking-wide text-neutral-400">
         <Clock3 size={14} />
         Period Setup
@@ -1867,7 +2082,7 @@ function NumberField({
     <label className="block">
       <span className="mb-1 block text-[10px] font-black uppercase tracking-wide text-neutral-500">{label}</span>
       <input
-        className="h-11 w-full rounded-lg border border-neutral-800 bg-neutral-900 px-2 text-center text-base font-bold text-neutral-100 outline-none tabular-nums focus:ring-2 focus:ring-neutral-500 xl:h-8 xl:rounded-md xl:text-sm"
+        className="h-11 w-full rounded-lg border border-neutral-800 bg-neutral-900 px-2 text-center text-base font-bold text-neutral-100 outline-none tabular-nums focus:ring-2 focus:ring-neutral-500 lg:h-8 lg:rounded-md lg:text-sm"
         max={max}
         min={min}
         step={step}
@@ -1877,6 +2092,53 @@ function NumberField({
       />
     </label>
   );
+}
+
+// Default away/home identity colors. When a team has no club color these keep the app
+// looking exactly as before (red = away, blue = home).
+const AWAY_FALLBACK = { base: "#ef4444", soft: "#fca5a5" } as const;
+const HOME_FALLBACK = { base: "#3b82f6", soft: "#93c5fd" } as const;
+
+function parseHexColor(hex: string) {
+  const value = hex.replace("#", "");
+  const full = value.length === 3 ? value.split("").map((char) => char + char).join("") : value;
+  const int = Number.parseInt(full, 16);
+  return { r: (int >> 16) & 255, g: (int >> 8) & 255, b: int & 255 };
+}
+
+function lightenHex(hex: string, amount: number) {
+  const { r, g, b } = parseHexColor(hex);
+  const lift = (channel: number) => Math.round(channel + (255 - channel) * amount);
+  return `rgb(${lift(r)}, ${lift(g)}, ${lift(b)})`;
+}
+
+function hexToRgba(hex: string, alpha: number) {
+  const { r, g, b } = parseHexColor(hex);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+function teamPalette(color: string | undefined, fallback: { base: string; soft: string }) {
+  const base = color ?? fallback.base;
+  const soft = color ? lightenHex(color, 0.42) : fallback.soft;
+  return { base, soft, tint: hexToRgba(base, 0.1), ring: hexToRgba(base, 0.36) };
+}
+
+// Exposes each side's identity color as CSS variables so descendants (score header,
+// court labels, rosters, event feed) can reference var(--c-away) / var(--c-home) instead
+// of hard-coded red/blue. Falls back to the original palette when no club color is set.
+function teamColorVars(away: Team, home: Team): CSSProperties {
+  const a = teamPalette(away.color, AWAY_FALLBACK);
+  const h = teamPalette(home.color, HOME_FALLBACK);
+  return {
+    "--c-away": a.base,
+    "--c-away-soft": a.soft,
+    "--c-away-tint": a.tint,
+    "--c-away-ring": a.ring,
+    "--c-home": h.base,
+    "--c-home-soft": h.soft,
+    "--c-home-tint": h.tint,
+    "--c-home-ring": h.ring,
+  } as CSSProperties;
 }
 
 function ScoreHeader({
@@ -1891,9 +2153,7 @@ function ScoreHeader({
   homeScore,
   matchName,
   matchOptions,
-  openingJumpWinner,
   periodLabel,
-  possession,
   selectedGameId,
   selectedTeam,
   shotClock,
@@ -1902,8 +2162,7 @@ function ScoreHeader({
   onBackToDashboard,
   onGameSelect,
   onSelectTeam,
-  onToggleOpeningJumpWinner,
-  onTogglePossession,
+  onToggleFoulBall,
 }: {
   away: Team;
   awayScore: number;
@@ -1916,9 +2175,7 @@ function ScoreHeader({
   homeScore: number;
   matchName: string;
   matchOptions: MatchOption[];
-  openingJumpWinner: TeamId;
   periodLabel: string;
-  possession: TeamId;
   selectedGameId?: number;
   selectedTeam: TeamId;
   shotClock: number;
@@ -1927,11 +2184,10 @@ function ScoreHeader({
   onBackToDashboard: () => void;
   onGameSelect: (gameId: number | undefined) => void;
   onSelectTeam: (team: TeamId) => void;
-  onToggleOpeningJumpWinner: () => void;
-  onTogglePossession: () => void;
+  onToggleFoulBall: () => void;
 }) {
   return (
-    <header className="order-1 grid items-stretch bg-gradient-to-b from-neutral-900/70 to-neutral-950 md:col-span-2 md:grid-cols-[minmax(0,1fr)_minmax(224px,260px)_minmax(0,1fr)] xl:col-span-3 xl:col-start-1 xl:row-start-1 xl:items-center 2xl:grid-cols-[minmax(0,1fr)_290px_minmax(0,1fr)]">
+    <header className="order-1 grid items-stretch bg-gradient-to-b from-neutral-900/70 to-neutral-950 md:col-span-2 md:grid-cols-[minmax(0,1fr)_minmax(224px,260px)_minmax(0,1fr)] lg:col-span-3 lg:col-start-1 lg:row-start-1 lg:items-center 2xl:grid-cols-[minmax(0,1fr)_290px_minmax(0,1fr)]">
       <TeamHeaderBlock
         align="right"
         color="red"
@@ -1945,11 +2201,11 @@ function ScoreHeader({
         onClick={() => onSelectTeam("away")}
       />
 
-      <div className="flex flex-col items-center justify-center gap-2 border-y border-neutral-800 px-3 py-3 text-center md:border-x md:border-y-0 xl:gap-0.5 xl:py-1">
+      <div className="flex flex-col items-center justify-center gap-2 border-y border-neutral-800 px-3 py-3 text-center md:border-x md:border-y-0 lg:gap-0.5 lg:py-1">
         <div className="flex w-full items-center justify-between gap-2">
           <button
             aria-label="Back to dashboard"
-            className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-neutral-800 bg-neutral-900 text-neutral-300 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500 xl:size-7 xl:rounded-md"
+            className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-neutral-800 bg-neutral-900 text-neutral-300 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500 lg:size-7 lg:rounded-md"
             type="button"
             onClick={onBackToDashboard}
           >
@@ -1958,40 +2214,35 @@ function ScoreHeader({
           <div className="min-w-0 rounded-full border border-neutral-700 bg-neutral-900 px-3 py-1 text-[10px] font-black uppercase tracking-wide text-neutral-300">
             <span className="block truncate">{statsMode}</span>
           </div>
-          <div className="flex shrink-0 items-center gap-1.5 rounded-lg border border-neutral-700 bg-neutral-900 px-2.5 py-1 xl:rounded-md">
+          {/* The shot clock is not used in youth games; keep the slot (invisible) so the mode pill stays centered. */}
+          <div
+            aria-hidden={statsMode === "youth"}
+            className={cn(
+              "flex shrink-0 items-center gap-1.5 rounded-lg border border-neutral-700 bg-neutral-900 px-2.5 py-1 lg:rounded-md",
+              statsMode === "youth" && "invisible",
+            )}
+          >
             <span className="text-[9px] font-black uppercase tracking-wide text-neutral-500">SC</span>
             <span className="font-mono text-sm font-black tabular-nums text-neutral-100">{shotClock}</span>
           </div>
         </div>
-        {statsMode !== "youth" && (
-          <div className="grid w-full grid-cols-2 gap-2 xl:gap-1.5">
-            <button
-              aria-label="Switch live possession"
-              className="flex h-9 min-w-0 items-center justify-center gap-1.5 rounded-lg border border-neutral-800 bg-neutral-900 text-[11px] font-black uppercase tracking-wide text-neutral-300 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500 xl:h-7 xl:rounded-md"
-              title="Switch live possession"
-              type="button"
-              onClick={onTogglePossession}
-            >
-              <span>Poss</span>
-              <PossessionArrow possession={possession} />
-            </button>
-            <button
-              aria-label="Set opening jump winner"
-              className="flex h-9 min-w-0 items-center justify-center gap-1.5 rounded-lg border border-neutral-800 bg-neutral-900 text-[11px] font-black uppercase tracking-wide text-neutral-300 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500 xl:h-7 xl:rounded-md"
-              title={`Possession arrow (next jump-ball possession). Tap to set the opening jump winner; the arrow goes to the other team. Opening jump: ${openingJumpWinner}.`}
-              type="button"
-              onClick={onToggleOpeningJumpWinner}
-            >
-              <span>Foul</span>
-              <PossessionArrow possession={foulBallTeam} />
-            </button>
-          </div>
-        )}
+        <button
+          aria-label="Foul ball arrow"
+          className="flex h-9 w-full min-w-0 items-center justify-center gap-2 rounded-lg border bg-neutral-900 px-2 text-[11px] font-black uppercase tracking-wide transition-colors hover:bg-neutral-800 focus:outline-none focus:ring-2 focus:ring-amber-500/50 lg:h-7 lg:rounded-md"
+          style={{ borderColor: `var(--c-${foulBallTeam}-ring)`, color: `var(--c-${foulBallTeam}-soft)` }}
+          title="Foul ball arrow (alternating possession). Tap to flip it — every flip is logged in the event feed."
+          type="button"
+          onClick={onToggleFoulBall}
+        >
+          <span className="text-neutral-300">Foul Ball</span>
+          <PossessionArrow possession={foulBallTeam} />
+          <span>{foulBallTeam === "away" ? "Away" : "Home"}</span>
+        </button>
         <label className="w-full">
           <span className="sr-only">Select match</span>
           <select
             aria-label="Select match"
-            className="h-9 w-full rounded-lg border border-neutral-700 bg-neutral-900 px-2 text-xs font-bold text-neutral-100 outline-none focus:ring-2 focus:ring-neutral-500 xl:h-8 xl:rounded-md"
+            className="h-9 w-full rounded-lg border border-neutral-700 bg-neutral-900 px-2 text-xs font-bold text-neutral-100 outline-none focus:ring-2 focus:ring-neutral-500 lg:h-8 lg:rounded-md"
             value={selectedGameId ?? ""}
             onChange={(event) => onGameSelect(readSelectNumber(event.currentTarget.value))}
           >
@@ -2003,7 +2254,7 @@ function ScoreHeader({
             ))}
           </select>
         </label>
-        <div className="mt-0.5 font-mono text-5xl font-black leading-none text-neutral-50 tabular-nums xl:text-4xl 2xl:text-5xl">
+        <div className="mt-0.5 font-mono text-5xl font-black leading-none text-neutral-50 tabular-nums lg:text-4xl 2xl:text-5xl">
           {clock}
         </div>
         <div className="rounded-full bg-amber-400/10 px-3 py-0.5 text-[11px] font-black uppercase tracking-wide text-amber-300">
@@ -2017,7 +2268,7 @@ function ScoreHeader({
             EQ +{equalizationPoints} {(equalizationTeam ? (equalizationTeam === "away" ? away : home).label : "")}
           </div>
         ) : null}
-        <div className="flex max-w-full items-center gap-1.5 text-[10px] font-black uppercase tracking-wide text-neutral-500 xl:hidden">
+        <div className="flex max-w-full items-center gap-1.5 text-[10px] font-black uppercase tracking-wide text-neutral-500 lg:hidden">
           <Activity size={12} />
           <span className="truncate">{status}</span>
         </div>
@@ -2062,46 +2313,56 @@ function TeamHeaderBlock({
   timeouts: number;
   onClick: () => void;
 }) {
-  const accent = color === "red" ? "text-red-400" : "text-blue-400";
-  const dotAccent = color === "red" ? "bg-red-500" : "bg-blue-400";
-  const barAccent = color === "red" ? "bg-red-500/70" : "bg-blue-500/70";
-  const selectedTint =
-    color === "red"
-      ? "bg-red-500/[0.07] ring-1 ring-inset ring-red-500/30"
-      : "bg-blue-500/[0.07] ring-1 ring-inset ring-blue-500/30";
+  const side: TeamId = color === "red" ? "away" : "home";
+  const cBase = `var(--c-${side})`;
+  const cSoft = `var(--c-${side}-soft)`;
+  const cTint = `var(--c-${side}-tint)`;
+  const cRing = `var(--c-${side}-ring)`;
 
   return (
     <button
       className={cn(
-        "relative flex items-center gap-3 px-3 py-3 text-left transition-colors hover:bg-neutral-900/70 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-neutral-500 sm:px-4 sm:gap-4 xl:py-1.5",
+        "relative flex items-center gap-3 px-3 py-3 text-left transition-colors hover:bg-neutral-900/70 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-neutral-500 sm:px-4 sm:gap-4 lg:py-1.5",
         align === "right" ? "justify-start sm:justify-end sm:text-right" : "justify-start",
-        selected && selectedTint,
       )}
+      style={selected ? { backgroundColor: cTint, boxShadow: `inset 0 0 0 1px ${cRing}` } : undefined}
       type="button"
       onClick={onClick}
     >
-      <span aria-hidden className={cn("pointer-events-none absolute inset-x-0 top-0 h-0.5", barAccent)} />
+      <span aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-0.5" style={{ backgroundColor: cBase }} />
       {align === "right" && (
         <div className="hidden sm:block">
           <ScoreNumber value={score} />
         </div>
       )}
       <div className={cn("min-w-0 max-w-52", align === "right" && "sm:flex sm:flex-col sm:items-end")}>
-        <div className={cn("text-[11px] font-black uppercase tracking-wide", accent)}>{label}</div>
-        <div className="mt-0.5 truncate text-xl font-bold text-neutral-50 sm:text-2xl xl:text-xl">{name}</div>
-        {record && <div className="mt-0.5 text-xs font-semibold text-neutral-500 tabular-nums xl:hidden">{record}</div>}
-        <div className={cn("mt-2 flex items-center gap-2 xl:mt-1", align === "right" && "sm:justify-end")}>
-          <span className="text-[10px] font-black uppercase tracking-wide text-neutral-500">Fouls</span>
-          <span className="font-mono text-lg font-black tabular-nums text-neutral-200">{fouls}</span>
-          <span className="ml-1 text-[10px] font-black uppercase tracking-wide text-neutral-500">TO</span>
-          <span className="font-mono text-lg font-black tabular-nums text-neutral-200">{timeouts}</span>
-          <span className={cn("flex gap-1", align === "right" && "sm:order-first")}>
-            {[0, 1, 2, 3, 4].map((dot) => (
-              <span
-                className={cn("size-2 rounded-full transition-colors", dot < fouls ? dotAccent : "bg-neutral-700")}
-                key={dot}
-              />
-            ))}
+        <div className="text-[11px] font-black uppercase tracking-wide" style={{ color: cSoft }}>{label}</div>
+        <div className="mt-0.5 truncate text-xl font-bold text-neutral-50 sm:text-2xl lg:text-xl">{name}</div>
+        {record && <div className="mt-0.5 text-xs font-semibold text-neutral-500 tabular-nums lg:hidden">{record}</div>}
+        {/* Fouls and time-outs are kept as two clearly-labelled, separated groups so the numbers
+            can't be mis-read as a single "3 to 2". The 7th team foul triggers the bonus (6 balls). */}
+        <div className={cn("mt-2 flex flex-col gap-1 lg:mt-1", align === "right" && "sm:items-end")}>
+          <span className="flex items-center gap-1.5">
+            <span className="text-[10px] font-black uppercase tracking-wide text-neutral-500">Fouls</span>
+            <span className="flex gap-0.5">
+              {[0, 1, 2, 3, 4, 5].map((dot) => (
+                <span
+                  className={cn("size-1.5 rounded-full transition-colors", dot < fouls ? "" : "bg-neutral-700")}
+                  style={dot < fouls ? { backgroundColor: cBase } : undefined}
+                  key={dot}
+                />
+              ))}
+            </span>
+            <span className="font-mono text-sm font-black tabular-nums text-neutral-100 lg:text-base">{fouls}</span>
+            {fouls >= 7 && (
+              <span className="rounded-full border border-amber-500/60 bg-amber-500/15 px-1.5 py-px text-[9px] font-black uppercase tracking-wide text-amber-300">
+                Bonus
+              </span>
+            )}
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="text-[10px] font-black uppercase tracking-wide text-neutral-500">Timeouts</span>
+            <span className="font-mono text-sm font-black tabular-nums text-neutral-100 lg:text-base">{timeouts}</span>
           </span>
         </div>
       </div>
@@ -2117,7 +2378,7 @@ function TeamHeaderBlock({
 
 function ScoreNumber({ value }: { value: number }) {
   return (
-    <span className="font-mono text-5xl font-black leading-none text-neutral-100 tabular-nums xl:text-5xl">
+    <span className="font-mono text-5xl font-black leading-none text-neutral-100 tabular-nums lg:text-5xl">
       {value}
     </span>
   );
@@ -2139,54 +2400,67 @@ function PossessionArrow({ possession }: { possession: TeamId }) {
 }
 
 function CourtPanel({
-  canRecordShot,
   courtSides,
   currentPlayer,
   events,
   foulOnShot,
   selectedTeam,
   onCourtShot,
+  onSelectPlayer,
   onSwitchCourtSides,
   teams,
 }: {
-  canRecordShot: boolean;
   courtSides: CourtSides;
   currentPlayer?: Player;
   events: GameEvent[];
   foulOnShot: boolean;
   selectedTeam: TeamId;
   onCourtShot: (location: ShotLocation, made: boolean) => void;
+  onSelectPlayer: (team: TeamId, player: Player) => void;
   onSwitchCourtSides: () => void;
   teams: Record<TeamId, Team>;
 }) {
   const [pendingShot, setPendingShot] = useState<ShotLocation | undefined>(undefined);
-  const currentPlayerKey = currentPlayer ? getPlayerKey(currentPlayer) : "";
+  const [pendingPlayerKey, setPendingPlayerKey] = useState<string | undefined>(undefined);
   const markers = events.filter((event) => event.shotLocation).slice(0, 8);
-  const selectedSide = getCourtSideForTeam(courtSides, selectedTeam);
-  const pendingSideTeam = pendingShot ? courtSides[pendingShot.side] : undefined;
-
-  useEffect(() => {
-    setPendingShot(undefined);
-  }, [currentPlayerKey, selectedTeam]);
+  const pendingTeamId = pendingShot ? courtSides[pendingShot.side] : undefined;
+  const pendingTeam = pendingTeamId ? teams[pendingTeamId] : undefined;
+  const pendingPlayer =
+    pendingTeam && pendingPlayerKey
+      ? getRoster(pendingTeam).find((player) => getPlayerKey(player) === pendingPlayerKey)
+      : undefined;
 
   function handlePointerDown(event: PointerEvent<SVGSVGElement>) {
-    if (!canRecordShot) {
-      return;
-    }
-
     const location = svgPointToShotLocation(event);
     if (location) {
+      // Tapping a side opens that side's team so a jersey number can be assigned to the shot.
       setPendingShot(location);
+      setPendingPlayerKey(undefined);
     }
   }
 
+  function pickShooter(player: Player) {
+    if (!pendingTeamId) {
+      return;
+    }
+
+    onSelectPlayer(pendingTeamId, player);
+    setPendingPlayerKey(getPlayerKey(player));
+  }
+
   function commitPendingShot(made: boolean) {
-    if (!pendingShot) {
+    if (!pendingShot || !pendingPlayer) {
       return;
     }
 
     onCourtShot(pendingShot, made);
     setPendingShot(undefined);
+    setPendingPlayerKey(undefined);
+  }
+
+  function cancelPendingShot() {
+    setPendingShot(undefined);
+    setPendingPlayerKey(undefined);
   }
 
   function renderCourtSideLabel(side: CourtSide) {
@@ -2198,8 +2472,10 @@ function CourtPanel({
     const textAnchor = isLeft ? "start" : "end";
     const teamName = teams[teamId].name.toUpperCase();
     const displayName = teamName.length > 15 ? `${teamName.slice(0, 12)}...` : teamName;
-    const accentColor = teamId === "away" ? "#ef4444" : "#3b82f6";
-    const textColor = teamId === "away" ? "#fca5a5" : "#93c5fd";
+    const fallback = teamId === "away" ? AWAY_FALLBACK : HOME_FALLBACK;
+    const teamColor = teams[teamId].color;
+    const accentColor = teamColor ?? fallback.base;
+    const textColor = teams[teamId].textColor ?? (teamColor ? lightenHex(teamColor, 0.42) : fallback.soft);
 
     return (
       <g pointerEvents="none">
@@ -2244,83 +2520,124 @@ function CourtPanel({
   }
 
   return (
-    <section className="relative order-2 self-stretch overflow-hidden bg-neutral-950 md:col-span-2 xl:col-span-1 xl:col-start-2 xl:row-start-2 xl:min-h-0">
+    <section className="relative order-2 self-stretch overflow-hidden bg-neutral-950 md:col-span-2 lg:col-span-1 lg:col-start-2 lg:row-start-2 lg:min-h-0">
       <div className="absolute left-3 top-3 z-10 rounded-xl border border-neutral-800 bg-neutral-950/85 px-3 py-2 shadow-lg shadow-black/40 backdrop-blur">
-        <div className="text-[10px] font-black uppercase tracking-wide text-neutral-500">Selected Shooter</div>
-        <div className="mt-0.5 max-w-[200px] truncate text-sm font-bold text-neutral-50">
-          {currentPlayer ? formatPlayer(currentPlayer) : "Choose player"}
+        <div className="text-[10px] font-black uppercase tracking-wide text-neutral-500">Selected</div>
+        <div className="mt-0.5 max-w-[200px] truncate font-mono text-sm font-bold tabular-nums text-neutral-50">
+          {currentPlayer ? `#${currentPlayer.number}` : "Tap a side"}
         </div>
       </div>
       <button
         aria-label="Switch court sides"
-        className="absolute right-3 top-3 z-10 flex h-10 items-center gap-2 rounded-xl border border-neutral-800 bg-neutral-950/85 px-3 text-xs font-black uppercase tracking-wide text-neutral-300 shadow-lg shadow-black/40 backdrop-blur transition-colors hover:bg-neutral-900 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500 disabled:cursor-not-allowed disabled:opacity-50 xl:h-9"
+        className="absolute right-3 top-3 z-10 flex h-10 items-center gap-2 rounded-xl border border-neutral-800 bg-neutral-950/85 px-3 text-xs font-black uppercase tracking-wide text-neutral-300 shadow-lg shadow-black/40 backdrop-blur transition-colors hover:bg-neutral-900 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500 disabled:cursor-not-allowed disabled:opacity-50 lg:h-9"
         type="button"
         onClick={onSwitchCourtSides}
       >
         <Shuffle size={16} />
         <span className="hidden sm:inline">Switch Courts</span>
       </button>
-      {pendingShot && (
-        <div className="absolute right-3 top-16 z-20 w-[260px] rounded-xl border border-neutral-700 bg-neutral-950/90 p-3 shadow-2xl shadow-black/50 backdrop-blur">
+      {pendingShot && pendingTeam && pendingTeamId && (
+        <div className="absolute right-3 top-16 z-20 w-[290px] rounded-xl border border-neutral-700 bg-neutral-950/95 p-3 shadow-2xl shadow-black/50 backdrop-blur">
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">
-              <div className="text-[10px] font-black uppercase tracking-wide text-neutral-500">Pending Shot</div>
+              <div className="text-[10px] font-black uppercase tracking-wide text-neutral-500">
+                {pendingPlayer ? "Pending Shot" : "Pick number"}
+              </div>
               <div className="mt-0.5 truncate text-base font-black text-neutral-50">
                 {pendingShot.value}PT {pendingShot.zone}
               </div>
             </div>
             <div
-              className={cn(
-                "rounded-full border px-2.5 py-1 text-[10px] font-black uppercase tracking-wide",
-                selectedTeam === "away"
-                  ? "border-red-500/60 bg-red-500/10 text-red-300"
-                  : "border-blue-500/60 bg-blue-500/10 text-blue-300",
-              )}
+              className="rounded-full border px-2.5 py-1 text-[10px] font-black uppercase tracking-wide"
+              style={{
+                borderColor: `var(--c-${pendingTeamId}-ring)`,
+                backgroundColor: `var(--c-${pendingTeamId}-tint)`,
+                color: `var(--c-${pendingTeamId}-soft)`,
+              }}
             >
-              {teams[selectedTeam].label}
+              {pendingTeam.name}
             </div>
           </div>
-          <div className="mt-3 grid grid-cols-2 gap-2">
-            <button
-              className="flex h-12 items-center justify-center gap-2 rounded-lg border border-lime-500/50 bg-lime-500/15 text-xs font-black uppercase text-lime-200 transition-colors hover:bg-lime-500/25 focus:outline-none focus:ring-2 focus:ring-lime-500/50 xl:h-10"
-              type="button"
-              onClick={() => commitPendingShot(true)}
-            >
-              <Target size={16} />
-              Made
-            </button>
-            <button
-              className="flex h-12 items-center justify-center gap-2 rounded-lg border border-red-500/50 bg-red-500/15 text-xs font-black uppercase text-red-200 transition-colors hover:bg-red-500/25 focus:outline-none focus:ring-2 focus:ring-red-500/50 xl:h-10"
-              type="button"
-              onClick={() => commitPendingShot(false)}
-            >
-              <CircleX size={16} />
-              Missed
-            </button>
-          </div>
-          <div className="mt-2.5 flex items-center justify-between gap-2 text-[10px] font-bold uppercase tracking-wide text-neutral-500">
-            <span className="truncate">Basket: {pendingSideTeam ? teams[pendingSideTeam].name : "--"}</span>
-            {foulOnShot && <span className="text-amber-400">+ Foul</span>}
-          </div>
-          <button
-            className="mt-2.5 h-9 w-full rounded-lg border border-neutral-800 bg-neutral-900 text-[11px] font-black uppercase tracking-wide text-neutral-400 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500 xl:h-7"
-            type="button"
-            onClick={() => setPendingShot(undefined)}
-          >
-            Cancel
-          </button>
+
+          {!pendingPlayer ? (
+            <div className="mt-3">
+              <CourtShooterGrid
+                accent={pendingTeamId}
+                emptyLabel="No players on court."
+                label="On court"
+                players={pendingTeam.players}
+                onPick={pickShooter}
+              />
+              {pendingTeam.bench.length > 0 && (
+                <CourtShooterGrid
+                  accent={pendingTeamId}
+                  className="mt-2"
+                  label="Bench"
+                  players={pendingTeam.bench}
+                  onPick={pickShooter}
+                />
+              )}
+              <button
+                className="mt-3 h-9 w-full rounded-lg border border-neutral-800 bg-neutral-900 text-[11px] font-black uppercase tracking-wide text-neutral-400 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500 lg:h-7"
+                type="button"
+                onClick={cancelPendingShot}
+              >
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <div className="mt-3">
+              <div className="flex items-center justify-between gap-2 rounded-lg border border-neutral-800 bg-neutral-900 px-3 py-2">
+                <span className="text-[10px] font-black uppercase tracking-wide text-neutral-500">Shooter</span>
+                <span className="font-mono text-xl font-black tabular-nums text-neutral-50">
+                  #{pendingPlayer.number}
+                </span>
+              </div>
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                <button
+                  className="flex h-12 items-center justify-center gap-2 rounded-lg border border-lime-500/50 bg-lime-500/15 text-xs font-black uppercase text-lime-200 transition-colors hover:bg-lime-500/25 focus:outline-none focus:ring-2 focus:ring-lime-500/50 lg:h-10"
+                  type="button"
+                  onClick={() => commitPendingShot(true)}
+                >
+                  <Target size={16} />
+                  Made
+                </button>
+                <button
+                  className="flex h-12 items-center justify-center gap-2 rounded-lg border border-red-500/50 bg-red-500/15 text-xs font-black uppercase text-red-200 transition-colors hover:bg-red-500/25 focus:outline-none focus:ring-2 focus:ring-red-500/50 lg:h-10"
+                  type="button"
+                  onClick={() => commitPendingShot(false)}
+                >
+                  <CircleX size={16} />
+                  Missed
+                </button>
+              </div>
+              <div className="mt-2.5 flex items-center justify-between gap-2 text-[10px] font-bold uppercase tracking-wide text-neutral-500">
+                <span className="truncate">Basket: {teams[pendingTeamId].name}</span>
+                {foulOnShot && <span className="text-amber-400">+ Foul</span>}
+              </div>
+              <div className="mt-2.5 grid grid-cols-2 gap-2">
+                <button
+                  className="h-9 rounded-lg border border-neutral-800 bg-neutral-900 text-[11px] font-black uppercase tracking-wide text-neutral-400 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500 lg:h-7"
+                  type="button"
+                  onClick={() => setPendingPlayerKey(undefined)}
+                >
+                  Change #
+                </button>
+                <button
+                  className="h-9 rounded-lg border border-neutral-800 bg-neutral-900 text-[11px] font-black uppercase tracking-wide text-neutral-400 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500 lg:h-7"
+                  type="button"
+                  onClick={cancelPendingShot}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
       <CourtSvg
-        aria-label={
-          canRecordShot
-            ? `Tap court to choose shot result for ${selectedTeam} shooting ${selectedSide}`
-            : "Choose a player before recording a court shot"
-        }
-        className={cn(
-          "block h-[320px] w-full touch-manipulation select-none md:h-[420px] lg:h-[460px] xl:h-full xl:min-h-0",
-          canRecordShot ? "cursor-crosshair" : "cursor-not-allowed opacity-75",
-        )}
+        aria-label="Tap a side of the court to assign a shot to that team's player"
+        className="block h-[320px] w-full cursor-crosshair touch-manipulation select-none md:h-[420px] lg:h-full lg:min-h-0"
         onPointerDown={handlePointerDown}
       >
         {renderCourtSideLabel("left")}
@@ -2381,6 +2698,53 @@ function CourtPanel({
   );
 }
 
+function CourtShooterGrid({
+  accent,
+  className,
+  emptyLabel,
+  label,
+  players,
+  onPick,
+}: {
+  accent: TeamId;
+  className?: string;
+  emptyLabel?: string;
+  label: string;
+  players: Player[];
+  onPick: (player: Player) => void;
+}) {
+  const accentStyle: CSSProperties = {
+    borderColor: `var(--c-${accent}-ring)`,
+    color: `var(--c-${accent}-soft)`,
+  };
+
+  return (
+    <div className={className}>
+      <div className="text-[10px] font-black uppercase tracking-wide text-neutral-500">{label}</div>
+      {players.length === 0 ? (
+        <div className="mt-1 rounded-lg border border-dashed border-neutral-800 px-2 py-2 text-center text-[11px] font-semibold text-neutral-500">
+          {emptyLabel ?? "None."}
+        </div>
+      ) : (
+        <div className="mt-1 grid grid-cols-5 gap-1.5">
+          {players.map((player) => (
+            <button
+              className="flex h-11 items-center justify-center rounded-lg border bg-neutral-900 font-mono text-lg font-black tabular-nums transition-colors hover:bg-white/5 focus:outline-none focus:ring-2 focus:ring-neutral-500 lg:h-9"
+              style={accentStyle}
+              key={getPlayerKey(player)}
+              title={`Assign to #${player.number}`}
+              type="button"
+              onClick={() => onPick(player)}
+            >
+              {player.number}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function RosterPanel({
   side,
   team,
@@ -2399,28 +2763,28 @@ function RosterPanel({
   onToggleStarter: (team: TeamId, player: Player) => void;
 }) {
   const isAway = side === "away";
-  const accent = isAway ? "bg-red-500" : "bg-blue-500";
-  const borderAccent = isAway ? "border-l-red-500" : "border-l-blue-500";
+  const cBase = `var(--c-${side})`;
+  const cSoft = `var(--c-${side}-soft)`;
   const starterCount = team.players.length;
   const [benchCollapsed, setBenchCollapsed] = useState(false);
 
   return (
     <aside
       className={cn(
-        "order-3 flex min-h-0 flex-col self-stretch overflow-hidden bg-neutral-950 xl:row-start-2",
-        isAway ? "xl:col-start-1" : "order-4 xl:col-start-3",
+        "order-3 flex min-h-0 flex-col self-stretch overflow-hidden bg-neutral-950 lg:row-start-2",
+        isAway ? "lg:col-start-1" : "order-4 lg:col-start-3",
       )}
     >
       <button
         className={cn(
-          "relative flex h-12 items-center gap-3 border-b border-neutral-800 px-3 pl-4 text-left transition-colors hover:bg-neutral-900/70 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-neutral-500 xl:h-10",
+          "relative flex h-12 items-center gap-3 border-b border-neutral-800 px-3 pl-4 text-left transition-colors hover:bg-neutral-900/70 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-neutral-500 lg:h-10",
           selectedTeam && "bg-neutral-900",
         )}
         type="button"
         onClick={onSelectTeam}
       >
-        <span aria-hidden className={cn("pointer-events-none absolute inset-y-0 left-0 w-1", isAway ? "bg-red-500/70" : "bg-blue-500/70")} />
-        <span className={cn("text-[11px] font-black uppercase tracking-wide", isAway ? "text-red-400" : "text-blue-400")}>{team.label}</span>
+        <span aria-hidden className="pointer-events-none absolute inset-y-0 left-0 w-1" style={{ backgroundColor: cBase }} />
+        <span className="text-[11px] font-black uppercase tracking-wide" style={{ color: cSoft }}>{team.label}</span>
         <span className="min-w-0 flex-1 truncate text-sm font-bold text-neutral-200">{team.name}</span>
         <span className="shrink-0 rounded-full border border-neutral-700 bg-neutral-900 px-2 py-0.5 font-mono text-[11px] font-black tabular-nums text-neutral-400">
           {starterCount}/5
@@ -2435,8 +2799,7 @@ function RosterPanel({
         {team.players.length > 0 ? (
           team.players.map((player) => (
             <PlayerRow
-              accent={accent}
-              borderAccent={borderAccent}
+              side={side}
               compact
               key={getPlayerKey(player)}
               player={player}
@@ -2470,8 +2833,7 @@ function RosterPanel({
           {team.bench.length > 0 ? (
             team.bench.map((player) => (
               <PlayerRow
-                accent={accent}
-                borderAccent={borderAccent}
+                side={side}
                 compact
                 key={getPlayerKey(player)}
                 player={player}
@@ -2496,8 +2858,7 @@ function PlayerRow({
   player,
   selected,
   compact = false,
-  accent,
-  borderAccent,
+  side,
   starterDisabled,
   onClick,
   onToggleStarter,
@@ -2505,58 +2866,49 @@ function PlayerRow({
   player: Player;
   selected: boolean;
   compact?: boolean;
-  accent: string;
-  borderAccent: string;
+  side: TeamId;
   starterDisabled: boolean;
   onClick: () => void;
   onToggleStarter: () => void;
 }) {
-  const isRed = borderAccent.includes("red");
+  const cBase = `var(--c-${side})`;
   return (
     <div
-      className={cn(
-        "grid w-full grid-cols-[minmax(0,1fr)_44px] items-stretch border-b border-neutral-800 bg-neutral-950 text-neutral-100 transition-colors xl:grid-cols-[minmax(0,1fr)_36px]",
-        player.active && cn("border-l-4", borderAccent),
-        selected &&
-          (isRed
-            ? "bg-red-500/[0.06] ring-1 ring-inset ring-red-500/40"
-            : "bg-blue-500/[0.06] ring-1 ring-inset ring-blue-500/40"),
-      )}
+      className="grid w-full grid-cols-[minmax(0,1fr)_44px] items-stretch border-b border-neutral-800 bg-neutral-950 text-neutral-100 transition-colors lg:grid-cols-[minmax(0,1fr)_36px]"
+      style={{
+        ...(player.active ? { borderLeftWidth: "4px", borderLeftColor: cBase } : null),
+        ...(selected ? { backgroundColor: `var(--c-${side}-tint)`, boxShadow: `inset 0 0 0 1px var(--c-${side}-ring)` } : null),
+      }}
     >
       <button
         className={cn(
-          "grid min-w-0 grid-cols-[52px_1fr_28px] items-center bg-transparent text-left transition-colors hover:bg-neutral-900/70 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-neutral-500",
-          compact ? "h-12 xl:h-10" : "h-16 xl:h-12",
+          "grid min-w-0 grid-cols-[44px_1fr_20px] items-center bg-transparent text-left transition-colors hover:bg-neutral-900/70 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-neutral-500",
+          compact ? "h-12 lg:h-10" : "h-16 lg:h-12",
         )}
+        title={player.name}
         type="button"
         onClick={onClick}
       >
-        <div className={cn("pl-3 font-mono text-2xl font-black tabular-nums", player.active ? "text-neutral-50" : "text-neutral-400")}>
+        <div className={cn("pl-2.5 font-mono text-2xl font-black tabular-nums lg:text-xl", player.active ? "text-neutral-50" : "text-neutral-400")}>
           {player.number}
         </div>
         <div className="min-w-0">
-          <div className="truncate text-sm font-bold text-neutral-100">{player.name}</div>
-          <div className="mt-0.5 flex items-center gap-1.5 text-[11px] font-black uppercase tracking-wide text-neutral-500 tabular-nums">
+          {/* Scoring view shows jersey numbers only — full names live in the pre-game/attendance dialog. */}
+          <div className="flex items-center gap-1 text-[11px] font-black uppercase tracking-wide text-neutral-500 tabular-nums">
             <span className="text-neutral-300">{player.points}</span>
             <span>PTS</span>
             <span className="text-neutral-700">·</span>
             <span className={cn(player.fouls >= 4 ? "text-amber-400" : "text-neutral-300")}>{player.fouls}</span>
             <span>F</span>
-            {player.position ? (
-              <>
-                <span className="text-neutral-700">·</span>
-                <span>{player.position}</span>
-              </>
-            ) : null}
           </div>
         </div>
         <div className="flex items-center justify-center">
           {selected ? (
-            <span className={cn("flex size-5 items-center justify-center rounded-full", isRed ? "bg-red-500" : "bg-blue-500")}>
+            <span className="flex size-5 items-center justify-center rounded-full" style={{ backgroundColor: cBase }}>
               <Check className="text-white" size={13} />
             </span>
           ) : (
-            <span className={cn("size-2.5 rounded-full", player.active ? accent : "bg-neutral-700")} />
+            <span className={cn("size-2.5 rounded-full", player.active ? "" : "bg-neutral-700")} style={player.active ? { backgroundColor: cBase } : undefined} />
           )}
         </div>
       </button>
@@ -2578,24 +2930,52 @@ function PlayerRow({
 }
 
 function SubstitutionDialog({
+  side,
   team,
+  onApply,
   onClose,
-  onSubstitute,
 }: {
+  side: TeamId;
   team: Team;
+  onApply: (nextKeys: string[]) => void;
   onClose: () => void;
-  onSubstitute: (outPlayer: Player, inPlayer: Player) => void;
 }) {
-  const [outKey, setOutKey] = useState<string | undefined>(undefined);
-  const [inKey, setInKey] = useState<string | undefined>(undefined);
-  const outPlayer = team.players.find((player) => getPlayerKey(player) === outKey);
-  const inPlayer = team.bench.find((player) => getPlayerKey(player) === inKey);
-  const canConfirm = Boolean(outPlayer && inPlayer);
+  const cBase = `var(--c-${side})`;
+  const cSoft = `var(--c-${side}-soft)`;
+  const roster = useMemo(() => getRoster(team), [team]);
+  const onCourtKeys = useMemo(() => team.players.map(getPlayerKey), [team]);
+  const onCourtSet = useMemo(() => new Set(onCourtKeys), [onCourtKeys]);
+  // Eligible = present players, plus anyone already on the floor (so they can still be taken
+  // out even if flagged absent). Jersey numbers only — names live in the attendance dialog.
+  const eligible = useMemo(
+    () => roster.filter((player) => player.present !== false || onCourtSet.has(getPlayerKey(player))),
+    [roster, onCourtSet],
+  );
+  const numberByKey = useMemo(
+    () => new Map(roster.map((player) => [getPlayerKey(player), player.number])),
+    [roster],
+  );
+  const targetCount = Math.min(5, eligible.length);
+  const [selectedKeys, setSelectedKeys] = useState<string[]>(() => onCourtKeys.slice(0, targetCount));
 
-  function confirm() {
-    if (outPlayer && inPlayer) {
-      onSubstitute(outPlayer, inPlayer);
-    }
+  const selectedSet = new Set(selectedKeys);
+  const atCapacity = selectedKeys.length >= targetCount;
+  const incoming = selectedKeys.filter((key) => !onCourtSet.has(key));
+  const outgoing = onCourtKeys.filter((key) => !selectedSet.has(key));
+  const changed = incoming.length > 0 || outgoing.length > 0;
+  const canApply = selectedKeys.length === targetCount && changed && incoming.length === outgoing.length;
+  const dirty = selectedKeys.length !== onCourtKeys.length || changed;
+
+  function toggle(key: string) {
+    setSelectedKeys((current) => {
+      if (current.includes(key)) {
+        return current.filter((value) => value !== key);
+      }
+      if (current.length >= targetCount) {
+        return current;
+      }
+      return [...current, key];
+    });
   }
 
   return (
@@ -2606,49 +2986,124 @@ function SubstitutionDialog({
       onClick={onClose}
     >
       <div
-        className="w-full max-w-2xl overflow-hidden rounded-2xl border border-neutral-700 bg-neutral-900 shadow-2xl shadow-black/60"
+        className="flex max-h-[92vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-neutral-700 bg-neutral-900 shadow-2xl shadow-black/60"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="flex items-center justify-between gap-3 border-b border-neutral-800 px-4 py-3">
-          <div className="min-w-0">
-            <div className="text-[10px] font-black uppercase tracking-widest text-amber-400">Substitution</div>
-            <h2 className="truncate text-lg font-black text-neutral-50">{team.name}</h2>
+          <div className="flex min-w-0 items-center gap-3">
+            <span aria-hidden className="h-9 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: cBase }} />
+            <div className="min-w-0">
+              <div className="text-[10px] font-black uppercase tracking-widest" style={{ color: cSoft }}>
+                Substitution · {team.label}
+              </div>
+              <h2 className="truncate text-lg font-black text-neutral-50">{team.name}</h2>
+            </div>
           </div>
-          <button
-            aria-label="Close substitution"
-            className="flex size-9 items-center justify-center rounded-lg border border-neutral-800 bg-neutral-950 text-neutral-400 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500"
-            type="button"
-            onClick={onClose}
-          >
-            <CircleX size={18} />
-          </button>
+          <div className="flex shrink-0 items-center gap-3">
+            <span
+              className={cn(
+                "rounded-full border px-2.5 py-1 font-mono text-sm font-black tabular-nums",
+                selectedKeys.length === targetCount
+                  ? "border-lime-500/50 bg-lime-500/10 text-lime-200"
+                  : "border-neutral-700 bg-neutral-950 text-neutral-300",
+              )}
+            >
+              {selectedKeys.length}/{targetCount}
+            </span>
+            <button
+              aria-label="Close substitution"
+              className="flex size-9 items-center justify-center rounded-lg border border-neutral-800 bg-neutral-950 text-neutral-400 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500"
+              type="button"
+              onClick={onClose}
+            >
+              <CircleX size={18} />
+            </button>
+          </div>
         </div>
 
-        <div className="grid gap-px bg-neutral-800 sm:grid-cols-2">
-          <SubstitutionColumn
-            accent="red"
-            emptyLabel="No players on court."
-            label="Out (on court)"
-            players={team.players}
-            selectedKey={outKey}
-            onSelect={setOutKey}
-          />
-          <SubstitutionColumn
+        <div className="border-b border-neutral-800 px-4 py-2 text-xs font-semibold text-neutral-400">
+          Tap to pick the five on the floor — we work out who comes in and who goes out.
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto scrollbar-slim p-3">
+          {eligible.length === 0 ? (
+            <div className="px-2 py-8 text-center text-sm font-semibold text-neutral-500">
+              No present players. Mark attendance in the pre-game dialog first.
+            </div>
+          ) : (
+            <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+              {eligible.map((player) => {
+                const key = getPlayerKey(player);
+                const selected = selectedSet.has(key);
+                const wasOnCourt = onCourtSet.has(key);
+                const lockedOut = !selected && atCapacity;
+                return (
+                  <button
+                    aria-pressed={selected}
+                    className={cn(
+                      "relative flex flex-col items-center justify-center gap-0.5 rounded-xl border bg-neutral-950 px-2 py-3 transition-colors focus:outline-none focus:ring-2 focus:ring-neutral-500",
+                      selected
+                        ? "border-lime-500/60 bg-lime-500/10"
+                        : "border-neutral-800 hover:bg-neutral-800",
+                      lockedOut && "cursor-not-allowed opacity-40 hover:bg-neutral-950",
+                    )}
+                    disabled={lockedOut}
+                    key={key}
+                    title={lockedOut ? "Deselect one player first" : undefined}
+                    type="button"
+                    onClick={() => toggle(key)}
+                  >
+                    {wasOnCourt && (
+                      <span
+                        className="absolute left-1.5 top-1.5 rounded px-1 py-0.5 text-[8px] font-black uppercase leading-none tracking-wide"
+                        style={{ backgroundColor: `var(--c-${side}-tint)`, color: cSoft }}
+                      >
+                        On
+                      </span>
+                    )}
+                    <span
+                      className={cn(
+                        "absolute right-1.5 top-1.5 flex size-4 items-center justify-center rounded-full transition-opacity",
+                        selected ? "opacity-100" : "opacity-0",
+                      )}
+                      style={{ backgroundColor: "#84cc16" }}
+                    >
+                      <Check className="text-neutral-950" size={11} />
+                    </span>
+                    <span className="font-mono text-2xl font-black tabular-nums text-neutral-50">{player.number}</span>
+                    <span className="text-[10px] font-black uppercase tracking-wide text-neutral-500 tabular-nums">
+                      <span className="text-neutral-300">{player.points}</span> pt ·{" "}
+                      <span className={cn(player.fouls >= 4 ? "text-amber-400" : "text-neutral-300")}>{player.fouls}</span> f
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        <div className="grid gap-px border-t border-neutral-800 bg-neutral-800 sm:grid-cols-2">
+          <LineupDiffStrip
             accent="lime"
-            emptyLabel="No bench players available."
-            label="In (bench)"
-            players={team.bench}
-            selectedKey={inKey}
-            onSelect={setInKey}
+            label="Coming in"
+            numbers={incoming.map((key) => numberByKey.get(key) ?? "?")}
+          />
+          <LineupDiffStrip
+            accent="red"
+            label="Going out"
+            numbers={outgoing.map((key) => numberByKey.get(key) ?? "?")}
           />
         </div>
 
         <div className="flex items-center justify-between gap-3 border-t border-neutral-800 px-4 py-3">
-          <div className="min-w-0 truncate text-xs font-semibold text-neutral-400">
-            {canConfirm
-              ? `${formatPlayer(inPlayer!)} in for ${formatPlayer(outPlayer!)}`
-              : "Pick one player out and one player in."}
-          </div>
+          <button
+            className="text-xs font-black uppercase tracking-wide text-neutral-500 transition-colors hover:text-neutral-200 disabled:cursor-not-allowed disabled:opacity-40"
+            disabled={!dirty}
+            type="button"
+            onClick={() => setSelectedKeys(onCourtKeys.slice(0, targetCount))}
+          >
+            Reset
+          </button>
           <div className="flex shrink-0 items-center gap-2">
             <button
               className="h-10 rounded-lg border border-neutral-800 bg-neutral-950 px-4 text-xs font-black uppercase tracking-wide text-neutral-300 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500"
@@ -2659,12 +3114,12 @@ function SubstitutionDialog({
             </button>
             <button
               className="flex h-10 items-center gap-2 rounded-lg border border-lime-500/40 bg-lime-500/15 px-4 text-xs font-black uppercase tracking-wide text-lime-200 transition-colors hover:bg-lime-500/25 focus:outline-none focus:ring-2 focus:ring-lime-500/50 disabled:cursor-not-allowed disabled:opacity-40"
-              disabled={!canConfirm}
+              disabled={!canApply}
               type="button"
-              onClick={confirm}
+              onClick={() => onApply(selectedKeys)}
             >
               <Shuffle size={16} />
-              Confirm Sub
+              {incoming.length > 1 ? `Apply (${incoming.length})` : "Apply Lineup"}
             </button>
           </div>
         </div>
@@ -2673,57 +3128,606 @@ function SubstitutionDialog({
   );
 }
 
-function SubstitutionColumn({
+function LineupDiffStrip({
   accent,
-  emptyLabel,
   label,
-  players,
-  selectedKey,
-  onSelect,
+  numbers,
 }: {
-  accent: "red" | "lime";
-  emptyLabel: string;
+  accent: "lime" | "red";
   label: string;
-  players: Player[];
-  selectedKey?: string;
-  onSelect: (key: string) => void;
+  numbers: string[];
 }) {
-  const selectedRing =
-    accent === "red"
-      ? "border-red-500/60 bg-red-500/10 text-red-100"
-      : "border-lime-500/60 bg-lime-500/10 text-lime-100";
+  const chipClass =
+    accent === "lime"
+      ? "border-lime-500/50 bg-lime-500/10 text-lime-200"
+      : "border-red-500/50 bg-red-500/10 text-red-200";
+  const dotClass = accent === "lime" ? "text-lime-400" : "text-red-400";
 
   return (
-    <div className="bg-neutral-900">
-      <div className="px-4 py-2 text-[11px] font-black uppercase tracking-wide text-neutral-500">{label}</div>
-      <div className="max-h-72 overflow-y-auto scrollbar-slim px-2 pb-2">
-        {players.length === 0 ? (
-          <div className="px-2 py-6 text-center text-xs font-semibold text-neutral-500">{emptyLabel}</div>
+    <div className="flex items-center gap-2 bg-neutral-900 px-4 py-2.5">
+      <span className={cn("text-[10px] font-black uppercase tracking-wide", dotClass)}>{label}</span>
+      <div className="flex min-h-[26px] flex-1 flex-wrap items-center gap-1.5">
+        {numbers.length === 0 ? (
+          <span className="text-xs font-semibold text-neutral-600">—</span>
         ) : (
-          players.map((player) => {
-            const key = getPlayerKey(player);
-            const selected = key === selectedKey;
-            return (
+          numbers.map((number, index) => (
+            <span
+              className={cn("rounded-md border px-2 py-0.5 font-mono text-sm font-black tabular-nums", chipClass)}
+              key={`${number}-${index}`}
+            >
+              #{number}
+            </span>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+type BoxRow = {
+  player: Player;
+  key: string;
+  onCourt: boolean;
+  fgMade: number;
+  fgAtt: number;
+  reb: number;
+  eff: number;
+};
+
+type BoxTotals = {
+  pts: number;
+  fgMade: number;
+  fgAtt: number;
+  tpMade: number;
+  tpAtt: number;
+  ftMade: number;
+  ftAtt: number;
+  oreb: number;
+  dreb: number;
+  reb: number;
+  ast: number;
+  stl: number;
+  blk: number;
+  to: number;
+  pf: number;
+  eff: number;
+};
+
+type BoxColumn = {
+  key: string;
+  label: string;
+  title: string;
+  value: (row: BoxRow) => number;
+  cell: (row: BoxRow) => ReactNode;
+  total: (totals: BoxTotals) => ReactNode;
+  emphasize?: boolean;
+};
+
+function buildBoxRow(player: Player, onCourt: boolean): BoxRow {
+  const fgMade = player.twoPointersMade + player.threePointersMade;
+  const fgAtt = player.twoPointersAttempted + player.threePointersAttempted;
+  const reb = player.offensiveRebounds + player.defensiveRebounds;
+  // Standard NBA-style efficiency: positive contributions minus missed shots and turnovers.
+  const eff =
+    player.points +
+    reb +
+    player.assists +
+    player.steals +
+    player.blocks -
+    ((fgAtt - fgMade) + (player.freeThrowsAttempted - player.freeThrowsMade) + player.turnovers);
+
+  return { player, key: getPlayerKey(player), onCourt, fgMade, fgAtt, reb, eff };
+}
+
+function buildBoxRows(team: Team): BoxRow[] {
+  const onCourt = new Set(team.players.map(getPlayerKey));
+  return getRoster(team).map((player) => buildBoxRow(player, onCourt.has(getPlayerKey(player))));
+}
+
+function sumBoxTotals(rows: BoxRow[]): BoxTotals {
+  return rows.reduce<BoxTotals>(
+    (totals, row) => {
+      const p = row.player;
+      totals.pts += p.points;
+      totals.fgMade += row.fgMade;
+      totals.fgAtt += row.fgAtt;
+      totals.tpMade += p.threePointersMade;
+      totals.tpAtt += p.threePointersAttempted;
+      totals.ftMade += p.freeThrowsMade;
+      totals.ftAtt += p.freeThrowsAttempted;
+      totals.oreb += p.offensiveRebounds;
+      totals.dreb += p.defensiveRebounds;
+      totals.reb += row.reb;
+      totals.ast += p.assists;
+      totals.stl += p.steals;
+      totals.blk += p.blocks;
+      totals.to += p.turnovers;
+      totals.pf += p.fouls;
+      totals.eff += row.eff;
+      return totals;
+    },
+    {
+      pts: 0, fgMade: 0, fgAtt: 0, tpMade: 0, tpAtt: 0, ftMade: 0, ftAtt: 0,
+      oreb: 0, dreb: 0, reb: 0, ast: 0, stl: 0, blk: 0, to: 0, pf: 0, eff: 0,
+    },
+  );
+}
+
+function formatMadeAttempt(made: number, attempted: number) {
+  return `${made}/${attempted}`;
+}
+
+function formatPct(made: number, attempted: number) {
+  return attempted > 0 ? `${Math.round((made / attempted) * 100)}%` : "—";
+}
+
+function jerseyNumber(player: Player) {
+  const parsed = Number(player.number);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function BoxScoreDialog({
+  initialTeam,
+  match,
+  mode,
+  periodCount,
+  onClose,
+}: {
+  initialTeam: TeamId;
+  match: LiveMatch;
+  mode: StatsMode;
+  periodCount: number;
+  onClose: () => void;
+}) {
+  const [viewTeam, setViewTeam] = useState<TeamId>(initialTeam);
+  const [layout, setLayout] = useState<"overview" | "quarters">(
+    mode === "youth" ? "quarters" : "overview",
+  );
+  const [sortKey, setSortKey] = useState<string>("lineup");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+
+  const awayRows = useMemo(() => buildBoxRows(match.away), [match.away]);
+  const homeRows = useMemo(() => buildBoxRows(match.home), [match.home]);
+  const awayTotals = useMemo(() => sumBoxTotals(awayRows), [awayRows]);
+  const homeTotals = useMemo(() => sumBoxTotals(homeRows), [homeRows]);
+  const showOt = useMemo(
+    () => [...awayRows, ...homeRows].some((row) => row.player.ot > 0) || periodCount > 4,
+    [awayRows, homeRows, periodCount],
+  );
+
+  const rows = viewTeam === "away" ? awayRows : homeRows;
+  const totals = viewTeam === "away" ? awayTotals : homeTotals;
+  const team = match[viewTeam];
+
+  const columns = useMemo(
+    () => (layout === "quarters" || mode === "youth"
+      ? buildQuarterColumns(showOt, mode)
+      : buildOverviewColumns()),
+    [layout, mode, showOt],
+  );
+
+  const sortedRows = useMemo(() => {
+    const copy = [...rows];
+    if (sortKey === "lineup") {
+      copy.sort(
+        (a, b) => Number(b.onCourt) - Number(a.onCourt) || jerseyNumber(a.player) - jerseyNumber(b.player),
+      );
+      return copy;
+    }
+    const column = columns.find((entry) => entry.key === sortKey);
+    if (!column) {
+      return copy;
+    }
+    copy.sort((a, b) => {
+      const delta = column.value(a) - column.value(b);
+      const directed = sortDir === "asc" ? delta : -delta;
+      return directed || Number(b.onCourt) - Number(a.onCourt) || jerseyNumber(a.player) - jerseyNumber(b.player);
+    });
+    return copy;
+  }, [rows, columns, sortKey, sortDir]);
+
+  const leaderKey = useMemo(() => {
+    let best: BoxRow | undefined;
+    for (const row of rows) {
+      if (row.player.points > 0 && (!best || row.player.points > best.player.points)) {
+        best = row;
+      }
+    }
+    return best?.key;
+  }, [rows]);
+
+  function handleSort(key: string) {
+    if (key === sortKey) {
+      setSortDir((dir) => (dir === "asc" ? "desc" : "asc"));
+      return;
+    }
+    setSortKey(key);
+    setSortDir("desc");
+  }
+
+  return (
+    <div
+      aria-modal="true"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-3 backdrop-blur-sm sm:p-4"
+      role="dialog"
+      onClick={onClose}
+    >
+      <div
+        className="flex max-h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-neutral-700 bg-neutral-900 shadow-2xl shadow-black/60"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="flex items-center justify-between gap-3 border-b border-neutral-800 px-4 py-3">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <BarChart3 className="shrink-0 text-sky-400" size={20} />
+            <div className="min-w-0">
+              <div className="text-[10px] font-black uppercase tracking-widest text-sky-400">Box Score · Live</div>
+              <h2 className="truncate text-lg font-black text-neutral-50">{match.matchName}</h2>
+            </div>
+          </div>
+          <button
+            aria-label="Close box score"
+            className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-neutral-800 bg-neutral-950 text-neutral-400 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500"
+            type="button"
+            onClick={onClose}
+          >
+            <CircleX size={18} />
+          </button>
+        </div>
+
+        <BoxScoreCompare
+          away={match.away}
+          home={match.home}
+          awayScore={match.awayScore}
+          homeScore={match.homeScore}
+          awayTotals={awayTotals}
+          homeTotals={homeTotals}
+        />
+
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-neutral-800 px-3 py-2">
+          <div className="flex items-center gap-1 rounded-lg border border-neutral-800 bg-neutral-950 p-0.5">
+            {(["away", "home"] as TeamId[]).map((sideKey) => (
               <button
                 className={cn(
-                  "mb-1 grid w-full grid-cols-[44px_minmax(0,1fr)] items-center gap-2 rounded-lg border border-neutral-800 bg-neutral-950 px-2 py-2 text-left transition-colors hover:bg-neutral-800 focus:outline-none focus:ring-2 focus:ring-neutral-500",
-                  selected && selectedRing,
+                  "rounded-md px-3 py-1.5 text-xs font-black uppercase tracking-wide transition-colors focus:outline-none",
+                  viewTeam === sideKey ? "text-neutral-950" : "text-neutral-400 hover:text-neutral-100",
                 )}
-                key={key}
+                key={sideKey}
+                style={viewTeam === sideKey ? { backgroundColor: `var(--c-${sideKey})` } : undefined}
                 type="button"
-                onClick={() => onSelect(key)}
+                onClick={() => setViewTeam(sideKey)}
               >
-                <span className="font-mono text-xl font-black tabular-nums text-neutral-100">{player.number}</span>
-                <span className="min-w-0">
-                  <span className="block truncate text-sm font-bold text-neutral-100">{player.name}</span>
-                  <span className="block text-[11px] font-black uppercase tracking-wide text-neutral-500 tabular-nums">
-                    {player.points} PTS · {player.fouls} F
-                  </span>
-                </span>
+                {match[sideKey].name}
               </button>
-            );
-          })
-        )}
+            ))}
+          </div>
+
+          {mode === "professional" && (
+            <div className="flex items-center gap-1 rounded-lg border border-neutral-800 bg-neutral-950 p-0.5">
+              {(["overview", "quarters"] as const).map((value) => (
+                <button
+                  className={cn(
+                    "rounded-md px-3 py-1.5 text-xs font-black uppercase tracking-wide transition-colors focus:outline-none",
+                    layout === value ? "bg-neutral-200 text-neutral-950" : "text-neutral-400 hover:text-neutral-100",
+                  )}
+                  key={value}
+                  type="button"
+                  onClick={() => setLayout(value)}
+                >
+                  {value === "overview" ? "Overview" : "By Quarter"}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <BoxScoreLeaders rows={rows} accent={viewTeam} />
+
+        <div className="min-h-0 flex-1 overflow-auto scrollbar-slim">
+          <table className="w-full min-w-[640px] border-collapse text-right text-sm tabular-nums">
+            <thead className="sticky top-0 z-20">
+              <tr className="bg-neutral-950 text-[10px] font-black uppercase tracking-wide text-neutral-500">
+                <th
+                  className="sticky left-0 z-30 cursor-pointer bg-neutral-950 px-3 py-2 text-left transition-colors hover:text-neutral-200"
+                  scope="col"
+                  onClick={() => handleSort("lineup")}
+                >
+                  <span className="inline-flex items-center gap-1">
+                    #
+                    {sortKey === "lineup" && <ChevronDown size={12} />}
+                  </span>
+                </th>
+                {columns.map((column) => {
+                  const active = sortKey === column.key;
+                  return (
+                    <th
+                      className={cn(
+                        "cursor-pointer whitespace-nowrap px-2.5 py-2 transition-colors hover:text-neutral-200",
+                        active && "text-sky-300",
+                      )}
+                      key={column.key}
+                      scope="col"
+                      title={column.title}
+                      onClick={() => handleSort(column.key)}
+                    >
+                      <span className="inline-flex items-center gap-0.5">
+                        {column.label}
+                        {active && (
+                          <ChevronDown
+                            className={cn("transition-transform", sortDir === "asc" && "rotate-180")}
+                            size={12}
+                          />
+                        )}
+                      </span>
+                    </th>
+                  );
+                })}
+              </tr>
+            </thead>
+            <tbody>
+              {sortedRows.length === 0 ? (
+                <tr>
+                  <td className="px-3 py-8 text-center text-sm font-semibold text-neutral-500" colSpan={columns.length + 1}>
+                    No players on this roster.
+                  </td>
+                </tr>
+              ) : (
+                sortedRows.map((row) => {
+                  const isLeader = row.key === leaderKey;
+                  return (
+                    <tr
+                      className={cn(
+                        "border-b border-neutral-800/70 transition-colors hover:bg-neutral-800/40",
+                        row.onCourt ? "bg-neutral-900/50" : "bg-neutral-950/40",
+                      )}
+                      key={row.key}
+                    >
+                      <th
+                        className="sticky left-0 z-10 bg-inherit px-3 py-1.5 text-left font-mono font-black"
+                        scope="row"
+                        style={row.onCourt ? { boxShadow: `inset 3px 0 0 0 var(--c-${viewTeam})` } : undefined}
+                      >
+                        <span className="flex items-center gap-1.5">
+                          <span className={cn("text-base", row.onCourt ? "text-neutral-50" : "text-neutral-400")}>
+                            {row.player.number}
+                          </span>
+                          {row.onCourt && (
+                            <span
+                              className="rounded px-1 py-0.5 text-[8px] font-black uppercase leading-none tracking-wide"
+                              style={{ backgroundColor: `var(--c-${viewTeam}-tint)`, color: `var(--c-${viewTeam}-soft)` }}
+                            >
+                              On
+                            </span>
+                          )}
+                          {isLeader && <Crown className="text-amber-400" size={12} />}
+                        </span>
+                      </th>
+                      {columns.map((column) => (
+                        <td
+                          className={cn(
+                            "whitespace-nowrap px-2.5 py-1.5",
+                            column.emphasize ? "font-black text-neutral-50" : "text-neutral-300",
+                            sortKey === column.key && "text-sky-200",
+                          )}
+                          key={column.key}
+                        >
+                          {column.cell(row)}
+                        </td>
+                      ))}
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+            <tfoot className="sticky bottom-0 z-20">
+              <tr className="bg-neutral-950 text-xs font-black text-neutral-200">
+                <th className="sticky left-0 z-30 bg-neutral-950 px-3 py-2 text-left uppercase tracking-wide text-neutral-400" scope="row">
+                  Team
+                </th>
+                {columns.map((column) => (
+                  <td className="whitespace-nowrap px-2.5 py-2" key={column.key}>
+                    {column.total(totals)}
+                  </td>
+                ))}
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-neutral-800 px-4 py-2 text-[10px] font-semibold text-neutral-500">
+          <span className="inline-flex items-center gap-1">
+            <span className="rounded bg-neutral-800 px-1 py-0.5 text-[8px] font-black uppercase text-neutral-300">On</span>
+            on court
+          </span>
+          <span className="inline-flex items-center gap-1">
+            <Crown className="text-amber-400" size={11} /> team scoring leader
+          </span>
+          <span>EFF = (PTS+REB+AST+STL+BLK) − (missed FG+FT+TO)</span>
+          <span className="text-neutral-600">Tap a column to sort · {team.name}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function buildOverviewColumns(): BoxColumn[] {
+  return [
+    { key: "pts", label: "PTS", title: "Points", emphasize: true, value: (r) => r.player.points, cell: (r) => r.player.points, total: (t) => t.pts },
+    { key: "fg", label: "FG", title: "Field goals made/attempted", value: (r) => r.fgMade, cell: (r) => formatMadeAttempt(r.fgMade, r.fgAtt), total: (t) => formatMadeAttempt(t.fgMade, t.fgAtt) },
+    { key: "fgpct", label: "FG%", title: "Field goal percentage", value: (r) => (r.fgAtt > 0 ? r.fgMade / r.fgAtt : -1), cell: (r) => formatPct(r.fgMade, r.fgAtt), total: (t) => formatPct(t.fgMade, t.fgAtt) },
+    { key: "3pt", label: "3PT", title: "Three-pointers made/attempted", value: (r) => r.player.threePointersMade, cell: (r) => formatMadeAttempt(r.player.threePointersMade, r.player.threePointersAttempted), total: (t) => formatMadeAttempt(t.tpMade, t.tpAtt) },
+    { key: "ft", label: "FT", title: "Free throws made/attempted", value: (r) => r.player.freeThrowsMade, cell: (r) => formatMadeAttempt(r.player.freeThrowsMade, r.player.freeThrowsAttempted), total: (t) => formatMadeAttempt(t.ftMade, t.ftAtt) },
+    { key: "oreb", label: "OR", title: "Offensive rebounds", value: (r) => r.player.offensiveRebounds, cell: (r) => r.player.offensiveRebounds, total: (t) => t.oreb },
+    { key: "dreb", label: "DR", title: "Defensive rebounds", value: (r) => r.player.defensiveRebounds, cell: (r) => r.player.defensiveRebounds, total: (t) => t.dreb },
+    { key: "reb", label: "REB", title: "Total rebounds", value: (r) => r.reb, cell: (r) => r.reb, total: (t) => t.reb },
+    { key: "ast", label: "AST", title: "Assists", value: (r) => r.player.assists, cell: (r) => r.player.assists, total: (t) => t.ast },
+    { key: "stl", label: "STL", title: "Steals", value: (r) => r.player.steals, cell: (r) => r.player.steals, total: (t) => t.stl },
+    { key: "blk", label: "BLK", title: "Blocks", value: (r) => r.player.blocks, cell: (r) => r.player.blocks, total: (t) => t.blk },
+    { key: "to", label: "TO", title: "Turnovers", value: (r) => r.player.turnovers, cell: (r) => r.player.turnovers, total: (t) => t.to },
+    { key: "pf", label: "PF", title: "Personal fouls", value: (r) => r.player.fouls, cell: (r) => <FoulCount value={r.player.fouls} />, total: (t) => t.pf },
+    { key: "eff", label: "EFF", title: "Efficiency rating", emphasize: true, value: (r) => r.eff, cell: (r) => <EffValue value={r.eff} />, total: (t) => t.eff },
+  ];
+}
+
+function buildQuarterColumns(showOt: boolean, mode: StatsMode): BoxColumn[] {
+  const periodColumns: BoxColumn[] = [
+    makeQuarterColumn("q1", "Q1", "1st quarter points", (p) => p.q1),
+    makeQuarterColumn("q2", "Q2", "2nd quarter points", (p) => p.q2),
+    makeQuarterColumn("q3", "Q3", "3rd quarter points", (p) => p.q3),
+    makeQuarterColumn("q4", "Q4", "4th quarter points", (p) => p.q4),
+  ];
+  if (showOt) {
+    periodColumns.push(makeQuarterColumn("ot", "OT", "Overtime points", (p) => p.ot));
+  }
+
+  const tail: BoxColumn[] = [
+    { key: "pts", label: "PTS", title: "Total points", emphasize: true, value: (r) => r.player.points, cell: (r) => r.player.points, total: (t) => t.pts },
+  ];
+
+  if (mode === "youth") {
+    tail.push(
+      { key: "ft", label: "FT", title: "Free throws made/attempted", value: (r) => r.player.freeThrowsMade, cell: (r) => formatMadeAttempt(r.player.freeThrowsMade, r.player.freeThrowsAttempted), total: (t) => formatMadeAttempt(t.ftMade, t.ftAtt) },
+      { key: "pf", label: "PF", title: "Personal fouls", value: (r) => r.player.fouls, cell: (r) => <FoulCount value={r.player.fouls} />, total: (t) => t.pf },
+    );
+  }
+
+  return [...periodColumns, ...tail];
+}
+
+function makeQuarterColumn(
+  key: string,
+  label: string,
+  title: string,
+  get: (player: Player) => number,
+): BoxColumn {
+  return {
+    key,
+    label,
+    title,
+    value: (row) => get(row.player),
+    cell: (row) => get(row.player) || <span className="text-neutral-600">·</span>,
+    total: () => "",
+  };
+}
+
+function FoulCount({ value }: { value: number }) {
+  return (
+    <span className={cn(value >= 5 ? "font-black text-red-400" : value >= 4 ? "font-black text-amber-400" : undefined)}>
+      {value}
+    </span>
+  );
+}
+
+function EffValue({ value }: { value: number }) {
+  return (
+    <span className={cn(value > 0 ? "text-lime-300" : value < 0 ? "text-red-300" : "text-neutral-400")}>
+      {value > 0 ? `+${value}` : value}
+    </span>
+  );
+}
+
+function BoxScoreLeaders({ rows, accent }: { rows: BoxRow[]; accent: TeamId }) {
+  const leaders = useMemo(() => {
+    const top = (value: (row: BoxRow) => number) => {
+      let best: BoxRow | undefined;
+      for (const row of rows) {
+        if (value(row) > 0 && (!best || value(row) > value(best))) {
+          best = row;
+        }
+      }
+      return best;
+    };
+    return {
+      pts: top((row) => row.player.points),
+      reb: top((row) => row.reb),
+      ast: top((row) => row.player.assists),
+    };
+  }, [rows]);
+
+  const items: Array<{ icon: ReactNode; label: string; row?: BoxRow; value: number }> = [
+    { icon: <Crown className="text-amber-400" size={13} />, label: "PTS", row: leaders.pts, value: leaders.pts?.player.points ?? 0 },
+    { icon: <Shield className="text-sky-400" size={13} />, label: "REB", row: leaders.reb, value: leaders.reb?.reb ?? 0 },
+    { icon: <Handshake className="text-lime-400" size={13} />, label: "AST", row: leaders.ast, value: leaders.ast?.player.assists ?? 0 },
+  ];
+
+  if (!leaders.pts && !leaders.reb && !leaders.ast) {
+    return null;
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-2 border-b border-neutral-800 bg-neutral-950/60 px-3 py-2">
+      <span className="text-[10px] font-black uppercase tracking-widest" style={{ color: `var(--c-${accent}-soft)` }}>
+        Leaders
+      </span>
+      {items.map((item) => (
+        <span
+          className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-800 bg-neutral-900 px-2.5 py-1 text-xs font-bold text-neutral-200"
+          key={item.label}
+        >
+          {item.icon}
+          <span className="text-[10px] font-black uppercase tracking-wide text-neutral-500">{item.label}</span>
+          {item.row ? (
+            <>
+              <span className="font-mono font-black text-neutral-50">#{item.row.player.number}</span>
+              <span className="font-mono tabular-nums text-neutral-300">{item.value}</span>
+            </>
+          ) : (
+            <span className="text-neutral-600">—</span>
+          )}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function BoxScoreCompare({
+  away,
+  home,
+  awayScore,
+  homeScore,
+  awayTotals,
+  homeTotals,
+}: {
+  away: Team;
+  home: Team;
+  awayScore: number;
+  homeScore: number;
+  awayTotals: BoxTotals;
+  homeTotals: BoxTotals;
+}) {
+  const stats: Array<{ label: string; away: string; home: string; awayN: number; homeN: number; lowerBetter?: boolean }> = [
+    { label: "PTS", away: String(awayScore), home: String(homeScore), awayN: awayScore, homeN: homeScore },
+    { label: "FG%", away: formatPct(awayTotals.fgMade, awayTotals.fgAtt), home: formatPct(homeTotals.fgMade, homeTotals.fgAtt), awayN: awayTotals.fgAtt ? awayTotals.fgMade / awayTotals.fgAtt : -1, homeN: homeTotals.fgAtt ? homeTotals.fgMade / homeTotals.fgAtt : -1 },
+    { label: "3PT%", away: formatPct(awayTotals.tpMade, awayTotals.tpAtt), home: formatPct(homeTotals.tpMade, homeTotals.tpAtt), awayN: awayTotals.tpAtt ? awayTotals.tpMade / awayTotals.tpAtt : -1, homeN: homeTotals.tpAtt ? homeTotals.tpMade / homeTotals.tpAtt : -1 },
+    { label: "REB", away: String(awayTotals.reb), home: String(homeTotals.reb), awayN: awayTotals.reb, homeN: homeTotals.reb },
+    { label: "AST", away: String(awayTotals.ast), home: String(homeTotals.ast), awayN: awayTotals.ast, homeN: homeTotals.ast },
+    { label: "TO", away: String(awayTotals.to), home: String(homeTotals.to), awayN: awayTotals.to, homeN: homeTotals.to, lowerBetter: true },
+  ];
+
+  return (
+    <div className="border-b border-neutral-800 bg-neutral-950/40 px-3 py-2">
+      <div className="mb-1.5 flex items-center justify-between gap-2 text-[11px] font-black uppercase tracking-wide">
+        <span className="truncate" style={{ color: "var(--c-away-soft)" }}>{away.name}</span>
+        <span className="shrink-0 text-neutral-600">vs</span>
+        <span className="truncate text-right" style={{ color: "var(--c-home-soft)" }}>{home.name}</span>
+      </div>
+      <div className="grid grid-cols-3 gap-x-2 gap-y-1 sm:grid-cols-6">
+        {stats.map((stat) => {
+          const awayWins = stat.lowerBetter ? stat.awayN < stat.homeN : stat.awayN > stat.homeN;
+          const homeWins = stat.lowerBetter ? stat.homeN < stat.awayN : stat.homeN > stat.awayN;
+          return (
+            <div className="rounded-lg border border-neutral-800 bg-neutral-900 px-2 py-1 text-center" key={stat.label}>
+              <div className="flex items-center justify-between gap-1 font-mono text-sm font-black tabular-nums">
+                <span className={cn(awayWins ? "" : "text-neutral-500")} style={awayWins ? { color: "var(--c-away-soft)" } : undefined}>
+                  {stat.away}
+                </span>
+                <span className={cn(homeWins ? "" : "text-neutral-500")} style={homeWins ? { color: "var(--c-home-soft)" } : undefined}>
+                  {stat.home}
+                </span>
+              </div>
+              <div className="text-[9px] font-black uppercase tracking-wide text-neutral-500">{stat.label}</div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -2774,15 +3778,12 @@ function JumpBallDialog({
         <div className="grid gap-px bg-neutral-800 sm:grid-cols-2">
           {(["away", "home"] as TeamId[]).map((id) => (
             <button
-              className={cn(
-                "flex flex-col items-center justify-center gap-1.5 bg-neutral-900 px-4 py-6 transition-colors hover:bg-neutral-800 focus:outline-none focus:ring-2 focus:ring-inset",
-                id === "away" ? "focus:ring-red-500/50" : "focus:ring-blue-500/50",
-              )}
+              className="flex flex-col items-center justify-center gap-1.5 bg-neutral-900 px-4 py-6 transition-colors hover:bg-neutral-800 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-neutral-500/60"
               key={id}
               type="button"
               onClick={() => onChoose(id)}
             >
-              <span className={cn("text-[10px] font-black uppercase tracking-wide", id === "away" ? "text-red-400" : "text-blue-400")}>
+              <span className="text-[10px] font-black uppercase tracking-wide" style={{ color: `var(--c-${id}-soft)` }}>
                 {teams[id].label}
               </span>
               <span className="max-w-full truncate text-base font-black text-neutral-50">{teams[id].name}</span>
@@ -2908,14 +3909,12 @@ function PreGameDialog({
 
           <div className="grid gap-px bg-neutral-800 sm:grid-cols-2">
             <PreGameTeamColumn
-              accent="red"
               side="away"
               team={match.away}
               onTogglePresent={onTogglePresent}
               onToggleStarter={onToggleStarter}
             />
             <PreGameTeamColumn
-              accent="blue"
               side="home"
               team={match.home}
               onTogglePresent={onTogglePresent}
@@ -2975,13 +3974,11 @@ function OfficialField({
 }
 
 function PreGameTeamColumn({
-  accent,
   side,
   team,
   onTogglePresent,
   onToggleStarter,
 }: {
-  accent: "red" | "blue";
   side: TeamId;
   team: Team;
   onTogglePresent: (team: TeamId, player: Player) => void;
@@ -2992,12 +3989,10 @@ function PreGameTeamColumn({
   );
   const starterKeys = new Set(team.players.map(getPlayerKey));
   const starterFull = team.players.length >= 5;
-  const accentText = accent === "red" ? "text-red-400" : "text-blue-400";
-
   return (
     <div className="bg-neutral-900">
       <div className="flex items-center justify-between gap-2 px-4 py-2">
-        <span className={cn("min-w-0 truncate text-[11px] font-black uppercase tracking-wide", accentText)}>
+        <span className="min-w-0 truncate text-[11px] font-black uppercase tracking-wide" style={{ color: `var(--c-${side}-soft)` }}>
           {team.label} · {team.name}
         </span>
         <span className="shrink-0 text-[11px] font-black uppercase tracking-wide text-neutral-500 tabular-nums">
@@ -3071,53 +4066,46 @@ function PreGameTeamColumn({
 }
 
 function BottomPanel({
-  ballHandlerName,
   events,
-  foulBallTeam,
-  possession,
-  possessionTeam,
-  score,
-  shotClock,
   summary,
+  teams,
   onEditEvent,
   onUndoEvent,
 }: {
-  ballHandlerName: string;
   events: GameEvent[];
-  foulBallTeam: TeamId;
-  possession: TeamId;
-  possessionTeam: string;
-  score: string;
-  shotClock: number;
   summary: Array<{ label: string; value: string }>;
+  teams: Record<TeamId, Team>;
   onEditEvent: (eventId: number) => void;
   onUndoEvent: (eventId: number) => void;
 }) {
   return (
-    <section className="order-6 grid gap-px overflow-hidden bg-neutral-800 md:col-span-2 md:grid-cols-2 lg:grid-cols-3 xl:col-span-3 xl:col-start-1 xl:row-start-3 xl:min-h-0 xl:grid-cols-[minmax(360px,1fr)_240px_1fr]">
-      <div className="min-h-0 overflow-hidden bg-neutral-950 p-3 md:col-span-2 lg:col-span-1 xl:col-span-1 xl:p-2">
+    <section className="order-6 grid gap-px overflow-hidden bg-neutral-800 md:col-span-2 md:grid-cols-2 lg:col-span-3 lg:col-start-1 lg:row-start-3 lg:min-h-0 lg:grid-cols-[minmax(300px,1.6fr)_minmax(220px,1fr)]">
+      <div className="min-h-0 overflow-hidden bg-neutral-950 p-3 md:col-span-2 lg:col-span-1 lg:p-2">
         <PanelTitle>{`Event Feed (${events.length})`}</PanelTitle>
-        <div className="mt-2 max-h-72 overflow-y-auto rounded-lg border border-neutral-800 md:max-h-56 xl:mt-1 xl:max-h-[116px] xl:rounded-md 2xl:max-h-[132px]">
+        <div className="mt-2 max-h-72 overflow-y-auto rounded-lg border border-neutral-800 md:max-h-56 lg:mt-1 lg:max-h-[116px] lg:rounded-md 2xl:max-h-[132px]">
           {events.map((event) => (
             <div
-              className="grid min-h-11 grid-cols-[26px_48px_minmax(72px,1fr)_minmax(0,1.3fr)_56px_32px_32px] items-center gap-1 border-b border-neutral-800/70 bg-neutral-900/40 px-2 last:border-b-0 xl:min-h-8"
+              className="grid min-h-11 grid-cols-[26px_48px_minmax(72px,1fr)_minmax(0,1.3fr)_56px_32px_32px] items-center gap-1 border-b border-neutral-800/70 bg-neutral-900/40 px-2 last:border-b-0 lg:min-h-8"
               key={event.id}
             >
               <ClipboardList className={eventIconClass[event.icon]} size={16} />
               <span className="font-mono text-xs text-neutral-400 tabular-nums">{event.time}</span>
-              <span className="truncate text-xs font-bold">{event.player}</span>
+              <span
+                className="truncate font-mono text-xs font-bold tabular-nums"
+                style={{ color: `var(--c-${event.team}-soft)` }}
+              >
+                {getEventPlayerNumber(event, teams)}
+              </span>
               <span className="truncate text-xs text-neutral-400">{event.label}</span>
               <span
-                className={cn(
-                  "text-right font-mono text-sm font-black tabular-nums",
-                  event.team === "away" ? "text-red-400" : "text-blue-400",
-                )}
+                className="text-right font-mono text-sm font-black tabular-nums"
+                style={{ color: `var(--c-${event.team}-soft)` }}
               >
                 {event.score ?? ""}
               </span>
               <button
                 aria-label={`Edit ${event.label}`}
-                className="flex size-8 items-center justify-center rounded-md text-neutral-500 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500 xl:size-6"
+                className="flex size-8 items-center justify-center rounded-md text-neutral-500 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500 lg:size-6"
                 type="button"
                 onClick={() => onEditEvent(event.id)}
               >
@@ -3125,7 +4113,7 @@ function BottomPanel({
               </button>
               <button
                 aria-label={`Undo ${event.label}`}
-                className="flex size-8 items-center justify-center rounded-md text-neutral-500 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500 xl:size-6"
+                className="flex size-8 items-center justify-center rounded-md text-neutral-500 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500 lg:size-6"
                 type="button"
                 onClick={() => onUndoEvent(event.id)}
               >
@@ -3141,62 +4129,12 @@ function BottomPanel({
         </div>
       </div>
 
-      <div className="min-h-0 overflow-hidden bg-neutral-950 p-3 xl:p-2 xl:overflow-y-auto xl:scrollbar-slim">
-        <PanelTitle>Current Possession</PanelTitle>
-        <div className="mt-2 grid gap-2 xl:mt-1 xl:gap-1">
-          <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-lg border border-neutral-800 bg-neutral-900 px-3 py-2 xl:py-1">
-            <div className="min-w-0">
-              <div className="text-[10px] font-black uppercase tracking-wide text-neutral-500">Possession</div>
-              <div
-                className={cn(
-                  "truncate text-sm font-black uppercase",
-                  possession === "away" ? "text-red-400" : "text-blue-400",
-                )}
-              >
-                {possessionTeam}
-              </div>
-            </div>
-            <PossessionArrow possession={possession} />
-          </div>
-
-          <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
-            <div className="min-w-0 rounded-lg border border-neutral-800 bg-neutral-900 px-3 py-2 xl:py-1">
-              <div className="text-[10px] font-black uppercase tracking-wide text-neutral-500">Foul Ball</div>
-              <div className="mt-1 flex items-center gap-2">
-                <PossessionArrow possession={foulBallTeam} />
-                <span className="truncate text-xs font-bold uppercase text-neutral-300">
-                  {foulBallTeam === "away" ? "Away" : "Home"}
-                </span>
-              </div>
-            </div>
-            <div
-              className={cn(
-                "flex size-14 items-center justify-center rounded-full border-2 font-mono text-2xl font-black tabular-nums xl:size-10 xl:text-base",
-                possession === "away"
-                  ? "border-red-500/80 text-red-400"
-                  : "border-blue-400/80 text-blue-400",
-              )}
-            >
-              {shotClock}
-            </div>
-          </div>
-
-          <div className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-end gap-3 rounded-lg border border-neutral-800 bg-neutral-900 px-3 py-2 text-xs uppercase text-neutral-500 xl:py-1">
-            <div className="min-w-0">
-              <div className="text-[10px] font-black tracking-wide">Ball Handler</div>
-              <div className="mt-0.5 truncate text-sm font-bold normal-case text-neutral-200">{ballHandlerName}</div>
-            </div>
-            <div className="font-mono text-base font-black tabular-nums text-neutral-300">{score}</div>
-          </div>
-        </div>
-      </div>
-
-      <div className="min-h-0 overflow-hidden bg-neutral-950 p-3 xl:p-2 xl:overflow-y-auto xl:scrollbar-slim">
+      <div className="min-h-0 overflow-hidden bg-neutral-950 p-3 lg:p-2 lg:overflow-y-auto lg:scrollbar-slim">
         <PanelTitle>Game Summary</PanelTitle>
-        <div className="mt-2 space-y-1.5 xl:mt-1.5 xl:space-y-1">
+        <div className="mt-2 space-y-1.5 lg:mt-1.5 lg:space-y-1">
           {summary.map((item) => (
             <div
-              className="flex items-center justify-between gap-4 rounded-lg border border-neutral-800 bg-neutral-900 px-3 py-2 text-sm xl:py-1"
+              className="flex items-center justify-between gap-4 rounded-lg border border-neutral-800 bg-neutral-900 px-3 py-2 text-sm lg:py-1"
               key={item.label}
             >
               <span className="text-[11px] font-black uppercase tracking-wide text-neutral-500">{item.label}</span>
@@ -3236,6 +4174,7 @@ function ActionPanel({
   onFreeThrow,
   isActionAllowed,
   onJumpBall,
+  onOpenBoxScore,
   onOpenPreGame,
   onOpenSubstitution,
   onPeriodChange,
@@ -3275,6 +4214,7 @@ function ActionPanel({
   onFreeThrow: (made: boolean) => void;
   isActionAllowed: (action: ActionKey) => boolean;
   onJumpBall: () => void;
+  onOpenBoxScore: () => void;
   onOpenPreGame: () => void;
   onOpenSubstitution: () => void;
   onPeriodChange: (period: LiveMatch["period"]) => void;
@@ -3315,18 +4255,27 @@ function ActionPanel({
   }
 
   return (
-    <aside className="order-5 flex min-h-0 flex-col bg-neutral-950 p-3 md:col-span-2 xl:col-span-1 xl:col-start-4 xl:row-span-3 xl:row-start-1 xl:h-full xl:overflow-y-auto xl:p-2">
-      <div className="mb-3 flex items-center justify-between gap-3 xl:mb-2">
+    <aside className="order-5 flex min-h-0 flex-col bg-neutral-950 p-3 md:col-span-2 lg:col-span-1 lg:col-start-4 lg:row-span-3 lg:row-start-1 lg:h-full lg:overflow-y-auto lg:p-1.5">
+      <div className="mb-3 flex items-center justify-between gap-3 lg:mb-1.5">
         <div className="min-w-0">
-          <h2 className="text-base font-black uppercase tracking-wide text-neutral-100 text-balance xl:text-sm">Scorer Console</h2>
-          <p className="mt-0.5 truncate text-xs font-semibold text-neutral-500 text-pretty">
+          <h2 className="text-base font-black uppercase tracking-wide text-neutral-100 text-balance lg:text-sm">Scorer Console</h2>
+          <p className="mt-0.5 truncate text-xs font-semibold text-neutral-500 text-pretty lg:hidden">
             {mode === "professional" ? "Professional stat tracking" : "Youth: points, fouls, free throws"}
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <button
+            aria-label="Open live box score"
+            className="flex size-10 items-center justify-center rounded-lg border border-sky-500/40 bg-sky-500/10 text-sky-300 transition-colors hover:bg-sky-500/20 hover:text-sky-200 focus:outline-none focus:ring-2 focus:ring-sky-500/50 lg:size-8 lg:rounded-md"
+            title="Box score: live per-player performance for coaches"
+            type="button"
+            onClick={onOpenBoxScore}
+          >
+            <BarChart3 size={17} />
+          </button>
+          <button
             aria-label="Open pre-game roster, attendance and officials"
-            className="flex size-10 items-center justify-center rounded-lg border border-amber-500/40 bg-amber-500/10 text-amber-300 transition-colors hover:bg-amber-500/20 hover:text-amber-200 focus:outline-none focus:ring-2 focus:ring-amber-500/50 xl:size-8 xl:rounded-md"
+            className="flex size-10 items-center justify-center rounded-lg border border-amber-500/40 bg-amber-500/10 text-amber-300 transition-colors hover:bg-amber-500/20 hover:text-amber-200 focus:outline-none focus:ring-2 focus:ring-amber-500/50 lg:size-8 lg:rounded-md"
             title="Pre-game: attendance, starters, referee/scorekeeper, equalization"
             type="button"
             onClick={onOpenPreGame}
@@ -3335,7 +4284,7 @@ function ActionPanel({
           </button>
           <button
             aria-label="Reset local match controls"
-            className="flex size-10 items-center justify-center rounded-lg border border-neutral-800 bg-neutral-900 text-neutral-400 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500 xl:size-8 xl:rounded-md"
+            className="flex size-10 items-center justify-center rounded-lg border border-neutral-800 bg-neutral-900 text-neutral-400 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500 lg:size-8 lg:rounded-md"
             type="button"
             onClick={onResetMatchState}
           >
@@ -3343,7 +4292,7 @@ function ActionPanel({
           </button>
           <button
             aria-label="Refresh live data"
-            className="flex size-10 items-center justify-center rounded-lg border border-neutral-800 bg-neutral-900 text-neutral-400 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500 disabled:cursor-not-allowed disabled:opacity-60 xl:size-8 xl:rounded-md"
+            className="flex size-10 items-center justify-center rounded-lg border border-neutral-800 bg-neutral-900 text-neutral-400 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500 disabled:cursor-not-allowed disabled:opacity-60 lg:size-8 lg:rounded-md"
             disabled={isRefreshing}
             type="button"
             onClick={onRefresh}
@@ -3353,16 +4302,16 @@ function ActionPanel({
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-1 xl:gap-2">
-        <div className="flex flex-col gap-3 xl:gap-2">
-          <div className="rounded-xl border border-neutral-800 bg-gradient-to-b from-neutral-900 to-neutral-900/40 p-3 shadow-sm shadow-black/20 xl:rounded-md xl:p-2">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-1 lg:gap-1.5">
+        <div className="flex flex-col gap-3 lg:gap-1.5">
+          <div className="rounded-xl border border-neutral-800 bg-gradient-to-b from-neutral-900 to-neutral-900/40 p-3 shadow-sm shadow-black/20 lg:rounded-md lg:p-1.5">
             <div className="flex items-center justify-between gap-3">
               <span className="text-[11px] font-black uppercase tracking-wide text-neutral-500">Game Clock</span>
               {editingClock ? (
                 <input
                   aria-label="Edit remaining time (mm:ss)"
                   autoFocus
-                  className="w-28 rounded-md border border-lime-500/50 bg-neutral-950 px-2 text-right font-mono text-3xl font-black leading-none tabular-nums text-lime-300 outline-none focus:ring-2 focus:ring-lime-500/50 xl:w-20 xl:text-xl"
+                  className="w-28 rounded-md border border-lime-500/50 bg-neutral-950 px-2 text-right font-mono text-3xl font-black leading-none tabular-nums text-lime-300 outline-none focus:ring-2 focus:ring-lime-500/50 lg:w-20 lg:text-xl"
                   inputMode="numeric"
                   value={clockDraft}
                   onBlur={commitClockEdit}
@@ -3379,7 +4328,7 @@ function ActionPanel({
                 <button
                   aria-label="Edit remaining time"
                   className={cn(
-                    "rounded-md font-mono text-3xl font-black leading-none tabular-nums transition-colors hover:text-lime-300 focus:outline-none focus:ring-2 focus:ring-neutral-500 xl:text-xl",
+                    "rounded-md font-mono text-3xl font-black leading-none tabular-nums transition-colors hover:text-lime-300 focus:outline-none focus:ring-2 focus:ring-neutral-500 lg:text-xl",
                     isClockRunning ? "text-lime-400" : "text-neutral-100",
                   )}
                   title="Click to set the remaining time (mm:ss)"
@@ -3390,7 +4339,7 @@ function ActionPanel({
                 </button>
               )}
             </div>
-            <div className="mt-3 grid grid-cols-5 gap-1.5 xl:mt-1 xl:gap-1">
+            <div className="mt-3 grid grid-cols-5 gap-1.5 lg:mt-1 lg:gap-1">
               <TimerButton label="-10" onClick={() => onAdjustClock(-10)}>
                 <Minus size={13} />
                 10
@@ -3402,7 +4351,7 @@ function ActionPanel({
               <button
                 aria-label={isClockRunning ? "Pause clock" : "Start clock"}
                 className={cn(
-                  "flex h-11 items-center justify-center rounded-lg border text-xs font-black uppercase transition-colors focus:outline-none focus:ring-2 focus:ring-neutral-500 xl:h-7 xl:rounded-md",
+                  "flex h-11 items-center justify-center rounded-lg border text-xs font-black uppercase transition-colors focus:outline-none focus:ring-2 focus:ring-neutral-500 lg:h-7 lg:rounded-md",
                   isClockRunning
                     ? "border-lime-400 bg-lime-400 text-neutral-950 hover:bg-lime-300"
                     : "border-neutral-700 bg-neutral-100 text-neutral-950 hover:bg-white",
@@ -3421,16 +4370,16 @@ function ActionPanel({
                 10
               </TimerButton>
             </div>
-            <div className="mt-2 grid grid-cols-2 gap-1.5 xl:mt-1 xl:gap-1">
+            <div className="mt-2 grid grid-cols-2 gap-1.5 lg:mt-1 lg:gap-1">
               <button
-                className="h-10 rounded-lg border border-neutral-800 bg-neutral-950 text-[11px] font-black uppercase text-neutral-300 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500 xl:h-7 xl:rounded-md"
+                className="h-10 rounded-lg border border-neutral-800 bg-neutral-950 text-[11px] font-black uppercase text-neutral-300 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500 lg:h-7 lg:rounded-md"
                 type="button"
                 onClick={onResetGameClock}
               >
                 Reset Q
               </button>
               <button
-                className="flex h-10 items-center justify-center gap-1 rounded-lg border border-neutral-800 bg-neutral-950 text-[11px] font-black uppercase text-neutral-300 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500 xl:h-7 xl:rounded-md"
+                className="flex h-10 items-center justify-center gap-1 rounded-lg border border-neutral-800 bg-neutral-950 text-[11px] font-black uppercase text-neutral-300 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500 lg:h-7 lg:rounded-md"
                 type="button"
                 onClick={startClockEdit}
               >
@@ -3438,28 +4387,31 @@ function ActionPanel({
                 Edit Time
               </button>
             </div>
-            <div className="mt-3 flex items-center justify-between xl:mt-2">
+            {/* Youth games do not use a shot clock. */}
+            {mode !== "youth" && (
+              <>
+            <div className="mt-3 flex items-center justify-between lg:mt-1">
               <span className="text-[11px] font-black uppercase tracking-wide text-neutral-500">Shot Clock</span>
-              <span className="font-mono text-lg font-black tabular-nums text-neutral-100 xl:text-base">{shotClock}</span>
+              <span className="font-mono text-lg font-black tabular-nums text-neutral-100 lg:text-base">{shotClock}</span>
             </div>
-            <div className="mt-1.5 grid grid-cols-4 gap-1.5 xl:mt-1 xl:gap-1">
+            <div className="mt-1.5 grid grid-cols-4 gap-1.5 lg:mt-1 lg:gap-1">
               <button
                 aria-label="Decrease shot clock by one second"
-                className="h-10 rounded-lg border border-neutral-800 bg-neutral-950 text-[11px] font-black uppercase text-neutral-300 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500 xl:h-7 xl:rounded-md"
+                className="h-10 rounded-lg border border-neutral-800 bg-neutral-950 text-[11px] font-black uppercase text-neutral-300 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500 lg:h-7 lg:rounded-md"
                 type="button"
                 onClick={() => onAdjustShotClock(-1)}
               >
                 -1
               </button>
               <button
-                className="h-10 rounded-lg border border-neutral-800 bg-neutral-950 text-[11px] font-black uppercase text-neutral-300 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500 xl:h-7 xl:rounded-md"
+                className="h-10 rounded-lg border border-neutral-800 bg-neutral-950 text-[11px] font-black uppercase text-neutral-300 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500 lg:h-7 lg:rounded-md"
                 type="button"
                 onClick={() => onResetShotClock(FULL_SHOT_CLOCK)}
               >
                 24
               </button>
               <button
-                className="h-10 rounded-lg border border-neutral-800 bg-neutral-950 text-[11px] font-black uppercase text-neutral-300 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500 xl:h-7 xl:rounded-md"
+                className="h-10 rounded-lg border border-neutral-800 bg-neutral-950 text-[11px] font-black uppercase text-neutral-300 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500 lg:h-7 lg:rounded-md"
                 type="button"
                 onClick={() => onResetShotClock(SHORT_SHOT_CLOCK)}
               >
@@ -3467,25 +4419,30 @@ function ActionPanel({
               </button>
               <button
                 aria-label="Increase shot clock by one second"
-                className="h-10 rounded-lg border border-neutral-800 bg-neutral-950 text-[11px] font-black uppercase text-neutral-300 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500 xl:h-7 xl:rounded-md"
+                className="h-10 rounded-lg border border-neutral-800 bg-neutral-950 text-[11px] font-black uppercase text-neutral-300 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500 lg:h-7 lg:rounded-md"
                 type="button"
                 onClick={() => onAdjustShotClock(1)}
               >
                 +1
               </button>
             </div>
+              </>
+            )}
           </div>
 
-          <PeriodSettingsControls settings={periodSettings} onChange={onPeriodSettingsChange} />
+          {/* Period length/count is set on the dashboard; hide here in the fixed tablet layout to save height. */}
+          <div className="lg:hidden">
+            <PeriodSettingsControls settings={periodSettings} onChange={onPeriodSettingsChange} />
+          </div>
         </div>
 
-        <div className="flex flex-col gap-3 xl:gap-2">
+        <div className="flex flex-col gap-3 lg:gap-1.5">
           {mode === "professional" && (
-            <label className="flex h-12 items-center justify-between gap-3 rounded-xl border border-neutral-800 bg-neutral-900 px-4 xl:h-9 xl:rounded-md xl:px-3">
+            <label className="flex h-12 items-center justify-between gap-3 rounded-xl border border-neutral-800 bg-neutral-900 px-4 lg:h-8 lg:rounded-md lg:px-3">
               <span className="text-xs font-black uppercase tracking-wide text-neutral-200">Foul on shot</span>
               <input
                 checked={foulOnShot}
-                className="size-5 accent-amber-400 xl:size-4"
+                className="size-5 accent-amber-400 lg:size-4"
                 disabled={!canRecordShot}
                 type="checkbox"
                 onChange={(event) => onSetFoulOnShot(event.currentTarget.checked)}
@@ -3495,7 +4452,7 @@ function ActionPanel({
 
           <div className="grid grid-cols-2 gap-2">
             <button
-              className="flex h-12 items-center justify-center gap-2 rounded-xl border border-lime-500/30 bg-lime-500/10 text-xs font-black uppercase text-lime-200 transition-colors hover:bg-lime-500/20 focus:outline-none focus:ring-2 focus:ring-lime-500/50 disabled:cursor-not-allowed disabled:border-neutral-800 disabled:bg-neutral-900 disabled:text-neutral-500 disabled:opacity-50 xl:h-9 xl:rounded-md"
+              className="flex h-12 items-center justify-center gap-2 rounded-xl border border-lime-500/30 bg-lime-500/10 text-xs font-black uppercase text-lime-200 transition-colors hover:bg-lime-500/20 focus:outline-none focus:ring-2 focus:ring-lime-500/50 disabled:cursor-not-allowed disabled:border-neutral-800 disabled:bg-neutral-900 disabled:text-neutral-500 disabled:opacity-50 lg:h-8 lg:rounded-md"
               disabled={mode === "professional" && !canRecordShot}
               type="button"
               onClick={() => onFreeThrow(true)}
@@ -3504,7 +4461,7 @@ function ActionPanel({
               FT Made
             </button>
             <button
-              className="flex h-12 items-center justify-center gap-2 rounded-xl border border-red-500/30 bg-red-500/10 text-xs font-black uppercase text-red-200 transition-colors hover:bg-red-500/20 focus:outline-none focus:ring-2 focus:ring-red-500/50 disabled:cursor-not-allowed disabled:border-neutral-800 disabled:bg-neutral-900 disabled:text-neutral-500 disabled:opacity-50 xl:h-9 xl:rounded-md"
+              className="flex h-12 items-center justify-center gap-2 rounded-xl border border-red-500/30 bg-red-500/10 text-xs font-black uppercase text-red-200 transition-colors hover:bg-red-500/20 focus:outline-none focus:ring-2 focus:ring-red-500/50 disabled:cursor-not-allowed disabled:border-neutral-800 disabled:bg-neutral-900 disabled:text-neutral-500 disabled:opacity-50 lg:h-8 lg:rounded-md"
               disabled={mode === "professional" && !canRecordShot}
               type="button"
               onClick={() => onFreeThrow(false)}
@@ -3514,19 +4471,19 @@ function ActionPanel({
             </button>
           </div>
 
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-2">
+          <div className="grid grid-cols-2 gap-2 lg:grid-cols-3 lg:gap-1.5">
             {visibleActions.map((action) => {
               const Icon = action.icon;
               const allowed = isActionAllowed(action.key);
               return (
                 <button
-                  className="flex h-16 flex-col items-center justify-center gap-1 rounded-xl border border-neutral-800 bg-neutral-900 text-center transition-colors hover:bg-neutral-800 focus:outline-none focus:ring-2 focus:ring-neutral-500 disabled:cursor-not-allowed disabled:opacity-35 xl:h-10 xl:gap-0.5 xl:rounded-md"
+                  className="flex h-16 flex-col items-center justify-center gap-1 rounded-xl border border-neutral-800 bg-neutral-900 text-center transition-colors hover:bg-neutral-800 focus:outline-none focus:ring-2 focus:ring-neutral-500 disabled:cursor-not-allowed disabled:opacity-35 lg:h-8 lg:gap-0 lg:rounded-md"
                   disabled={!allowed}
                   key={action.key}
                   type="button"
                   onClick={() => onAction(action.key)}
                 >
-                  <Icon className={action.color} size={20} />
+                  <Icon className={cn(action.color, "lg:size-[18px]")} size={20} />
                   <span className="text-[11px] font-black uppercase text-neutral-100">{action.label}</span>
                 </button>
               );
@@ -3535,7 +4492,7 @@ function ActionPanel({
 
           <div className="grid grid-cols-2 gap-2">
             <button
-              className="flex h-12 items-center justify-center gap-2 rounded-xl border border-neutral-800 bg-neutral-900 text-xs font-black uppercase text-neutral-100 transition-colors hover:bg-neutral-800 focus:outline-none focus:ring-2 focus:ring-neutral-500 xl:h-9 xl:rounded-md"
+              className="flex h-12 items-center justify-center gap-2 rounded-xl border border-neutral-800 bg-neutral-900 text-xs font-black uppercase text-neutral-100 transition-colors hover:bg-neutral-800 focus:outline-none focus:ring-2 focus:ring-neutral-500 lg:h-8 lg:rounded-md"
               type="button"
               onClick={onOpenSubstitution}
             >
@@ -3543,7 +4500,7 @@ function ActionPanel({
               Sub
             </button>
             <button
-              className="flex h-12 items-center justify-center gap-2 rounded-xl border border-amber-500/40 bg-amber-500/10 text-xs font-black uppercase tracking-wide text-amber-200 transition-colors hover:bg-amber-500/20 focus:outline-none focus:ring-2 focus:ring-amber-500/50 xl:h-9 xl:rounded-md"
+              className="flex h-12 items-center justify-center gap-2 rounded-xl border border-amber-500/40 bg-amber-500/10 text-xs font-black uppercase tracking-wide text-amber-200 transition-colors hover:bg-amber-500/20 focus:outline-none focus:ring-2 focus:ring-amber-500/50 lg:h-8 lg:rounded-md"
               type="button"
               onClick={onJumpBall}
             >
@@ -3553,7 +4510,7 @@ function ActionPanel({
           </div>
 
           <button
-            className="flex h-12 items-center justify-center gap-2 rounded-xl border border-red-500/40 bg-red-500/10 text-xs font-black uppercase tracking-wide text-red-200 transition-colors hover:bg-red-500/20 focus:outline-none focus:ring-2 focus:ring-red-500/50 xl:h-9 xl:rounded-md"
+            className="flex h-12 items-center justify-center gap-2 rounded-xl border border-red-500/40 bg-red-500/10 text-xs font-black uppercase tracking-wide text-red-200 transition-colors hover:bg-red-500/20 focus:outline-none focus:ring-2 focus:ring-red-500/50 lg:h-8 lg:rounded-md"
             type="button"
             onClick={onEndGame}
           >
@@ -3562,12 +4519,12 @@ function ActionPanel({
           </button>
         </div>
 
-        <div className="flex flex-col gap-3 xl:gap-2">
+        <div className="flex flex-col gap-3 lg:gap-1.5">
           <label className="block">
             <span className="mb-1.5 block text-[11px] font-black uppercase tracking-wide text-neutral-500">Current Period</span>
             <select
               aria-label="Select period"
-              className="h-12 w-full rounded-xl border border-neutral-800 bg-neutral-900 px-3 text-sm font-bold text-neutral-100 outline-none focus:ring-2 focus:ring-neutral-500 xl:h-9 xl:rounded-md xl:px-2"
+              className="h-12 w-full rounded-xl border border-neutral-800 bg-neutral-900 px-3 text-sm font-bold text-neutral-100 outline-none focus:ring-2 focus:ring-neutral-500 lg:h-8 lg:rounded-md lg:px-2"
               value={period}
               onChange={(event) => onPeriodChange(Number(event.currentTarget.value) as LiveMatch["period"])}
             >
@@ -3613,7 +4570,7 @@ function TimerButton({
   return (
     <button
       aria-label={`Adjust clock ${label} seconds`}
-      className="flex h-11 items-center justify-center gap-0.5 rounded-lg border border-neutral-800 bg-neutral-950 text-[11px] font-black text-neutral-200 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500 xl:h-7 xl:rounded-md"
+      className="flex h-11 items-center justify-center gap-0.5 rounded-lg border border-neutral-800 bg-neutral-950 text-[11px] font-black text-neutral-200 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500 lg:h-7 lg:rounded-md"
       type="button"
       onClick={onClick}
     >
@@ -3640,20 +4597,20 @@ function TimeoutPanel({
   onStopClock: () => void;
 }) {
   return (
-    <div className="rounded-xl border border-neutral-800 bg-neutral-900 p-3 xl:rounded-md xl:p-2">
-      <div className="mb-2 grid grid-cols-[minmax(0,1fr)_auto_auto_auto] items-center gap-2 xl:mb-1 xl:gap-1">
+    <div className="rounded-xl border border-neutral-800 bg-neutral-900 p-3 lg:rounded-md lg:p-1.5">
+      <div className="mb-2 grid grid-cols-[minmax(0,1fr)_auto_auto_auto] items-center gap-2 lg:mb-1 lg:gap-1">
         <div className="min-w-0">
           <div className="text-[11px] font-black uppercase tracking-wide text-neutral-500">Timeout Clock</div>
           <div className="truncate text-[11px] font-bold text-neutral-400">
             {timeoutTeam ? `${teams[timeoutTeam].label} running` : "Ready"}
           </div>
         </div>
-        <span className="font-mono text-base font-black tabular-nums text-neutral-100 xl:text-sm">
+        <span className="font-mono text-base font-black tabular-nums text-neutral-100 lg:text-sm">
           {secondsToClock(remainingSeconds || durationSeconds)}
         </span>
         <button
           aria-label="Decrease timeout clock by fifteen seconds"
-          className="flex size-9 items-center justify-center rounded-lg border border-neutral-800 bg-neutral-950 text-neutral-300 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500 xl:size-6 xl:rounded-sm"
+          className="flex size-9 items-center justify-center rounded-lg border border-neutral-800 bg-neutral-950 text-neutral-300 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500 lg:size-6 lg:rounded-sm"
           type="button"
           onClick={() => onAdjustDuration(-15)}
         >
@@ -3661,20 +4618,20 @@ function TimeoutPanel({
         </button>
         <button
           aria-label={remainingSeconds > 0 ? "Stop timeout clock" : "Increase timeout clock by fifteen seconds"}
-          className="flex size-9 items-center justify-center rounded-lg border border-neutral-800 bg-neutral-950 text-neutral-300 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500 xl:size-6 xl:rounded-sm"
+          className="flex size-9 items-center justify-center rounded-lg border border-neutral-800 bg-neutral-950 text-neutral-300 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500 lg:size-6 lg:rounded-sm"
           type="button"
           onClick={remainingSeconds > 0 ? onStopClock : () => onAdjustDuration(15)}
         >
           {remainingSeconds > 0 ? <Pause size={13} /> : <Plus size={13} />}
         </button>
       </div>
-      <div className="grid gap-1.5 xl:gap-1">
+      <div className="grid gap-1.5 lg:gap-1">
         {(["away", "home"] as TeamId[]).map((teamId) => (
           <div
-            className="grid grid-cols-[44px_minmax(0,1fr)_auto_auto_auto] items-center gap-2 rounded-lg border border-neutral-800 bg-neutral-950 px-2 py-1.5 xl:gap-1 xl:rounded-none xl:border-0 xl:bg-transparent xl:p-0"
+            className="grid grid-cols-[44px_minmax(0,1fr)_auto_auto_auto] items-center gap-2 rounded-lg border border-neutral-800 bg-neutral-950 px-2 py-1.5 lg:gap-1 lg:rounded-none lg:border-0 lg:bg-transparent lg:p-0"
             key={teamId}
           >
-            <span className={cn("text-[10px] font-black uppercase", teamId === "away" ? "text-red-400" : "text-blue-400")}>
+            <span className="text-[10px] font-black uppercase" style={{ color: `var(--c-${teamId}-soft)` }}>
               {teams[teamId].label}
             </span>
             <span className="truncate text-[11px] font-bold text-neutral-400">
@@ -3685,7 +4642,7 @@ function TimeoutPanel({
             </span>
             <button
               aria-label={`Remove ${teams[teamId].label} timeout`}
-              className="flex size-9 items-center justify-center rounded-lg border border-neutral-800 bg-neutral-900 text-neutral-300 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500 xl:size-6 xl:rounded-sm xl:bg-neutral-950"
+              className="flex size-9 items-center justify-center rounded-lg border border-neutral-800 bg-neutral-900 text-neutral-300 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500 lg:size-6 lg:rounded-sm lg:bg-neutral-950"
               type="button"
               onClick={() => onAdjustTimeout(teamId, -1)}
             >
@@ -3693,7 +4650,7 @@ function TimeoutPanel({
             </button>
             <button
               aria-label={`Register ${teams[teamId].label} timeout`}
-              className="flex size-9 items-center justify-center rounded-lg border border-neutral-800 bg-neutral-900 text-neutral-300 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500 xl:size-6 xl:rounded-sm xl:bg-neutral-950"
+              className="flex size-9 items-center justify-center rounded-lg border border-neutral-800 bg-neutral-900 text-neutral-300 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500 lg:size-6 lg:rounded-sm lg:bg-neutral-950"
               type="button"
               onClick={() => onAdjustTimeout(teamId, 1)}
             >
@@ -3728,7 +4685,7 @@ function DevLogPanel({
           : "Local Data";
 
   return (
-    <div className="overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900 p-3 xl:rounded-md xl:p-2">
+    <div className="overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900 p-3 lg:rounded-md lg:p-1.5">
       <div className="flex items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2.5">
           <span
@@ -3753,10 +4710,12 @@ function DevLogPanel({
         </div>
         <Gauge className="shrink-0 text-neutral-600" size={16} />
       </div>
-      <div className="mt-2 rounded-md border border-neutral-800 bg-neutral-950 px-2.5 py-1.5 text-[11px] text-neutral-400">
+      {/* The status row above already conveys connection state; hide the detail line in the fixed tablet layout. */}
+      <div className="mt-2 rounded-md border border-neutral-800 bg-neutral-950 px-2.5 py-1.5 text-[11px] text-neutral-400 lg:hidden">
         {syncMessage}
       </div>
-      <div className="mt-2 max-h-24 space-y-1 overflow-y-auto xl:max-h-20">
+      {/* The detailed sync history is diagnostic; hide it in the fixed tablet layout to save height. */}
+      <div className="mt-2 max-h-24 space-y-1 overflow-y-auto lg:hidden">
         {syncLog.slice(0, VISIBLE_SYNC_LOG_LIMIT).map((entry) => (
           <div className="grid grid-cols-[48px_1fr] gap-2 text-[11px]" key={entry.id}>
             <span className="font-mono text-neutral-600 tabular-nums">{entry.time}</span>
@@ -4080,7 +5039,30 @@ function getPlayerKey(player: Player) {
 }
 
 function formatPlayer(player: Player) {
-  return `#${player.number} ${player.name}`;
+  // The live scoring view is jersey-number only; full names live in the attendance dialog.
+  return `#${player.number}`;
+}
+
+function getEventPlayerNumber(event: GameEvent, teams: Record<TeamId, Team>): string {
+  if (event.foulBall) {
+    return "—";
+  }
+
+  const roster = getRoster(teams[event.team]);
+  const byId = event.playerId ? roster.find((player) => player.id === event.playerId) : undefined;
+  if (byId) {
+    return `#${byId.number}`;
+  }
+
+  // Local events already store "#<number>"; server events store the player's name, so fall
+  // back to matching it against the roster to recover the jersey number.
+  const lead = event.player.split(/\s+/)[0];
+  if (lead.startsWith("#")) {
+    return lead;
+  }
+
+  const byName = roster.find((player) => player.name === event.player);
+  return byName ? `#${byName.number}` : "—";
 }
 
 function applyStoredStarters(match: LiveMatch): LiveMatch {
@@ -4583,10 +5565,6 @@ function isSamePlayer(player: Player, currentPlayer: Player) {
 
 function oppositeTeam(team: TeamId): TeamId {
   return team === "away" ? "home" : "away";
-}
-
-function getCourtSideForTeam(courtSides: CourtSides, team: TeamId): CourtSide {
-  return courtSides.left === team ? "left" : "right";
 }
 
 function getPlayerPeriodKey(period: LiveMatch["period"]): "q1" | "q2" | "q3" | "q4" | "ot" {
