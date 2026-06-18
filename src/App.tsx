@@ -300,6 +300,7 @@ function App() {
   const [warningOpen, setWarningOpen] = useState(false);
   const [foulPrompt, setFoulPrompt] = useState<{ player: Player; team: TeamId } | undefined>(undefined);
   const [freeThrowPrompt, setFreeThrowPrompt] = useState<{ made: boolean } | undefined>(undefined);
+  const [techOpen, setTechOpen] = useState(false);
   const [endGameOpen, setEndGameOpen] = useState(false);
   const [preGameOpen, setPreGameOpen] = useState(false);
   const [undoStack, setUndoStack] = useState<UndoItem[]>([]);
@@ -1225,6 +1226,99 @@ function App() {
     });
   }
 
+  function openTech() {
+    setTechOpen(true);
+  }
+
+  function closeTech() {
+    setTechOpen(false);
+  }
+
+  // A technical on a player counts as a foul (player + team), recorded on the picked on-court
+  // player via the explicit-actor path.
+  function recordPlayerTech(team: TeamId, player: Player) {
+    commitAction(
+      {
+        action: "tech foul",
+        issuedByRef: true,
+        label: `Tech · #${player.number}`,
+        points: 0,
+      },
+      { player, team },
+    );
+    setTechOpen(false);
+  }
+
+  // An administrative technical (bench/coach/procedure) is ref-issued and does NOT add a
+  // personal foul — logged as its own event against the team, the same way warnings are.
+  function recordAdminTech(team: TeamId) {
+    const current = matchRef.current;
+    const label = "Tech · Administrative";
+    const event: GameEvent = {
+      action: "admin tech",
+      icon: getEventIcon("admin tech", 0),
+      id: Date.now(),
+      issuedByRef: true,
+      label,
+      period: current.period,
+      player: "—",
+      points: 0,
+      team,
+      time: current.clock,
+    };
+    const undoItem: UndoItem = {
+      detail: { action: "admin tech", issuedByRef: true, label, points: 0 },
+      event,
+      eventId: event.id,
+      period: current.period,
+      playerKey: "",
+      previousPossession: current.possession,
+      previousShotClock: current.shotClock,
+      selectedTeam: team,
+    };
+    const nextMatch = { ...current, events: [event, ...current.events] };
+
+    matchRef.current = nextMatch;
+    setMatch(nextMatch);
+    setUndoStack((stack) => [undoItem, ...stack].slice(0, UNDO_LIMIT));
+    setTechOpen(false);
+    appendLog(createLog("info", "Administrative tech", nextMatch[team].name));
+
+    void saveMatchAction(apiClient, {
+      action: "admin tech",
+      issuedByRef: true,
+      label,
+      match: nextMatch,
+      nextAwayScore: nextMatch.awayScore,
+      nextHomeScore: nextMatch.homeScore,
+      note: "Administrative",
+      player: WARNING_PLACEHOLDER_PLAYER,
+      points: 0,
+      selectedTeam: team,
+    }).then((result) => {
+      if (result.eventId) {
+        setUndoStack((stack) =>
+          stack.map((item) =>
+            item.eventId === event.id ? { ...item, serverEventId: result.eventId } : item,
+          ),
+        );
+        setMatch((latest) => {
+          const withServerId = {
+            ...latest,
+            events: latest.events.map((saved) =>
+              saved.id === event.id ? { ...saved, serverEventId: result.eventId } : saved,
+            ),
+          };
+          matchRef.current = withServerId;
+          return withServerId;
+        });
+      }
+
+      appendLog(result.log);
+      setConnectionStatus(result.log.level === "error" ? "error" : result.saved ? "connected" : "local");
+    });
+  }
+
   function openFoul() {
     if (!currentPlayer) {
       appendLog(createLog("warning", "Foul skipped", "Select the fouling player first."));
@@ -1830,6 +1924,7 @@ function App() {
             onOpenFoul={openFoul}
             onOpenPreGame={openPreGame}
             onOpenSubstitution={openSubstitution}
+            onOpenTech={openTech}
             onOpenWarning={openWarning}
             onPeriodChange={setPeriod}
             onPeriodSettingsChange={updatePeriodSettings}
@@ -1892,6 +1987,15 @@ function App() {
           teams={{ away: match.away, home: match.home }}
           onClose={closeFreeThrow}
           onPick={(team, player) => commitFreeThrowFor(team, player, freeThrowPrompt.made)}
+        />
+      )}
+
+      {techOpen && (
+        <TechDialog
+          teams={{ away: match.away, home: match.home }}
+          onClose={closeTech}
+          onPlayerTech={recordPlayerTech}
+          onAdminTech={recordAdminTech}
         />
       )}
 
@@ -4099,6 +4203,118 @@ function FreeThrowDialog({
   );
 }
 
+function TechDialog({
+  teams,
+  onClose,
+  onPlayerTech,
+  onAdminTech,
+}: {
+  teams: Record<TeamId, Team>;
+  onClose: () => void;
+  onPlayerTech: (team: TeamId, player: Player) => void;
+  onAdminTech: (team: TeamId) => void;
+}) {
+  return (
+    <div
+      aria-modal="true"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
+      role="dialog"
+      onClick={onClose}
+    >
+      <div
+        className="flex max-h-[92vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-neutral-700 bg-neutral-900 shadow-2xl shadow-black/60"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="flex items-center justify-between gap-3 border-b border-neutral-800 px-4 py-3">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <Trophy className="shrink-0 text-amber-400" size={20} />
+            <div className="min-w-0">
+              <div className="text-[10px] font-black uppercase tracking-widest text-amber-400">Falta técnica</div>
+              <h2 className="truncate text-lg font-black text-neutral-50">Technical</h2>
+            </div>
+          </div>
+          <button
+            aria-label="Close technical"
+            className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-neutral-800 bg-neutral-950 text-neutral-400 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500"
+            type="button"
+            onClick={onClose}
+          >
+            <CircleX size={18} />
+          </button>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto scrollbar-slim">
+          {/* Player technical — counts as a foul. Pick the on-court player. */}
+          <div className="px-4 pb-1 pt-3">
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] font-black uppercase tracking-wide text-neutral-300">Al jugador</span>
+              <span className="rounded border border-amber-500/40 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide text-amber-300">
+                Cuenta como falta
+              </span>
+            </div>
+          </div>
+          <div className="grid gap-px bg-neutral-800 sm:grid-cols-2">
+            {(["away", "home"] as TeamId[]).map((side) => {
+              const team = teams[side];
+              return (
+                <div className="bg-neutral-900 p-3" key={side}>
+                  <div className="mb-2 flex items-center gap-2">
+                    <span aria-hidden className="h-4 w-1 rounded-full" style={{ backgroundColor: `var(--c-${side})` }} />
+                    <span className="text-[10px] font-black uppercase tracking-wide" style={{ color: `var(--c-${side}-soft)` }}>
+                      {team.label}
+                    </span>
+                    <span className="min-w-0 truncate text-[11px] font-bold text-neutral-400">{team.name}</span>
+                  </div>
+                  <CourtShooterGrid
+                    accent={side}
+                    emptyLabel="Nadie en cancha."
+                    label="En cancha"
+                    players={team.players}
+                    onPick={(player) => onPlayerTech(side, player)}
+                  />
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Administrative technical — bench/coach/procedure. Does NOT add a personal foul. */}
+          <div className="border-t border-neutral-800 px-4 pb-3 pt-3">
+            <div className="mb-2 flex items-center gap-2">
+              <span className="text-[11px] font-black uppercase tracking-wide text-neutral-300">Administrativa</span>
+              <span className="rounded border border-neutral-700 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide text-neutral-400">
+                Banca / coach · no es falta personal
+              </span>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              {(["away", "home"] as TeamId[]).map((side) => (
+                <button
+                  className="flex h-11 items-center justify-center gap-2 rounded-lg border bg-neutral-950 text-xs font-black uppercase tracking-wide transition-colors hover:bg-neutral-800 focus:outline-none focus:ring-2 focus:ring-neutral-500"
+                  key={side}
+                  style={{ borderColor: `var(--c-${side}-ring)`, color: `var(--c-${side}-soft)` }}
+                  type="button"
+                  onClick={() => onAdminTech(side)}
+                >
+                  {teams[side].label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="flex justify-end border-t border-neutral-800 px-4 py-3">
+          <button
+            className="h-10 rounded-lg border border-neutral-800 bg-neutral-950 px-4 text-xs font-black uppercase tracking-wide text-neutral-300 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500"
+            type="button"
+            onClick={onClose}
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 type BoxRow = {
   player: Player;
   key: string;
@@ -5116,6 +5332,7 @@ function ActionPanel({
   onOpenFoul,
   onOpenPreGame,
   onOpenSubstitution,
+  onOpenTech,
   onOpenWarning,
   onPeriodChange,
   onPeriodSettingsChange,
@@ -5158,6 +5375,7 @@ function ActionPanel({
   onOpenFoul: () => void;
   onOpenPreGame: () => void;
   onOpenSubstitution: () => void;
+  onOpenTech: () => void;
   onOpenWarning: () => void;
   onPeriodChange: (period: LiveMatch["period"]) => void;
   onPeriodSettingsChange: (settings: Partial<PeriodSettings>) => void;
@@ -5416,17 +5634,26 @@ function ActionPanel({
             {visibleActions.map((action) => {
               const Icon = action.icon;
               // "Warning" opens the 6-type picker; "P. Foul" opens the foul popup (who was
-              // fouled + free throws). Every other action records directly.
+              // fouled + free throws); "Tech" opens the tech popup (player tech = foul, or
+              // administrative). Every other action records directly.
               const isWarning = action.key === "warning";
               const isFoul = action.key === "personal foul";
-              const allowed = isWarning || isFoul || isActionAllowed(action.key);
+              const isTech = action.key === "tech foul";
+              const allowed = isWarning || isFoul || isTech || isActionAllowed(action.key);
+              const handleClick = isWarning
+                ? onOpenWarning
+                : isFoul
+                  ? onOpenFoul
+                  : isTech
+                    ? onOpenTech
+                    : () => onAction(action.key);
               return (
                 <button
                   className="flex h-16 flex-col items-center justify-center gap-1 rounded-xl border border-neutral-800 bg-neutral-900 text-center transition-colors hover:bg-neutral-800 focus:outline-none focus:ring-2 focus:ring-neutral-500 disabled:cursor-not-allowed disabled:opacity-35 lg:h-8 lg:gap-0 lg:rounded-md"
                   disabled={!allowed}
                   key={action.key}
                   type="button"
-                  onClick={() => (isWarning ? onOpenWarning() : isFoul ? onOpenFoul() : onAction(action.key))}
+                  onClick={handleClick}
                 >
                   <Icon className={cn(action.color, "lg:size-[18px]")} size={20} />
                   <span className="text-[11px] font-black uppercase text-neutral-100">{action.label}</span>

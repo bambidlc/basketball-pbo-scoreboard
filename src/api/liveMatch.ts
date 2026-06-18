@@ -38,6 +38,7 @@ export type ActionKey =
   | "block"
   | "personal foul"
   | "tech foul"
+  | "admin tech"
   | "warning"
   | "substitution"
   | "suspension";
@@ -1832,6 +1833,7 @@ function normalizeActionKey(value: unknown): ActionKey {
     "block",
     "personal foul",
     "tech foul",
+    "admin tech",
     "warning",
     "substitution",
     "suspension",
