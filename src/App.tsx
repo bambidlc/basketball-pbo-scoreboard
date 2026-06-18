@@ -1253,7 +1253,7 @@ function App() {
   // personal foul — logged as its own event against the team, the same way warnings are.
   function recordAdminTech(team: TeamId) {
     const current = matchRef.current;
-    const label = "Tech · Administrative";
+    const label = "Tech · Administrativa (coach/banca)";
     const event: GameEvent = {
       action: "admin tech",
       icon: getEventIcon("admin tech", 0),
@@ -4246,12 +4246,13 @@ function TechDialog({
         <div className="min-h-0 flex-1 overflow-y-auto scrollbar-slim">
           {/* Player technical — counts as a foul. Pick the on-court player. */}
           <div className="px-4 pb-1 pt-3">
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <span className="text-[11px] font-black uppercase tracking-wide text-neutral-300">Al jugador</span>
               <span className="rounded border border-amber-500/40 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide text-amber-300">
                 Cuenta como falta
               </span>
             </div>
+            <p className="mt-1 text-[11px] font-semibold text-neutral-500">Técnica a un jugador en cancha — suma falta personal y de equipo.</p>
           </div>
           <div className="grid gap-px bg-neutral-800 sm:grid-cols-2">
             {(["away", "home"] as TeamId[]).map((side) => {
@@ -4277,14 +4278,15 @@ function TechDialog({
             })}
           </div>
 
-          {/* Administrative technical — bench/coach/procedure. Does NOT add a personal foul. */}
+          {/* Administrative technical = toward the coach / bench. Does NOT add a personal foul. */}
           <div className="border-t border-neutral-800 px-4 pb-3 pt-3">
-            <div className="mb-2 flex items-center gap-2">
-              <span className="text-[11px] font-black uppercase tracking-wide text-neutral-300">Administrativa</span>
+            <div className="mb-1 flex flex-wrap items-center gap-2">
+              <span className="text-[11px] font-black uppercase tracking-wide text-neutral-300">Administrativa · coach y banca</span>
               <span className="rounded border border-neutral-700 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide text-neutral-400">
-                Banca / coach · no es falta personal
+                No es falta personal
               </span>
             </div>
+            <p className="mb-2 text-[11px] font-semibold text-neutral-500">Técnica al coach o a la banca del equipo.</p>
             <div className="grid grid-cols-2 gap-2">
               {(["away", "home"] as TeamId[]).map((side) => (
                 <button
