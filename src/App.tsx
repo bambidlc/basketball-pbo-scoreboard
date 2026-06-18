@@ -923,8 +923,8 @@ function App() {
     syncFlowState(`${current[team].label} ball`, nextMatch);
   }
 
-  // Foul-ball (alternating possession) arrow changes are logged to the event feed so the
-  // book has a record of every arrow swing, the same way subs and techs are recorded.
+  // Possession (alternating) arrow changes are logged to the event feed so the book has a
+  // record of every arrow swing, the same way subs and techs are recorded.
   function buildFoulBallEvent(current: LiveMatch, team: TeamId, label: string): GameEvent {
     return {
       foulBall: true,
@@ -945,12 +945,12 @@ function App() {
     setPossessionArrow(nextTeam);
     // A manual change counts as this period's arrow change, so the quarter break won't flip it.
     arrowChangedThisPeriodRef.current = true;
-    const label = `Foul ball arrow → ${current[nextTeam].name}`;
+    const label = `Possession → ${current[nextTeam].name}`;
     const event = buildFoulBallEvent(current, nextTeam, label);
     const nextMatch = { ...current, events: [event, ...current.events] };
     matchRef.current = nextMatch;
     setMatch(nextMatch);
-    appendLog(createLog("info", "Foul ball", label));
+    appendLog(createLog("info", "Possession", label));
   }
 
   function openJumpBall() {
@@ -966,7 +966,7 @@ function App() {
     setJumpBallOpen(false);
     setPossession(took);
     const current = matchRef.current;
-    const label = `Jump ball — foul ball arrow → ${current[nextArrow].name}`;
+    const label = `Jump ball — possession → ${current[nextArrow].name}`;
     const event = buildFoulBallEvent(current, nextArrow, label);
     const nextMatch = { ...current, events: [event, ...current.events] };
     matchRef.current = nextMatch;
@@ -1615,7 +1615,7 @@ function App() {
       matchRef.current = nextMatch;
       setMatch(nextMatch);
       setPossessionArrow(oppositeTeam(event.team));
-      appendLog(createLog("info", "Foul ball undone", event.label));
+      appendLog(createLog("info", "Possession undone", event.label));
       return;
     }
 
@@ -2538,14 +2538,14 @@ function ScoreHeader({
           </div>
         </div>
         <button
-          aria-label="Foul ball arrow"
+          aria-label="Possession arrow"
           className="flex h-9 w-full min-w-0 items-center justify-center gap-2 rounded-lg border bg-neutral-900 px-2 text-[11px] font-black uppercase tracking-wide transition-colors hover:bg-neutral-800 focus:outline-none focus:ring-2 focus:ring-amber-500/50 lg:h-7 lg:rounded-md"
           style={{ borderColor: `var(--c-${foulBallTeam}-ring)`, color: `var(--c-${foulBallTeam}-soft)` }}
-          title="Foul ball arrow (alternating possession). Tap to flip it — every flip is logged in the event feed."
+          title="Possession arrow (alternating possession). Tap to flip it — every flip is logged in the event feed."
           type="button"
           onClick={onToggleFoulBall}
         >
-          <span className="text-neutral-300">Foul Ball</span>
+          <span className="text-neutral-300">Possession</span>
           <PossessionArrow possession={foulBallTeam} />
           <span>{foulBallTeam === "away" ? "Visitor" : "Home"}</span>
         </button>
