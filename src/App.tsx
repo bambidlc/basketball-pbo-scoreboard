@@ -299,6 +299,7 @@ function App() {
   const [boxScoreOpen, setBoxScoreOpen] = useState(false);
   const [warningOpen, setWarningOpen] = useState(false);
   const [foulPrompt, setFoulPrompt] = useState<{ player: Player; team: TeamId } | undefined>(undefined);
+  const [freeThrowPrompt, setFreeThrowPrompt] = useState<{ made: boolean } | undefined>(undefined);
   const [endGameOpen, setEndGameOpen] = useState(false);
   const [preGameOpen, setPreGameOpen] = useState(false);
   const [undoStack, setUndoStack] = useState<UndoItem[]>([]);
@@ -1177,17 +1178,31 @@ function App() {
     );
   }
 
+  // Pressing FT Made / FT Miss opens a picker of the players currently on court; the chosen
+  // shooter (and their team) records the free throw via the explicit-actor path.
   function recordFreeThrow(made: boolean) {
-    commitAction({
-      action: made ? "free throw made" : "free throw missed",
-      freeThrowsAttempted: 1,
-      freeThrowsMade: made ? 1 : 0,
-      label: made ? "Free Throw Made" : "Free Throw Missed",
-      points: made ? 1 : 0,
-      shotMade: made,
-      shotType: "free throw",
-      shotValue: 1,
-    });
+    setFreeThrowPrompt({ made });
+  }
+
+  function closeFreeThrow() {
+    setFreeThrowPrompt(undefined);
+  }
+
+  function commitFreeThrowFor(team: TeamId, player: Player, made: boolean) {
+    commitAction(
+      {
+        action: made ? "free throw made" : "free throw missed",
+        freeThrowsAttempted: 1,
+        freeThrowsMade: made ? 1 : 0,
+        label: made ? "Free Throw Made" : "Free Throw Missed",
+        points: made ? 1 : 0,
+        shotMade: made,
+        shotType: "free throw",
+        shotValue: 1,
+      },
+      { player, team },
+    );
+    setFreeThrowPrompt(undefined);
   }
 
   function recordStatAction(action: ActionKey) {
@@ -1868,6 +1883,15 @@ function App() {
           opponentSide={oppositeTeam(foulPrompt.team)}
           onClose={closeFoul}
           onConfirm={recordFoul}
+        />
+      )}
+
+      {freeThrowPrompt && (
+        <FreeThrowDialog
+          made={freeThrowPrompt.made}
+          teams={{ away: match.away, home: match.home }}
+          onClose={closeFreeThrow}
+          onPick={(team, player) => commitFreeThrowFor(team, player, freeThrowPrompt.made)}
         />
       )}
 
@@ -2922,6 +2946,7 @@ function CourtPanel({
                 </span>
                 {foulOnShot && <span className="text-amber-400">+ Foul</span>}
               </div>
+              {/* Only players currently on court can be assigned a field goal. */}
               <CourtShooterGrid
                 accent={pendingTeamId}
                 emptyLabel="No players on court."
@@ -2929,15 +2954,6 @@ function CourtPanel({
                 players={pendingTeam.players}
                 onPick={pickShooter}
               />
-              {pendingTeam.bench.length > 0 && (
-                <CourtShooterGrid
-                  accent={pendingTeamId}
-                  className="mt-2"
-                  label="Bench"
-                  players={pendingTeam.bench}
-                  onPick={pickShooter}
-                />
-              )}
               <div className="mt-3 grid grid-cols-2 gap-2">
                 <button
                   className="h-9 rounded-lg border border-neutral-800 bg-neutral-900 text-[11px] font-black uppercase tracking-wide text-neutral-400 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500 lg:h-7"
@@ -3796,7 +3812,8 @@ function FoulDialog({
 }) {
   const cBase = `var(--c-${committerSide})`;
   const cSoft = `var(--c-${committerSide}-soft)`;
-  const roster = useMemo(() => getRoster(opponent), [opponent]);
+  // Only players currently on court can draw a foul that ends in free throws.
+  const roster = opponent.players;
   const [fouledKey, setFouledKey] = useState<string | undefined>(undefined);
   const [ftCount, setFtCount] = useState(0);
   const [ftMade, setFtMade] = useState<boolean[]>([true, true, true]);
@@ -3992,6 +4009,90 @@ function FoulDialog({
               Registrar falta
             </button>
           </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function FreeThrowDialog({
+  made,
+  teams,
+  onClose,
+  onPick,
+}: {
+  made: boolean;
+  teams: Record<TeamId, Team>;
+  onClose: () => void;
+  onPick: (team: TeamId, player: Player) => void;
+}) {
+  return (
+    <div
+      aria-modal="true"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
+      role="dialog"
+      onClick={onClose}
+    >
+      <div
+        className="flex max-h-[92vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-neutral-700 bg-neutral-900 shadow-2xl shadow-black/60"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="flex items-center justify-between gap-3 border-b border-neutral-800 px-4 py-3">
+          <div className="flex min-w-0 items-center gap-2.5">
+            {made ? <Plus className="shrink-0 text-lime-400" size={20} /> : <CircleX className="shrink-0 text-red-400" size={20} />}
+            <div className="min-w-0">
+              <div className="text-[10px] font-black uppercase tracking-widest text-neutral-500">Tiro libre</div>
+              <h2 className={cn("truncate text-lg font-black", made ? "text-lime-200" : "text-red-200")}>
+                {made ? "Anotado" : "Fallado"}
+              </h2>
+            </div>
+          </div>
+          <button
+            aria-label="Close free throw"
+            className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-neutral-800 bg-neutral-950 text-neutral-400 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500"
+            type="button"
+            onClick={onClose}
+          >
+            <CircleX size={18} />
+          </button>
+        </div>
+
+        <div className="border-b border-neutral-800 px-4 py-2 text-xs font-semibold text-neutral-400">
+          Elige el tirador — solo jugadores en cancha.
+        </div>
+
+        <div className="grid min-h-0 flex-1 gap-px overflow-y-auto scrollbar-slim bg-neutral-800 sm:grid-cols-2">
+          {(["away", "home"] as TeamId[]).map((side) => {
+            const team = teams[side];
+            return (
+              <div className="bg-neutral-900 p-3" key={side}>
+                <div className="mb-2 flex items-center gap-2">
+                  <span aria-hidden className="h-4 w-1 rounded-full" style={{ backgroundColor: `var(--c-${side})` }} />
+                  <span className="text-[10px] font-black uppercase tracking-wide" style={{ color: `var(--c-${side}-soft)` }}>
+                    {team.label}
+                  </span>
+                  <span className="min-w-0 truncate text-[11px] font-bold text-neutral-400">{team.name}</span>
+                </div>
+                <CourtShooterGrid
+                  accent={side}
+                  emptyLabel="Nadie en cancha."
+                  label="En cancha"
+                  players={team.players}
+                  onPick={(player) => onPick(side, player)}
+                />
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="flex justify-end border-t border-neutral-800 px-4 py-3">
+          <button
+            className="h-10 rounded-lg border border-neutral-800 bg-neutral-950 px-4 text-xs font-black uppercase tracking-wide text-neutral-300 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500"
+            type="button"
+            onClick={onClose}
+          >
+            Cancel
+          </button>
         </div>
       </div>
     </div>
@@ -5294,8 +5395,7 @@ function ActionPanel({
 
           <div className="grid grid-cols-2 gap-2">
             <button
-              className="flex h-12 items-center justify-center gap-2 rounded-xl border border-lime-500/30 bg-lime-500/10 text-xs font-black uppercase text-lime-200 transition-colors hover:bg-lime-500/20 focus:outline-none focus:ring-2 focus:ring-lime-500/50 disabled:cursor-not-allowed disabled:border-neutral-800 disabled:bg-neutral-900 disabled:text-neutral-500 disabled:opacity-50 lg:h-8 lg:rounded-md"
-              disabled={mode === "professional" && !canRecordShot}
+              className="flex h-12 items-center justify-center gap-2 rounded-xl border border-lime-500/30 bg-lime-500/10 text-xs font-black uppercase text-lime-200 transition-colors hover:bg-lime-500/20 focus:outline-none focus:ring-2 focus:ring-lime-500/50 lg:h-8 lg:rounded-md"
               type="button"
               onClick={() => onFreeThrow(true)}
             >
@@ -5303,8 +5403,7 @@ function ActionPanel({
               FT Made
             </button>
             <button
-              className="flex h-12 items-center justify-center gap-2 rounded-xl border border-red-500/30 bg-red-500/10 text-xs font-black uppercase text-red-200 transition-colors hover:bg-red-500/20 focus:outline-none focus:ring-2 focus:ring-red-500/50 disabled:cursor-not-allowed disabled:border-neutral-800 disabled:bg-neutral-900 disabled:text-neutral-500 disabled:opacity-50 lg:h-8 lg:rounded-md"
-              disabled={mode === "professional" && !canRecordShot}
+              className="flex h-12 items-center justify-center gap-2 rounded-xl border border-red-500/30 bg-red-500/10 text-xs font-black uppercase text-red-200 transition-colors hover:bg-red-500/20 focus:outline-none focus:ring-2 focus:ring-red-500/50 lg:h-8 lg:rounded-md"
               type="button"
               onClick={() => onFreeThrow(false)}
             >
