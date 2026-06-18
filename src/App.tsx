@@ -298,6 +298,7 @@ function App() {
   const [substitutionTeam, setSubstitutionTeam] = useState<TeamId | undefined>(undefined);
   const [boxScoreOpen, setBoxScoreOpen] = useState(false);
   const [warningOpen, setWarningOpen] = useState(false);
+  const [foulPrompt, setFoulPrompt] = useState<{ player: Player; team: TeamId } | undefined>(undefined);
   const [endGameOpen, setEndGameOpen] = useState(false);
   const [preGameOpen, setPreGameOpen] = useState(false);
   const [undoStack, setUndoStack] = useState<UndoItem[]>([]);
@@ -604,7 +605,7 @@ function App() {
             ? `${match.home.name} by ${match.homeScore - match.awayScore}`
             : `${match.away.name} by ${match.awayScore - match.homeScore}`,
       },
-      { label: "Away Record", value: match.away.record ?? "Pending" },
+      { label: "Visitor Record", value: match.away.record ?? "Pending" },
       { label: "Home Record", value: match.home.record ?? "Pending" },
     ],
     [match],
@@ -999,7 +1000,11 @@ function App() {
   // `actor` lets a caller commit for a specific player/team without waiting a render for the
   // selection state to settle (used by the court popup, where picking the number commits the
   // shot immediately). When omitted, the current selection is used — unchanged behavior.
-  function commitAction(detail: ActionDetail, actor?: { player: Player; team: TeamId }) {
+  function commitAction(
+    detail: ActionDetail,
+    actor?: { player: Player; team: TeamId },
+    eventId?: number,
+  ) {
     const actingPlayer = actor?.player ?? currentPlayer;
     const actingTeam = actor?.team ?? selectedTeam;
 
@@ -1017,6 +1022,9 @@ function App() {
       return;
     }
 
+    // Base off the live ref, not the render's `match` closure, so two commits fired from the
+    // same handler (e.g. a foul plus its free throws) chain instead of clobbering each other.
+    const baseMatch = matchRef.current;
     const stealContext = detail.action === "steal" ? getStealTurnoverContext(actingTeam) : undefined;
     const committedDetail = stealContext
       ? {
@@ -1026,15 +1034,15 @@ function App() {
           opponentTurnoverTeam: stealContext.team,
         }
       : detail;
-    const nextAwayScore = match.awayScore + (actingTeam === "away" ? committedDetail.points : 0);
-    const nextHomeScore = match.homeScore + (actingTeam === "home" ? committedDetail.points : 0);
+    const nextAwayScore = baseMatch.awayScore + (actingTeam === "away" ? committedDetail.points : 0);
+    const nextHomeScore = baseMatch.homeScore + (actingTeam === "home" ? committedDetail.points : 0);
     const event: GameEvent = {
       action: committedDetail.action,
       icon: getEventIcon(committedDetail.action, committedDetail.points),
-      id: Date.now(),
+      id: eventId ?? Date.now(),
       issuedByRef: committedDetail.issuedByRef,
       label: committedDetail.label,
-      period: match.period,
+      period: baseMatch.period,
       player: formatPlayer(actingPlayer),
       playerId: actingPlayer.id,
       points: committedDetail.points,
@@ -1042,16 +1050,16 @@ function App() {
       shotLocation: committedDetail.shotLocation,
       shotType: committedDetail.shotType,
       team: actingTeam,
-      time: match.clock,
+      time: baseMatch.clock,
     };
     const undoItem: UndoItem = {
       detail: committedDetail,
       event,
       eventId: event.id,
-      period: match.period,
+      period: baseMatch.period,
       playerKey: getPlayerKey(actingPlayer),
-      previousPossession: match.possession,
-      previousShotClock: match.shotClock,
+      previousPossession: baseMatch.possession,
+      previousShotClock: baseMatch.shotClock,
       selectedTeam: actingTeam,
     };
     const playerKey = getPlayerKey(actingPlayer);
@@ -1059,7 +1067,7 @@ function App() {
       ? getPlayerKey(committedDetail.opponentTurnoverPlayer)
       : undefined;
     const nextMatch = updateMatchAfterAction(
-      match,
+      baseMatch,
       actingTeam,
       actingPlayer,
       committedDetail,
@@ -1200,6 +1208,65 @@ function App() {
       label: titleCase(action),
       points: 0,
     });
+  }
+
+  function openFoul() {
+    if (!currentPlayer) {
+      appendLog(createLog("warning", "Foul skipped", "Select the fouling player first."));
+      return;
+    }
+    setFoulPrompt({ player: currentPlayer, team: selectedTeam });
+  }
+
+  function closeFoul() {
+    setFoulPrompt(undefined);
+  }
+
+  // Records a personal foul on the committing player, plus (optionally) who drew the foul and
+  // any resulting free throws shot by that fouled player. The foul and the FTs are two events
+  // with explicit ids so they don't collide, and commitAction chains them off matchRef.
+  function recordFoul(result: { fouledPlayer?: Player; freeThrowsAttempted: number; freeThrowsMade: number }) {
+    if (!foulPrompt) {
+      return;
+    }
+
+    const committer = foulPrompt.player;
+    const committerTeam = foulPrompt.team;
+    const opponentTeam = oppositeTeam(committerTeam);
+    const baseId = Date.now();
+
+    const fouledNote = result.fouledPlayer ? ` · falta a ${formatPlayer(result.fouledPlayer)}` : "";
+    const ftNote =
+      result.freeThrowsAttempted > 0 ? ` · ${result.freeThrowsMade}/${result.freeThrowsAttempted} TL` : "";
+
+    commitAction(
+      {
+        action: "personal foul",
+        label: `P. Foul${fouledNote}${ftNote}`,
+        points: 0,
+      },
+      { player: committer, team: committerTeam },
+      baseId,
+    );
+
+    if (result.fouledPlayer && result.freeThrowsAttempted > 0) {
+      const made = result.freeThrowsMade;
+      commitAction(
+        {
+          action: made > 0 ? "free throw made" : "free throw missed",
+          freeThrowsAttempted: result.freeThrowsAttempted,
+          freeThrowsMade: made,
+          label: `Free throws ${made}/${result.freeThrowsAttempted}`,
+          points: made,
+          shotType: "free throw",
+          shotValue: 1,
+        },
+        { player: result.fouledPlayer, team: opponentTeam },
+        baseId + 1,
+      );
+    }
+
+    setFoulPrompt(undefined);
   }
 
   function openSubstitution() {
@@ -1745,6 +1812,7 @@ function App() {
             isActionAllowed={(action) => isActionAllowedForMode(action, statsMode)}
             onJumpBall={openJumpBall}
             onOpenBoxScore={openBoxScore}
+            onOpenFoul={openFoul}
             onOpenPreGame={openPreGame}
             onOpenSubstitution={openSubstitution}
             onOpenWarning={openWarning}
@@ -1789,6 +1857,17 @@ function App() {
           team={match[selectedTeam]}
           onClose={closeWarning}
           onSelect={commitWarning}
+        />
+      )}
+
+      {foulPrompt && (
+        <FoulDialog
+          committer={foulPrompt.player}
+          committerSide={foulPrompt.team}
+          opponent={match[oppositeTeam(foulPrompt.team)]}
+          opponentSide={oppositeTeam(foulPrompt.team)}
+          onClose={closeFoul}
+          onConfirm={recordFoul}
         />
       )}
 
@@ -2199,7 +2278,7 @@ function GameCard({
         </div>
         <h3 className="mt-2.5 truncate text-base font-black text-neutral-50">{option.name}</h3>
         <div className="mt-3 grid gap-1.5">
-          <GameTeamLine label="Away" name={option.awayName} score={option.awayScore} team="away" />
+          <GameTeamLine label="Visitor" name={option.awayName} score={option.awayScore} team="away" />
           <GameTeamLine label="Home" name={option.homeName} score={option.homeScore} team="home" />
         </div>
         <div className="mt-3 flex items-center gap-1.5 text-xs text-neutral-500">
@@ -2468,7 +2547,7 @@ function ScoreHeader({
         >
           <span className="text-neutral-300">Foul Ball</span>
           <PossessionArrow possession={foulBallTeam} />
-          <span>{foulBallTeam === "away" ? "Away" : "Home"}</span>
+          <span>{foulBallTeam === "away" ? "Visitor" : "Home"}</span>
         </button>
         <label className="w-full">
           <span className="sr-only">Select match</span>
@@ -3700,6 +3779,225 @@ function EndGameDialog({
   );
 }
 
+function FoulDialog({
+  committer,
+  committerSide,
+  opponent,
+  opponentSide,
+  onConfirm,
+  onClose,
+}: {
+  committer: Player;
+  committerSide: TeamId;
+  opponent: Team;
+  opponentSide: TeamId;
+  onConfirm: (result: { fouledPlayer?: Player; freeThrowsAttempted: number; freeThrowsMade: number }) => void;
+  onClose: () => void;
+}) {
+  const cBase = `var(--c-${committerSide})`;
+  const cSoft = `var(--c-${committerSide}-soft)`;
+  const roster = useMemo(() => getRoster(opponent), [opponent]);
+  const [fouledKey, setFouledKey] = useState<string | undefined>(undefined);
+  const [ftCount, setFtCount] = useState(0);
+  const [ftMade, setFtMade] = useState<boolean[]>([true, true, true]);
+
+  const fouledPlayer = roster.find((player) => getPlayerKey(player) === fouledKey);
+  const madeCount = ftMade.slice(0, ftCount).filter(Boolean).length;
+  const needsFouled = ftCount > 0;
+  const canConfirm = !needsFouled || Boolean(fouledPlayer);
+
+  function toggleFt(index: number, made: boolean) {
+    setFtMade((current) => current.map((value, i) => (i === index ? made : value)));
+  }
+
+  function confirm() {
+    if (!canConfirm) {
+      return;
+    }
+    onConfirm({
+      fouledPlayer,
+      freeThrowsAttempted: ftCount,
+      freeThrowsMade: madeCount,
+    });
+  }
+
+  return (
+    <div
+      aria-modal="true"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
+      role="dialog"
+      onClick={onClose}
+    >
+      <div
+        className="flex max-h-[92vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-neutral-700 bg-neutral-900 shadow-2xl shadow-black/60"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="flex items-center justify-between gap-3 border-b border-neutral-800 px-4 py-3">
+          <div className="flex min-w-0 items-center gap-3">
+            <span aria-hidden className="h-9 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: cBase }} />
+            <div className="min-w-0">
+              <div className="text-[10px] font-black uppercase tracking-widest" style={{ color: cSoft }}>
+                Falta personal
+              </div>
+              <h2 className="truncate text-lg font-black text-neutral-50">
+                Cometida por <span style={{ color: cSoft }}>#{committer.number}</span>
+              </h2>
+            </div>
+          </div>
+          <button
+            aria-label="Close foul"
+            className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-neutral-800 bg-neutral-950 text-neutral-400 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500"
+            type="button"
+            onClick={onClose}
+          >
+            <CircleX size={18} />
+          </button>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto scrollbar-slim p-3">
+          {/* Who drew the foul (opponent). Required only when there are free throws. */}
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-[11px] font-black uppercase tracking-wide text-neutral-400">
+              Falta recibida por
+            </span>
+            <span className="truncate text-[11px] font-bold" style={{ color: `var(--c-${opponentSide}-soft)` }}>
+              {opponent.name}
+            </span>
+          </div>
+          {roster.length === 0 ? (
+            <div className="mt-2 rounded-lg border border-dashed border-neutral-800 px-2 py-4 text-center text-[11px] font-semibold text-neutral-500">
+              No opponent players available.
+            </div>
+          ) : (
+            <div className="mt-2 grid grid-cols-5 gap-1.5">
+              {roster.map((player) => {
+                const key = getPlayerKey(player);
+                const selected = key === fouledKey;
+                return (
+                  <button
+                    aria-pressed={selected}
+                    className={cn(
+                      "flex h-11 items-center justify-center rounded-lg border font-mono text-lg font-black tabular-nums transition-colors focus:outline-none focus:ring-2 focus:ring-neutral-500 lg:h-10",
+                      selected
+                        ? "border-amber-500/70 bg-amber-500/15 text-amber-100"
+                        : "border-neutral-800 bg-neutral-900 text-neutral-200 hover:bg-neutral-800",
+                      player.active ? "" : "opacity-70",
+                    )}
+                    key={key}
+                    title={player.active ? "On court" : "Bench"}
+                    type="button"
+                    onClick={() => setFouledKey(selected ? undefined : key)}
+                  >
+                    {player.number}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Free throws */}
+          <div className="mt-4 flex items-center justify-between gap-2">
+            <span className="text-[11px] font-black uppercase tracking-wide text-neutral-400">Tiros libres</span>
+            {needsFouled && !fouledPlayer && (
+              <span className="text-[10px] font-black uppercase tracking-wide text-amber-400">Elige quién recibió</span>
+            )}
+          </div>
+          <div className="mt-2 grid grid-cols-4 gap-1.5">
+            {[0, 1, 2, 3].map((count) => (
+              <button
+                className={cn(
+                  "h-11 rounded-lg border text-sm font-black uppercase tracking-wide transition-colors focus:outline-none focus:ring-2 focus:ring-neutral-500 lg:h-10",
+                  ftCount === count
+                    ? "border-lime-500/60 bg-lime-500/15 text-lime-200"
+                    : "border-neutral-800 bg-neutral-900 text-neutral-300 hover:bg-neutral-800",
+                )}
+                key={count}
+                type="button"
+                onClick={() => setFtCount(count)}
+              >
+                {count === 0 ? "Sin TL" : count}
+              </button>
+            ))}
+          </div>
+
+          {ftCount > 0 && (
+            <div className="mt-3 space-y-1.5">
+              <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-wide text-neutral-500">
+                <span>{fouledPlayer ? `Tirador #${fouledPlayer.number}` : "Tirador —"}</span>
+                <span className="text-neutral-300">{madeCount}/{ftCount} anotados</span>
+              </div>
+              {Array.from({ length: ftCount }, (_, index) => (
+                <div
+                  className="flex items-center gap-2 rounded-lg border border-neutral-800 bg-neutral-950 px-2 py-1.5"
+                  key={index}
+                >
+                  <span className="w-12 shrink-0 text-[11px] font-black uppercase tracking-wide text-neutral-500">
+                    TL {index + 1}
+                  </span>
+                  <div className="grid flex-1 grid-cols-2 gap-1.5">
+                    <button
+                      className={cn(
+                        "flex h-9 items-center justify-center gap-1.5 rounded-md border text-[11px] font-black uppercase tracking-wide transition-colors focus:outline-none focus:ring-2 focus:ring-lime-500/50",
+                        ftMade[index]
+                          ? "border-lime-500/60 bg-lime-500/15 text-lime-200"
+                          : "border-neutral-800 bg-neutral-900 text-neutral-400 hover:bg-neutral-800",
+                      )}
+                      type="button"
+                      onClick={() => toggleFt(index, true)}
+                    >
+                      <Target size={13} />
+                      Anotado
+                    </button>
+                    <button
+                      className={cn(
+                        "flex h-9 items-center justify-center gap-1.5 rounded-md border text-[11px] font-black uppercase tracking-wide transition-colors focus:outline-none focus:ring-2 focus:ring-red-500/50",
+                        !ftMade[index]
+                          ? "border-red-500/60 bg-red-500/15 text-red-200"
+                          : "border-neutral-800 bg-neutral-900 text-neutral-400 hover:bg-neutral-800",
+                      )}
+                      type="button"
+                      onClick={() => toggleFt(index, false)}
+                    >
+                      <CircleX size={13} />
+                      Fallado
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="flex items-center justify-between gap-3 border-t border-neutral-800 px-4 py-3">
+          <div className="min-w-0 truncate text-xs font-semibold text-neutral-400">
+            {fouledPlayer
+              ? `Falta a #${fouledPlayer.number}${ftCount > 0 ? ` · ${madeCount}/${ftCount} TL` : ""}`
+              : "Falta sin tiros (o elige quién la recibió)"}
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            <button
+              className="h-10 rounded-lg border border-neutral-800 bg-neutral-950 px-4 text-xs font-black uppercase tracking-wide text-neutral-300 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500"
+              type="button"
+              onClick={onClose}
+            >
+              Cancel
+            </button>
+            <button
+              className="flex h-10 items-center gap-2 rounded-lg border border-amber-500/50 bg-amber-500/15 px-4 text-xs font-black uppercase tracking-wide text-amber-200 transition-colors hover:bg-amber-500/25 focus:outline-none focus:ring-2 focus:ring-amber-500/50 disabled:cursor-not-allowed disabled:opacity-40"
+              disabled={!canConfirm}
+              type="button"
+              onClick={confirm}
+            >
+              <OctagonAlert size={16} />
+              Registrar falta
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 type BoxRow = {
   player: Player;
   key: string;
@@ -4714,6 +5012,7 @@ function ActionPanel({
   isActionAllowed,
   onJumpBall,
   onOpenBoxScore,
+  onOpenFoul,
   onOpenPreGame,
   onOpenSubstitution,
   onOpenWarning,
@@ -4755,6 +5054,7 @@ function ActionPanel({
   isActionAllowed: (action: ActionKey) => boolean;
   onJumpBall: () => void;
   onOpenBoxScore: () => void;
+  onOpenFoul: () => void;
   onOpenPreGame: () => void;
   onOpenSubstitution: () => void;
   onOpenWarning: () => void;
@@ -5016,17 +5316,18 @@ function ActionPanel({
           <div className="grid grid-cols-2 gap-2 lg:grid-cols-3 lg:gap-1.5">
             {visibleActions.map((action) => {
               const Icon = action.icon;
-              // "Warning" opens the type picker (6 referee warning types) instead of logging
-              // a generic warning; every other action records directly.
+              // "Warning" opens the 6-type picker; "P. Foul" opens the foul popup (who was
+              // fouled + free throws). Every other action records directly.
               const isWarning = action.key === "warning";
-              const allowed = isWarning || isActionAllowed(action.key);
+              const isFoul = action.key === "personal foul";
+              const allowed = isWarning || isFoul || isActionAllowed(action.key);
               return (
                 <button
                   className="flex h-16 flex-col items-center justify-center gap-1 rounded-xl border border-neutral-800 bg-neutral-900 text-center transition-colors hover:bg-neutral-800 focus:outline-none focus:ring-2 focus:ring-neutral-500 disabled:cursor-not-allowed disabled:opacity-35 lg:h-8 lg:gap-0 lg:rounded-md"
                   disabled={!allowed}
                   key={action.key}
                   type="button"
-                  onClick={() => (isWarning ? onOpenWarning() : onAction(action.key))}
+                  onClick={() => (isWarning ? onOpenWarning() : isFoul ? onOpenFoul() : onAction(action.key))}
                 >
                   <Icon className={cn(action.color, "lg:size-[18px]")} size={20} />
                   <span className="text-[11px] font-black uppercase text-neutral-100">{action.label}</span>

@@ -93,7 +93,7 @@ export type Team = {
   color?: string;
   fouls: number;
   id?: number;
-  label: "Away" | "Home";
+  label: "Visitor" | "Home";
   name: string;
   players: Player[];
   presentCount: number;
@@ -218,7 +218,7 @@ type TeamSide = {
   color?: string;
   fallback: Team;
   fouls?: number;
-  label: "Away" | "Home";
+  label: "Visitor" | "Home";
   relationName?: string;
   side: TeamId;
   team?: OdooRecord;
@@ -251,8 +251,8 @@ export const fallbackMatch: LiveMatch = {
   away: {
     bench: [],
     fouls: 0,
-    label: "Away",
-    name: "Away",
+    label: "Visitor",
+    name: "Visitor",
     players: [],
     presentCount: 0,
     timeouts: 0,
@@ -338,7 +338,7 @@ export async function loadMatchOptions(client: OdooClient): Promise<MatchOption[
       }
 
       return {
-        awayName: relationName(game[GAME.awayTeam]) || "Away",
+        awayName: relationName(game[GAME.awayTeam]) || "Visitor",
         awayScore: numberValue(game[GAME.awayScore]),
         datetime: stringValue(game[GAME.datetime]),
         homeName: relationName(game[GAME.homeTeam]) || "Home",
@@ -924,7 +924,7 @@ async function normalizeGameRecord(
     color: awayColors?.color,
     fallback: fallbackMatch.away,
     fouls: optionalNumberValue(game[GAME.awayTeamFouls]),
-    label: "Away",
+    label: "Visitor",
     relationName: relationName(game[GAME.awayTeam]),
     side: "away",
     team: awayTeamId ? teamsById.get(awayTeamId) : undefined,
