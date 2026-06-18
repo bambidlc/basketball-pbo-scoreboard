@@ -39,7 +39,8 @@ export type ActionKey =
   | "personal foul"
   | "tech foul"
   | "warning"
-  | "substitution";
+  | "substitution"
+  | "suspension";
 
 export type ShotType = "2pt" | "3pt" | "free throw";
 
@@ -184,6 +185,7 @@ export type SaveMatchActionInput = {
   match: LiveMatch;
   nextAwayScore: number;
   nextHomeScore: number;
+  note?: string;
   opponentTurnoverPlayer?: Player;
   opponentTurnoverTeam?: TeamId;
   points: number;
@@ -430,6 +432,7 @@ export async function saveMatchStatus(
   client: OdooClient,
   match: LiveMatch,
   status: string,
+  note?: string,
 ): Promise<SaveMatchActionResult> {
   if (!client.enabled || !match.gameId) {
     return {
@@ -443,8 +446,39 @@ export async function saveMatchStatus(
     await client.write(MODELS.game, [match.gameId], { [GAME.status]: status });
     const flowMessage = await saveGameFlowFields(client, match, capabilities);
 
+    // A note (e.g. the suspension reason) is persisted as a game event so it survives a
+    // reload and is visible in the play-by-play when the game is resumed.
+    let eventId: number | undefined;
+    let noteMessage = "";
+    const trimmedNote = note?.trim();
+    if (trimmedNote && capabilities.gameEvent.exists) {
+      const eventValues = filterWritableValues(
+        {
+          [GAME_EVENT.active]: true,
+          [GAME_EVENT.actionType]: "suspension",
+          [GAME_EVENT.clockSeconds]: clockToSeconds(match.clock),
+          [GAME_EVENT.game]: match.gameId,
+          [GAME_EVENT.name]: `${match.clock} ${status} · ${trimmedNote}`,
+          [GAME_EVENT.note]: trimmedNote,
+          [GAME_EVENT.period]: match.period,
+          [GAME_EVENT.points]: 0,
+        },
+        capabilities.gameEvent,
+      );
+
+      if (eventValues[GAME_EVENT.name]) {
+        eventId = await client.create(MODELS.gameEvent, eventValues);
+        noteMessage = "Reason saved.";
+      }
+    }
+
     return {
-      log: createLog("success", `Game marked ${status}`, flowMessage || `Status set to ${status}.`),
+      eventId,
+      log: createLog(
+        "success",
+        `Game marked ${status}`,
+        compactMessages([flowMessage, noteMessage]) || `Status set to ${status}.`,
+      ),
       saved: true,
     };
   } catch (error) {
@@ -1381,7 +1415,7 @@ async function saveGameEvent(
       [GAME_EVENT.clockSeconds]: clockToSeconds(input.match.clock),
       [GAME_EVENT.game]: input.match.gameId,
       [GAME_EVENT.name]: `${input.match.clock} #${input.player.number} ${input.label}`,
-      [GAME_EVENT.note]: input.foulOnShot ? "Shooting foul/free throws included" : "",
+      [GAME_EVENT.note]: input.note ?? (input.foulOnShot ? "Shooting foul/free throws included" : ""),
       [GAME_EVENT.period]: input.match.period,
       [GAME_EVENT.player]: input.player.id ?? false,
       [GAME_EVENT.points]: input.points,
@@ -1800,6 +1834,7 @@ function normalizeActionKey(value: unknown): ActionKey {
     "tech foul",
     "warning",
     "substitution",
+    "suspension",
   ];
 
   return validActions.includes(action) ? action : "made";

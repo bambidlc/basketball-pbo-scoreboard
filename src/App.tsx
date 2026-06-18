@@ -158,6 +158,61 @@ const statActions: Array<{
   { key: "warning", label: "Warning", icon: TriangleAlert, color: "text-amber-300" },
 ];
 
+type WarningTarget = "team" | "player" | "coach" | "public";
+
+type WarningType = {
+  key: string;
+  label: string;
+  hint: string;
+  target: WarningTarget;
+};
+
+// The six referee warning types. None count as a foul (the separate "Tech" action is for
+// technical fouls that do). "Técnica" splits into indirecta (a jugador) and directa (al
+// coach). Player-targeted types pick up the selected player's number when one is chosen.
+const WARNING_TYPES: WarningType[] = [
+  { key: "defensa", label: "Por defensa", hint: "Defensive warning", target: "team" },
+  { key: "jugador", label: "A jugador", hint: "Warning to a player", target: "player" },
+  { key: "coach", label: "Al coach", hint: "Warning to the coach", target: "coach" },
+  { key: "publico", label: "Al público", hint: "Warning to the crowd", target: "public" },
+  { key: "no-ventaja", label: "De no ventaja", hint: "No-advantage warning", target: "team" },
+  { key: "tecnica-indirecta", label: "Técnica indirecta", hint: "Indirect technical — a jugador", target: "player" },
+  { key: "tecnica-directa", label: "Técnica directa", hint: "Direct technical — al coach", target: "coach" },
+];
+
+// Quick-pick reasons for substitutions (free text is always available too).
+const SUB_REASON_PRESETS = ["Foul trouble", "Rest", "Tactical", "Injury", "Discipline"] as const;
+
+// Quick-pick reasons for suspending a game (free text is always available too).
+const SUSPENSION_REASON_PRESETS = ["Injury", "Safety", "Power / lights", "Weather", "Facility", "Brawl"] as const;
+
+// A warning may be issued without a player selected (e.g. al coach / al público). The save
+// path needs a Player, so this no-id placeholder lets the event persist while savePlayerStat
+// skips the (non-existent) player's stat row.
+const WARNING_PLACEHOLDER_PLAYER: Player = {
+  assists: 0,
+  blocks: 0,
+  defensiveRebounds: 0,
+  fouls: 0,
+  freeThrowsAttempted: 0,
+  freeThrowsMade: 0,
+  name: "—",
+  number: "",
+  offensiveRebounds: 0,
+  ot: 0,
+  points: 0,
+  q1: 0,
+  q2: 0,
+  q3: 0,
+  q4: 0,
+  steals: 0,
+  threePointersAttempted: 0,
+  threePointersMade: 0,
+  turnovers: 0,
+  twoPointersAttempted: 0,
+  twoPointersMade: 0,
+};
+
 const eventIconClass: Record<GameEvent["icon"], string> = {
   made: "text-lime-400",
   missed: "text-red-400",
@@ -242,6 +297,8 @@ function App() {
   const [isClockRunning, setIsClockRunning] = useState(false);
   const [substitutionTeam, setSubstitutionTeam] = useState<TeamId | undefined>(undefined);
   const [boxScoreOpen, setBoxScoreOpen] = useState(false);
+  const [warningOpen, setWarningOpen] = useState(false);
+  const [endGameOpen, setEndGameOpen] = useState(false);
   const [preGameOpen, setPreGameOpen] = useState(false);
   const [undoStack, setUndoStack] = useState<UndoItem[]>([]);
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>(
@@ -939,8 +996,14 @@ function App() {
     return player ? { player, team: previous.team } : undefined;
   }
 
-  function commitAction(detail: ActionDetail) {
-    if (!currentPlayer) {
+  // `actor` lets a caller commit for a specific player/team without waiting a render for the
+  // selection state to settle (used by the court popup, where picking the number commits the
+  // shot immediately). When omitted, the current selection is used — unchanged behavior.
+  function commitAction(detail: ActionDetail, actor?: { player: Player; team: TeamId }) {
+    const actingPlayer = actor?.player ?? currentPlayer;
+    const actingTeam = actor?.team ?? selectedTeam;
+
+    if (!actingPlayer) {
       appendLog(createLog("warning", "Action skipped", "Select a player before logging actions."));
       return;
     }
@@ -954,7 +1017,7 @@ function App() {
       return;
     }
 
-    const stealContext = detail.action === "steal" ? getStealTurnoverContext(selectedTeam) : undefined;
+    const stealContext = detail.action === "steal" ? getStealTurnoverContext(actingTeam) : undefined;
     const committedDetail = stealContext
       ? {
           ...detail,
@@ -963,8 +1026,8 @@ function App() {
           opponentTurnoverTeam: stealContext.team,
         }
       : detail;
-    const nextAwayScore = match.awayScore + (selectedTeam === "away" ? committedDetail.points : 0);
-    const nextHomeScore = match.homeScore + (selectedTeam === "home" ? committedDetail.points : 0);
+    const nextAwayScore = match.awayScore + (actingTeam === "away" ? committedDetail.points : 0);
+    const nextHomeScore = match.homeScore + (actingTeam === "home" ? committedDetail.points : 0);
     const event: GameEvent = {
       action: committedDetail.action,
       icon: getEventIcon(committedDetail.action, committedDetail.points),
@@ -972,13 +1035,13 @@ function App() {
       issuedByRef: committedDetail.issuedByRef,
       label: committedDetail.label,
       period: match.period,
-      player: formatPlayer(currentPlayer),
-      playerId: currentPlayer.id,
+      player: formatPlayer(actingPlayer),
+      playerId: actingPlayer.id,
       points: committedDetail.points,
       score: committedDetail.points > 0 ? `${nextAwayScore}-${nextHomeScore}` : undefined,
       shotLocation: committedDetail.shotLocation,
       shotType: committedDetail.shotType,
-      team: selectedTeam,
+      team: actingTeam,
       time: match.clock,
     };
     const undoItem: UndoItem = {
@@ -986,19 +1049,19 @@ function App() {
       event,
       eventId: event.id,
       period: match.period,
-      playerKey: getPlayerKey(currentPlayer),
+      playerKey: getPlayerKey(actingPlayer),
       previousPossession: match.possession,
       previousShotClock: match.shotClock,
-      selectedTeam,
+      selectedTeam: actingTeam,
     };
-    const playerKey = getPlayerKey(currentPlayer);
+    const playerKey = getPlayerKey(actingPlayer);
     const opponentTurnoverKey = committedDetail.opponentTurnoverPlayer
       ? getPlayerKey(committedDetail.opponentTurnoverPlayer)
       : undefined;
     const nextMatch = updateMatchAfterAction(
       match,
-      selectedTeam,
-      currentPlayer,
+      actingTeam,
+      actingPlayer,
       committedDetail,
       event,
       nextAwayScore,
@@ -1009,15 +1072,15 @@ function App() {
     setMatch(nextMatch);
     setUndoStack((current) => [undoItem, ...current].slice(0, UNDO_LIMIT));
     previousPossessionRef.current = null;
-    appendLog(createLog("info", "Action queued", `${committedDetail.label} - ${formatPlayer(currentPlayer)}`));
+    appendLog(createLog("info", "Action queued", `${committedDetail.label} - ${formatPlayer(actingPlayer)}`));
 
     void saveMatchAction(apiClient, {
       ...committedDetail,
       match: nextMatch,
       nextAwayScore,
       nextHomeScore,
-      player: currentPlayer,
-      selectedTeam,
+      player: actingPlayer,
+      selectedTeam: actingTeam,
     }).then((result) => {
       if (result.eventId || result.playerStatId || result.opponentTurnoverStatId) {
         const wasCanceled = result.eventId ? canceledEventIdsRef.current.has(event.id) : false;
@@ -1043,7 +1106,7 @@ function App() {
             : current;
 
           if (result.playerStatId) {
-            nextMatch = withPlayerStatId(nextMatch, selectedTeam, playerKey, result.playerStatId);
+            nextMatch = withPlayerStatId(nextMatch, actingTeam, playerKey, result.playerStatId);
           }
 
           if (
@@ -1068,7 +1131,7 @@ function App() {
             label: "Undo saved event",
             match: matchRef.current,
             players: [
-              findPlayerByKey(matchRef.current[selectedTeam], undoItem.playerKey),
+              findPlayerByKey(matchRef.current[actingTeam], undoItem.playerKey),
               undoItem.detail.opponentTurnoverTeam && undoItem.detail.opponentTurnoverPlayer
                 ? findPlayerByKey(
                     matchRef.current[undoItem.detail.opponentTurnoverTeam],
@@ -1087,19 +1150,23 @@ function App() {
     });
   }
 
-  function recordCourtShot(location: ShotLocation, made: boolean) {
+  function recordCourtShot(location: ShotLocation, made: boolean, player: Player) {
+    const team = courtSides[location.side];
     const shotPoints = made ? location.value : 0;
 
-    commitAction({
-      action: made ? (`made ${location.value}pt` as ActionKey) : (`missed ${location.value}pt` as ActionKey),
-      foulOnShot,
-      label: getShotLabel(location, made, foulOnShot),
-      points: shotPoints,
-      shotLocation: location,
-      shotMade: made,
-      shotType: location.value === 3 ? "3pt" : "2pt",
-      shotValue: location.value,
-    });
+    commitAction(
+      {
+        action: made ? (`made ${location.value}pt` as ActionKey) : (`missed ${location.value}pt` as ActionKey),
+        foulOnShot,
+        label: getShotLabel(location, made, foulOnShot),
+        points: shotPoints,
+        shotLocation: location,
+        shotMade: made,
+        shotType: location.value === 3 ? "3pt" : "2pt",
+        shotValue: location.value,
+      },
+      { player, team },
+    );
   }
 
   function recordFreeThrow(made: boolean) {
@@ -1153,9 +1220,12 @@ function App() {
 
   // The coach picks the five who should be on the floor; we diff that against the players
   // currently on court to derive who is coming IN and who is going OUT, then log every swap
-  // (one event each, so each stays individually undoable) and persist them.
-  function commitLineupChange(team: TeamId, nextKeys: string[]) {
+  // (one event each, so each stays individually undoable) and persist them. An optional
+  // reason/note is appended to the event and saved (required in Q1, enforced by the dialog).
+  function commitLineupChange(team: TeamId, nextKeys: string[], reason?: string) {
     const current = matchRef.current;
+    const reasonText = reason?.trim();
+    const reasonSuffix = reasonText ? ` · ${reasonText}` : "";
     const side = current[team];
     const roster = getRoster(side);
     const playersByKey = new Map(roster.map((player) => [getPlayerKey(player), player]));
@@ -1187,7 +1257,9 @@ function App() {
       action: "substitution",
       icon: getEventIcon("substitution", 0),
       id: baseId + index,
-      label: `${formatPlayer(pair.inPlayer)} in / ${formatPlayer(pair.outPlayer)} out`,
+      // Only the first swap of a multi-swap lineup change carries the reason, so the feed
+      // shows it once rather than repeating it on every line.
+      label: `${formatPlayer(pair.inPlayer)} in / ${formatPlayer(pair.outPlayer)} out${index === 0 ? reasonSuffix : ""}`,
       period: current.period,
       player: formatPlayer(pair.inPlayer),
       playerId: pair.inPlayer.id,
@@ -1231,13 +1303,13 @@ function App() {
     setSubstitutionTeam(undefined);
     const summary =
       pairs.length === 1
-        ? events[0].label
+        ? `${formatPlayer(pairs[0].inPlayer)} in / ${formatPlayer(pairs[0].outPlayer)} out`
         : `IN ${incoming.map(formatPlayer).join(" ")} · OUT ${outgoing.map(formatPlayer).join(" ")}`;
     appendLog(
       createLog(
         "info",
         pairs.length === 1 ? "Substitution" : `Lineup change (${pairs.length})`,
-        `${nextMatch[team].name}: ${summary}`,
+        `${nextMatch[team].name}: ${summary}${reasonSuffix}`,
       ),
     );
 
@@ -1250,6 +1322,7 @@ function App() {
         match: nextMatch,
         nextAwayScore: nextMatch.awayScore,
         nextHomeScore: nextMatch.homeScore,
+        note: index === 0 ? reasonText : undefined,
         player: pair.inPlayer,
         points: 0,
         selectedTeam: team,
@@ -1280,36 +1353,173 @@ function App() {
     });
   }
 
-  function handleApplyLineup(nextKeys: string[]) {
+  function handleApplyLineup(nextKeys: string[], reason?: string) {
     if (!substitutionTeam) {
       return;
     }
 
-    commitLineupChange(substitutionTeam, nextKeys);
+    commitLineupChange(substitutionTeam, nextKeys, reason);
+  }
+
+  function openWarning() {
+    setWarningOpen(true);
+  }
+
+  function closeWarning() {
+    setWarningOpen(false);
+  }
+
+  // Referee warnings (6 types). None count as a foul or change the score — they are logged
+  // ref-issued events. Player-targeted types attach the currently selected player's number
+  // when one is picked; coach/public/team types stand on their own.
+  function commitWarning(type: WarningType) {
+    const current = matchRef.current;
+    const targetsPlayer = type.target === "player";
+    const player = targetsPlayer ? currentPlayer : undefined;
+    const label = `Warning · ${type.label}${player ? ` ${formatPlayer(player)}` : ""}`;
+    const event: GameEvent = {
+      action: "warning",
+      icon: getEventIcon("warning", 0),
+      id: Date.now(),
+      issuedByRef: true,
+      label,
+      period: current.period,
+      player: player ? formatPlayer(player) : "—",
+      playerId: player?.id,
+      points: 0,
+      team: selectedTeam,
+      time: current.clock,
+    };
+    const undoItem: UndoItem = {
+      detail: { action: "warning", issuedByRef: true, label, points: 0 },
+      event,
+      eventId: event.id,
+      period: current.period,
+      playerKey: player ? getPlayerKey(player) : "",
+      previousPossession: current.possession,
+      previousShotClock: current.shotClock,
+      selectedTeam,
+    };
+    const nextMatch = { ...current, events: [event, ...current.events] };
+
+    matchRef.current = nextMatch;
+    setMatch(nextMatch);
+    setUndoStack((stack) => [undoItem, ...stack].slice(0, UNDO_LIMIT));
+    setWarningOpen(false);
+    appendLog(createLog("info", "Warning", `${nextMatch[selectedTeam].name}: ${type.label}`));
+
+    void saveMatchAction(apiClient, {
+      action: "warning",
+      issuedByRef: true,
+      label,
+      match: nextMatch,
+      nextAwayScore: nextMatch.awayScore,
+      nextHomeScore: nextMatch.homeScore,
+      note: type.label,
+      player: player ?? WARNING_PLACEHOLDER_PLAYER,
+      points: 0,
+      selectedTeam,
+    }).then((result) => {
+      if (result.eventId) {
+        setUndoStack((stack) =>
+          stack.map((item) =>
+            item.eventId === event.id ? { ...item, serverEventId: result.eventId } : item,
+          ),
+        );
+        setMatch((latest) => {
+          const withServerId = {
+            ...latest,
+            events: latest.events.map((savedEvent) =>
+              savedEvent.id === event.id ? { ...savedEvent, serverEventId: result.eventId } : savedEvent,
+            ),
+          };
+          matchRef.current = withServerId;
+          return withServerId;
+        });
+      }
+
+      appendLog(result.log);
+      setConnectionStatus(result.log.level === "error" ? "error" : result.saved ? "connected" : "local");
+    });
   }
 
   function endGame() {
+    setEndGameOpen(true);
+  }
+
+  function closeEndGame() {
+    setEndGameOpen(false);
+  }
+
+  // status "Final" closes the game out; "Suspended" parks it so it can be resumed later
+  // (the saved state reloads, and the next recorded action flips it back to Live). A
+  // suspension carries a reason that is logged, dropped into the play-by-play, and saved
+  // so it is still visible when the game is resumed.
+  function finishGame(status: "Final" | "Suspended", reason?: string) {
     const current = matchRef.current;
+    const reasonText = reason?.trim();
     const winner =
       current.homeScore === current.awayScore
         ? "Tie game"
         : current.homeScore > current.awayScore
           ? `${current.home.name} win`
           : `${current.away.name} win`;
-    const confirmed = window.confirm(
-      `End the game?\n\nFinal: ${current.away.name} ${current.awayScore} - ${current.homeScore} ${current.home.name}\n${winner}`,
-    );
-    if (!confirmed) {
-      return;
-    }
 
     setIsClockRunning(false);
-    const nextMatch = { ...current, status: "Final" };
+    setEndGameOpen(false);
+
+    const suspensionEvent: GameEvent | undefined =
+      status === "Suspended" && reasonText
+        ? {
+            action: "suspension",
+            icon: getEventIcon("suspension", 0),
+            id: Date.now(),
+            issuedByRef: true,
+            label: `Suspended · ${reasonText}`,
+            period: current.period,
+            player: "—",
+            points: 0,
+            team: current.possession,
+            time: current.clock,
+          }
+        : undefined;
+
+    const nextMatch = {
+      ...current,
+      status,
+      events: suspensionEvent ? [suspensionEvent, ...current.events] : current.events,
+    };
     matchRef.current = nextMatch;
     setMatch(nextMatch);
-    appendLog(createLog("success", "Game ended", `${winner} (${current.awayScore}-${current.homeScore})`));
+    appendLog(
+      status === "Final"
+        ? createLog("success", "Game ended", `${winner} (${current.awayScore}-${current.homeScore})`)
+        : createLog(
+            "warning",
+            "Game suspended",
+            `${reasonText ? `${reasonText} · ` : "Resumable · "}${current.awayScore}-${current.homeScore}`,
+          ),
+    );
 
-    void saveMatchStatus(apiClient, nextMatch, "Final").then((result) => {
+    void saveMatchStatus(
+      apiClient,
+      nextMatch,
+      status,
+      status === "Suspended" ? reasonText : undefined,
+    ).then((result) => {
+      if (result.eventId && suspensionEvent) {
+        setMatch((latest) => {
+          const withServerId = {
+            ...latest,
+            events: latest.events.map((saved) =>
+              saved.id === suspensionEvent.id ? { ...saved, serverEventId: result.eventId } : saved,
+            ),
+          };
+          matchRef.current = withServerId;
+          return withServerId;
+        });
+      }
+
       appendLog(result.log);
       setConnectionStatus(result.log.level === "error" ? "error" : result.saved ? "connected" : "local");
     });
@@ -1537,6 +1747,7 @@ function App() {
             onOpenBoxScore={openBoxScore}
             onOpenPreGame={openPreGame}
             onOpenSubstitution={openSubstitution}
+            onOpenWarning={openWarning}
             onPeriodChange={setPeriod}
             onPeriodSettingsChange={updatePeriodSettings}
             onRefresh={() => refreshMatch(undefined, { force: true, loadOptions: true })}
@@ -1554,6 +1765,7 @@ function App() {
       {substitutionTeam && (
         <SubstitutionDialog
           key={substitutionTeam}
+          period={match.period}
           side={substitutionTeam}
           team={match[substitutionTeam]}
           onApply={handleApplyLineup}
@@ -1568,6 +1780,26 @@ function App() {
           mode={statsMode}
           periodCount={periodSettings.periodCount}
           onClose={closeBoxScore}
+        />
+      )}
+
+      {warningOpen && (
+        <WarningDialog
+          side={selectedTeam}
+          team={match[selectedTeam]}
+          onClose={closeWarning}
+          onSelect={commitWarning}
+        />
+      )}
+
+      {endGameOpen && (
+        <EndGameDialog
+          away={match.away}
+          home={match.home}
+          awayScore={match.awayScore}
+          homeScore={match.homeScore}
+          onClose={closeEndGame}
+          onFinish={finishGame}
         />
       )}
 
@@ -2415,52 +2647,49 @@ function CourtPanel({
   events: GameEvent[];
   foulOnShot: boolean;
   selectedTeam: TeamId;
-  onCourtShot: (location: ShotLocation, made: boolean) => void;
+  onCourtShot: (location: ShotLocation, made: boolean, player: Player) => void;
   onSelectPlayer: (team: TeamId, player: Player) => void;
   onSwitchCourtSides: () => void;
   teams: Record<TeamId, Team>;
 }) {
   const [pendingShot, setPendingShot] = useState<ShotLocation | undefined>(undefined);
-  const [pendingPlayerKey, setPendingPlayerKey] = useState<string | undefined>(undefined);
+  // The result (event) is chosen first, then the player. undefined = still on the event step.
+  const [pendingMade, setPendingMade] = useState<boolean | undefined>(undefined);
   const markers = events.filter((event) => event.shotLocation).slice(0, 8);
   const pendingTeamId = pendingShot ? courtSides[pendingShot.side] : undefined;
   const pendingTeam = pendingTeamId ? teams[pendingTeamId] : undefined;
-  const pendingPlayer =
-    pendingTeam && pendingPlayerKey
-      ? getRoster(pendingTeam).find((player) => getPlayerKey(player) === pendingPlayerKey)
-      : undefined;
+  // Open the popup on the OPPOSITE side from the tap so it never covers the spot you marked.
+  const popupSideClass = pendingShot?.side === "right" ? "left-3" : "right-3";
 
   function handlePointerDown(event: PointerEvent<SVGSVGElement>) {
     const location = svgPointToShotLocation(event);
     if (location) {
-      // Tapping a side opens that side's team so a jersey number can be assigned to the shot.
+      // Tapping a side drops the shot marker and opens the result → player popup.
       setPendingShot(location);
-      setPendingPlayerKey(undefined);
+      setPendingMade(undefined);
     }
+  }
+
+  function chooseResult(made: boolean) {
+    setPendingMade(made);
   }
 
   function pickShooter(player: Player) {
-    if (!pendingTeamId) {
+    if (!pendingShot || !pendingTeamId || pendingMade === undefined) {
       return;
     }
 
+    // Keep the visible "Selected" indicator in sync, then commit with the explicit shooter
+    // (passing the player avoids waiting a render for selection state to settle).
     onSelectPlayer(pendingTeamId, player);
-    setPendingPlayerKey(getPlayerKey(player));
-  }
-
-  function commitPendingShot(made: boolean) {
-    if (!pendingShot || !pendingPlayer) {
-      return;
-    }
-
-    onCourtShot(pendingShot, made);
+    onCourtShot(pendingShot, pendingMade, player);
     setPendingShot(undefined);
-    setPendingPlayerKey(undefined);
+    setPendingMade(undefined);
   }
 
   function cancelPendingShot() {
     setPendingShot(undefined);
-    setPendingPlayerKey(undefined);
+    setPendingMade(undefined);
   }
 
   function renderCourtSideLabel(side: CourtSide) {
@@ -2537,11 +2766,16 @@ function CourtPanel({
         <span className="hidden sm:inline">Switch Courts</span>
       </button>
       {pendingShot && pendingTeam && pendingTeamId && (
-        <div className="absolute right-3 top-16 z-20 w-[290px] rounded-xl border border-neutral-700 bg-neutral-950/95 p-3 shadow-2xl shadow-black/50 backdrop-blur">
+        <div
+          className={cn(
+            "absolute top-16 z-20 flex max-h-[calc(100%-5rem)] w-[270px] max-w-[calc(100%-1.5rem)] flex-col overflow-y-auto scrollbar-slim rounded-xl border border-neutral-700 bg-neutral-950/95 p-3 shadow-2xl shadow-black/50 backdrop-blur",
+            popupSideClass,
+          )}
+        >
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">
               <div className="text-[10px] font-black uppercase tracking-wide text-neutral-500">
-                {pendingPlayer ? "Pending Shot" : "Pick number"}
+                {pendingMade === undefined ? "Choose result" : "Pick number"}
               </div>
               <div className="mt-0.5 truncate text-base font-black text-neutral-50">
                 {pendingShot.value}PT {pendingShot.zone}
@@ -2559,8 +2793,56 @@ function CourtPanel({
             </div>
           </div>
 
-          {!pendingPlayer ? (
+          {pendingMade === undefined ? (
+            /* Step 1 — choose the event (made or missed) before picking the player. */
             <div className="mt-3">
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  className="flex h-14 flex-col items-center justify-center gap-1 rounded-lg border border-lime-500/50 bg-lime-500/15 text-xs font-black uppercase text-lime-200 transition-colors hover:bg-lime-500/25 focus:outline-none focus:ring-2 focus:ring-lime-500/50 lg:h-12"
+                  type="button"
+                  onClick={() => chooseResult(true)}
+                >
+                  <Target size={18} />
+                  Made
+                </button>
+                <button
+                  className="flex h-14 flex-col items-center justify-center gap-1 rounded-lg border border-red-500/50 bg-red-500/15 text-xs font-black uppercase text-red-200 transition-colors hover:bg-red-500/25 focus:outline-none focus:ring-2 focus:ring-red-500/50 lg:h-12"
+                  type="button"
+                  onClick={() => chooseResult(false)}
+                >
+                  <CircleX size={18} />
+                  Missed
+                </button>
+              </div>
+              <div className="mt-2.5 flex items-center justify-between gap-2 text-[10px] font-bold uppercase tracking-wide text-neutral-500">
+                <span className="truncate">Basket: {pendingTeam.name}</span>
+                {foulOnShot && <span className="text-amber-400">+ Foul</span>}
+              </div>
+              <button
+                className="mt-2.5 h-9 w-full rounded-lg border border-neutral-800 bg-neutral-900 text-[11px] font-black uppercase tracking-wide text-neutral-400 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500 lg:h-7"
+                type="button"
+                onClick={cancelPendingShot}
+              >
+                Cancel
+              </button>
+            </div>
+          ) : (
+            /* Step 2 — choose the player; tapping a number records the shot. */
+            <div className="mt-3">
+              <div
+                className={cn(
+                  "mb-2 flex items-center justify-between gap-2 rounded-lg border px-3 py-1.5 text-[11px] font-black uppercase tracking-wide",
+                  pendingMade
+                    ? "border-lime-500/40 bg-lime-500/10 text-lime-200"
+                    : "border-red-500/40 bg-red-500/10 text-red-200",
+                )}
+              >
+                <span className="flex items-center gap-1.5">
+                  {pendingMade ? <Target size={13} /> : <CircleX size={13} />}
+                  {pendingMade ? "Made" : "Missed"} · {pendingShot.value}PT
+                </span>
+                {foulOnShot && <span className="text-amber-400">+ Foul</span>}
+              </div>
               <CourtShooterGrid
                 accent={pendingTeamId}
                 emptyLabel="No players on court."
@@ -2577,51 +2859,13 @@ function CourtPanel({
                   onPick={pickShooter}
                 />
               )}
-              <button
-                className="mt-3 h-9 w-full rounded-lg border border-neutral-800 bg-neutral-900 text-[11px] font-black uppercase tracking-wide text-neutral-400 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500 lg:h-7"
-                type="button"
-                onClick={cancelPendingShot}
-              >
-                Cancel
-              </button>
-            </div>
-          ) : (
-            <div className="mt-3">
-              <div className="flex items-center justify-between gap-2 rounded-lg border border-neutral-800 bg-neutral-900 px-3 py-2">
-                <span className="text-[10px] font-black uppercase tracking-wide text-neutral-500">Shooter</span>
-                <span className="font-mono text-xl font-black tabular-nums text-neutral-50">
-                  #{pendingPlayer.number}
-                </span>
-              </div>
               <div className="mt-3 grid grid-cols-2 gap-2">
-                <button
-                  className="flex h-12 items-center justify-center gap-2 rounded-lg border border-lime-500/50 bg-lime-500/15 text-xs font-black uppercase text-lime-200 transition-colors hover:bg-lime-500/25 focus:outline-none focus:ring-2 focus:ring-lime-500/50 lg:h-10"
-                  type="button"
-                  onClick={() => commitPendingShot(true)}
-                >
-                  <Target size={16} />
-                  Made
-                </button>
-                <button
-                  className="flex h-12 items-center justify-center gap-2 rounded-lg border border-red-500/50 bg-red-500/15 text-xs font-black uppercase text-red-200 transition-colors hover:bg-red-500/25 focus:outline-none focus:ring-2 focus:ring-red-500/50 lg:h-10"
-                  type="button"
-                  onClick={() => commitPendingShot(false)}
-                >
-                  <CircleX size={16} />
-                  Missed
-                </button>
-              </div>
-              <div className="mt-2.5 flex items-center justify-between gap-2 text-[10px] font-bold uppercase tracking-wide text-neutral-500">
-                <span className="truncate">Basket: {teams[pendingTeamId].name}</span>
-                {foulOnShot && <span className="text-amber-400">+ Foul</span>}
-              </div>
-              <div className="mt-2.5 grid grid-cols-2 gap-2">
                 <button
                   className="h-9 rounded-lg border border-neutral-800 bg-neutral-900 text-[11px] font-black uppercase tracking-wide text-neutral-400 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500 lg:h-7"
                   type="button"
-                  onClick={() => setPendingPlayerKey(undefined)}
+                  onClick={() => setPendingMade(undefined)}
                 >
-                  Change #
+                  Back
                 </button>
                 <button
                   className="h-9 rounded-lg border border-neutral-800 bg-neutral-900 text-[11px] font-black uppercase tracking-wide text-neutral-400 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500 lg:h-7"
@@ -2930,14 +3174,16 @@ function PlayerRow({
 }
 
 function SubstitutionDialog({
+  period,
   side,
   team,
   onApply,
   onClose,
 }: {
+  period: number;
   side: TeamId;
   team: Team;
-  onApply: (nextKeys: string[]) => void;
+  onApply: (nextKeys: string[], reason?: string) => void;
   onClose: () => void;
 }) {
   const cBase = `var(--c-${side})`;
@@ -2956,15 +3202,22 @@ function SubstitutionDialog({
     [roster],
   );
   const targetCount = Math.min(5, eligible.length);
-  const [selectedKeys, setSelectedKeys] = useState<string[]>(() => onCourtKeys.slice(0, targetCount));
+  // Start with the floor EMPTY — the coach picks the five from scratch each time, and the
+  // "On" badges still show who is currently out there for reference.
+  const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
+  const [reason, setReason] = useState("");
 
   const selectedSet = new Set(selectedKeys);
   const atCapacity = selectedKeys.length >= targetCount;
   const incoming = selectedKeys.filter((key) => !onCourtSet.has(key));
   const outgoing = onCourtKeys.filter((key) => !selectedSet.has(key));
   const changed = incoming.length > 0 || outgoing.length > 0;
-  const canApply = selectedKeys.length === targetCount && changed && incoming.length === outgoing.length;
-  const dirty = selectedKeys.length !== onCourtKeys.length || changed;
+  // A sub during the 1st quarter must record a reason; later quarters keep it optional.
+  const reasonRequired = period === 1;
+  const reasonOk = !reasonRequired || reason.trim().length > 0;
+  const lineupReady = selectedKeys.length === targetCount && changed && incoming.length === outgoing.length;
+  const canApply = lineupReady && reasonOk;
+  const dirty = selectedKeys.length > 0 || reason.trim().length > 0;
 
   function toggle(key: string) {
     setSelectedKeys((current) => {
@@ -3095,14 +3348,57 @@ function SubstitutionDialog({
           />
         </div>
 
+        <div className="border-t border-neutral-800 px-4 py-3">
+          <label className="mb-1.5 flex items-center gap-2 text-[11px] font-black uppercase tracking-wide text-neutral-400" htmlFor="sub-reason">
+            Reason / note
+            {reasonRequired ? (
+              <span className="text-amber-400">· required in Q1</span>
+            ) : (
+              <span className="text-neutral-600">· optional</span>
+            )}
+          </label>
+          <input
+            className={cn(
+              "h-10 w-full rounded-lg border bg-neutral-950 px-3 text-sm font-semibold text-neutral-100 outline-none transition-colors focus:ring-2",
+              reasonRequired && !reasonOk
+                ? "border-amber-500/60 focus:ring-amber-500/50"
+                : "border-neutral-800 focus:ring-neutral-500",
+            )}
+            id="sub-reason"
+            placeholder={reasonRequired ? "Why the change? (required this quarter)" : "Optional note — e.g. foul trouble, rest, tactical"}
+            value={reason}
+            onChange={(event) => setReason(event.currentTarget.value)}
+          />
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {SUB_REASON_PRESETS.map((preset) => (
+              <button
+                className={cn(
+                  "rounded-full border px-2.5 py-1 text-[11px] font-bold transition-colors focus:outline-none focus:ring-2 focus:ring-neutral-500",
+                  reason === preset
+                    ? "border-lime-500/50 bg-lime-500/10 text-lime-200"
+                    : "border-neutral-800 bg-neutral-950 text-neutral-300 hover:bg-neutral-800 hover:text-neutral-100",
+                )}
+                key={preset}
+                type="button"
+                onClick={() => setReason(preset)}
+              >
+                {preset}
+              </button>
+            ))}
+          </div>
+        </div>
+
         <div className="flex items-center justify-between gap-3 border-t border-neutral-800 px-4 py-3">
           <button
             className="text-xs font-black uppercase tracking-wide text-neutral-500 transition-colors hover:text-neutral-200 disabled:cursor-not-allowed disabled:opacity-40"
             disabled={!dirty}
             type="button"
-            onClick={() => setSelectedKeys(onCourtKeys.slice(0, targetCount))}
+            onClick={() => {
+              setSelectedKeys([]);
+              setReason("");
+            }}
           >
-            Reset
+            Clear
           </button>
           <div className="flex shrink-0 items-center gap-2">
             <button
@@ -3115,8 +3411,9 @@ function SubstitutionDialog({
             <button
               className="flex h-10 items-center gap-2 rounded-lg border border-lime-500/40 bg-lime-500/15 px-4 text-xs font-black uppercase tracking-wide text-lime-200 transition-colors hover:bg-lime-500/25 focus:outline-none focus:ring-2 focus:ring-lime-500/50 disabled:cursor-not-allowed disabled:opacity-40"
               disabled={!canApply}
+              title={lineupReady && !reasonOk ? "Add a reason — required in the 1st quarter" : undefined}
               type="button"
-              onClick={() => onApply(selectedKeys)}
+              onClick={() => onApply(selectedKeys, reason)}
             >
               <Shuffle size={16} />
               {incoming.length > 1 ? `Apply (${incoming.length})` : "Apply Lineup"}
@@ -3159,6 +3456,245 @@ function LineupDiffStrip({
             </span>
           ))
         )}
+      </div>
+    </div>
+  );
+}
+
+const WARNING_TARGET_LABEL: Record<WarningTarget, string> = {
+  team: "Equipo",
+  player: "Jugador",
+  coach: "Coach",
+  public: "Público",
+};
+
+const WARNING_TARGET_CLASS: Record<WarningTarget, string> = {
+  team: "border-neutral-700 text-neutral-300",
+  player: "border-sky-500/50 text-sky-300",
+  coach: "border-amber-500/50 text-amber-300",
+  public: "border-violet-500/50 text-violet-300",
+};
+
+function WarningDialog({
+  side,
+  team,
+  onSelect,
+  onClose,
+}: {
+  side: TeamId;
+  team: Team;
+  onSelect: (type: WarningType) => void;
+  onClose: () => void;
+}) {
+  const cBase = `var(--c-${side})`;
+  const cSoft = `var(--c-${side}-soft)`;
+
+  return (
+    <div
+      aria-modal="true"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
+      role="dialog"
+      onClick={onClose}
+    >
+      <div
+        className="flex max-h-[92vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-neutral-700 bg-neutral-900 shadow-2xl shadow-black/60"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="flex items-center justify-between gap-3 border-b border-neutral-800 px-4 py-3">
+          <div className="flex min-w-0 items-center gap-3">
+            <TriangleAlert className="shrink-0 text-amber-300" size={20} />
+            <div className="min-w-0">
+              <div className="text-[10px] font-black uppercase tracking-widest" style={{ color: cSoft }}>
+                Referee Warning · {team.label}
+              </div>
+              <h2 className="truncate text-lg font-black text-neutral-50">{team.name}</h2>
+            </div>
+          </div>
+          <button
+            aria-label="Close warnings"
+            className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-neutral-800 bg-neutral-950 text-neutral-400 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500"
+            type="button"
+            onClick={onClose}
+          >
+            <CircleX size={18} />
+          </button>
+        </div>
+
+        <div className="border-b border-neutral-800 px-4 py-2 text-xs font-semibold text-neutral-400">
+          Pick the warning type — logged against {team.name} as a referee warning. No foul, no score change.
+        </div>
+
+        <div className="grid min-h-0 flex-1 gap-2 overflow-y-auto scrollbar-slim p-3 sm:grid-cols-2">
+          {WARNING_TYPES.map((type) => (
+            <button
+              className="flex flex-col items-start gap-1 rounded-xl border border-neutral-800 bg-neutral-950 px-3 py-2.5 text-left transition-colors hover:bg-neutral-800 focus:outline-none focus:ring-2 focus:ring-amber-500/40"
+              key={type.key}
+              type="button"
+              onClick={() => onSelect(type)}
+            >
+              <span className="flex w-full items-center justify-between gap-2">
+                <span className="text-sm font-black text-neutral-100">{type.label}</span>
+                <span
+                  className={cn(
+                    "shrink-0 rounded border px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide",
+                    WARNING_TARGET_CLASS[type.target],
+                  )}
+                >
+                  {WARNING_TARGET_LABEL[type.target]}
+                </span>
+              </span>
+              <span className="text-[11px] font-semibold text-neutral-500">{type.hint}</span>
+            </button>
+          ))}
+        </div>
+
+        <div className="flex items-center justify-between gap-3 border-t border-neutral-800 px-4 py-3">
+          <span aria-hidden className="h-1.5 w-10 rounded-full" style={{ backgroundColor: cBase }} />
+          <button
+            className="h-10 rounded-lg border border-neutral-800 bg-neutral-950 px-4 text-xs font-black uppercase tracking-wide text-neutral-300 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500"
+            type="button"
+            onClick={onClose}
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function EndGameDialog({
+  away,
+  home,
+  awayScore,
+  homeScore,
+  onFinish,
+  onClose,
+}: {
+  away: Team;
+  home: Team;
+  awayScore: number;
+  homeScore: number;
+  onFinish: (status: "Final" | "Suspended", reason?: string) => void;
+  onClose: () => void;
+}) {
+  const [reason, setReason] = useState("");
+  const reasonText = reason.trim();
+  // A suspension must record why — the reason is logged, dropped into the play-by-play, and
+  // saved so it is visible when the game is resumed.
+  const canSuspend = reasonText.length > 0;
+  const winner =
+    homeScore === awayScore
+      ? "Tie game"
+      : homeScore > awayScore
+        ? `${home.name} win`
+        : `${away.name} win`;
+
+  return (
+    <div
+      aria-modal="true"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
+      role="dialog"
+      onClick={onClose}
+    >
+      <div
+        className="flex max-h-[92vh] w-full max-w-md flex-col overflow-hidden rounded-2xl border border-neutral-700 bg-neutral-900 shadow-2xl shadow-black/60"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="flex items-center justify-between gap-3 border-b border-neutral-800 px-4 py-3">
+          <div className="text-[10px] font-black uppercase tracking-widest text-amber-400">End of game</div>
+          <button
+            aria-label="Close"
+            className="flex size-9 items-center justify-center rounded-lg border border-neutral-800 bg-neutral-950 text-neutral-400 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500"
+            type="button"
+            onClick={onClose}
+          >
+            <CircleX size={18} />
+          </button>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto scrollbar-slim">
+          <div className="px-4 py-4 text-center">
+            <div className="text-[11px] font-black uppercase tracking-wide text-neutral-500">Current score</div>
+            <div className="mt-1 flex items-center justify-center gap-3 font-mono text-3xl font-black tabular-nums">
+              <span style={{ color: "var(--c-away-soft)" }}>{awayScore}</span>
+              <span className="text-neutral-600">–</span>
+              <span style={{ color: "var(--c-home-soft)" }}>{homeScore}</span>
+            </div>
+            <div className="mt-1 text-sm font-bold text-neutral-300">{winner}</div>
+          </div>
+
+          <div className="border-t border-neutral-800 px-4 py-3">
+            <label className="mb-1.5 flex items-center gap-2 text-[11px] font-black uppercase tracking-wide text-neutral-400" htmlFor="suspend-reason">
+              Suspension reason
+              <span className="text-amber-400">· required to suspend</span>
+            </label>
+            <input
+              className={cn(
+                "h-10 w-full rounded-lg border bg-neutral-950 px-3 text-sm font-semibold text-neutral-100 outline-none transition-colors focus:ring-2",
+                reasonText.length === 0
+                  ? "border-amber-500/50 focus:ring-amber-500/40"
+                  : "border-neutral-800 focus:ring-neutral-500",
+              )}
+              id="suspend-reason"
+              placeholder="Why is the game being suspended?"
+              value={reason}
+              onChange={(event) => setReason(event.currentTarget.value)}
+            />
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {SUSPENSION_REASON_PRESETS.map((preset) => (
+                <button
+                  className={cn(
+                    "rounded-full border px-2.5 py-1 text-[11px] font-bold transition-colors focus:outline-none focus:ring-2 focus:ring-neutral-500",
+                    reason === preset
+                      ? "border-amber-500/50 bg-amber-500/10 text-amber-200"
+                      : "border-neutral-800 bg-neutral-950 text-neutral-300 hover:bg-neutral-800 hover:text-neutral-100",
+                  )}
+                  key={preset}
+                  type="button"
+                  onClick={() => setReason(preset)}
+                >
+                  {preset}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="grid gap-2 px-3 pt-1">
+            <button
+              className="flex h-12 items-center justify-center gap-2 rounded-xl border border-amber-500/40 bg-amber-500/10 text-sm font-black uppercase tracking-wide text-amber-200 transition-colors hover:bg-amber-500/20 focus:outline-none focus:ring-2 focus:ring-amber-500/50 disabled:cursor-not-allowed disabled:opacity-40"
+              disabled={!canSuspend}
+              title={canSuspend ? undefined : "Enter a suspension reason first"}
+              type="button"
+              onClick={() => onFinish("Suspended", reasonText)}
+            >
+              <Pause size={18} />
+              Suspend — resume later
+            </button>
+            <button
+              className="flex h-12 items-center justify-center gap-2 rounded-xl border border-red-500/40 bg-red-500/10 text-sm font-black uppercase tracking-wide text-red-200 transition-colors hover:bg-red-500/20 focus:outline-none focus:ring-2 focus:ring-red-500/50"
+              type="button"
+              onClick={() => onFinish("Final")}
+            >
+              <Trophy size={18} />
+              End game (Final)
+            </button>
+          </div>
+
+          <div className="px-4 pb-2 pt-3 text-center text-[11px] font-semibold text-neutral-500">
+            A suspended game keeps its score, stats &amp; reason and can be reopened from the dashboard to continue.
+          </div>
+        </div>
+
+        <div className="flex justify-end border-t border-neutral-800 px-4 py-3">
+          <button
+            className="h-10 rounded-lg border border-neutral-800 bg-neutral-950 px-4 text-xs font-black uppercase tracking-wide text-neutral-300 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500"
+            type="button"
+            onClick={onClose}
+          >
+            Cancel
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -3423,7 +3959,10 @@ function BoxScoreDialog({
         <BoxScoreLeaders rows={rows} accent={viewTeam} />
 
         <div className="min-h-0 flex-1 overflow-auto scrollbar-slim">
-          <table className="w-full min-w-[640px] border-collapse text-right text-sm tabular-nums">
+          <table
+            className="w-full border-collapse text-right text-sm tabular-nums"
+            style={{ minWidth: `${(columns.length + 1) * 54}px` }}
+          >
             <thead className="sticky top-0 z-20">
               <tr className="bg-neutral-950 text-[10px] font-black uppercase tracking-wide text-neutral-500">
                 <th
@@ -4177,6 +4716,7 @@ function ActionPanel({
   onOpenBoxScore,
   onOpenPreGame,
   onOpenSubstitution,
+  onOpenWarning,
   onPeriodChange,
   onPeriodSettingsChange,
   onRefresh,
@@ -4217,6 +4757,7 @@ function ActionPanel({
   onOpenBoxScore: () => void;
   onOpenPreGame: () => void;
   onOpenSubstitution: () => void;
+  onOpenWarning: () => void;
   onPeriodChange: (period: LiveMatch["period"]) => void;
   onPeriodSettingsChange: (settings: Partial<PeriodSettings>) => void;
   onRefresh: () => void;
@@ -4309,10 +4850,11 @@ function ActionPanel({
               <span className="text-[11px] font-black uppercase tracking-wide text-neutral-500">Game Clock</span>
               {editingClock ? (
                 <input
-                  aria-label="Edit remaining time (mm:ss)"
+                  aria-label="Edit remaining time — type mmss (e.g. 1000 = 10:00) or mm:ss"
                   autoFocus
                   className="w-28 rounded-md border border-lime-500/50 bg-neutral-950 px-2 text-right font-mono text-3xl font-black leading-none tabular-nums text-lime-300 outline-none focus:ring-2 focus:ring-lime-500/50 lg:w-20 lg:text-xl"
                   inputMode="numeric"
+                  placeholder="mmss"
                   value={clockDraft}
                   onBlur={commitClockEdit}
                   onChange={(event) => setClockDraft(event.currentTarget.value)}
@@ -4474,14 +5016,17 @@ function ActionPanel({
           <div className="grid grid-cols-2 gap-2 lg:grid-cols-3 lg:gap-1.5">
             {visibleActions.map((action) => {
               const Icon = action.icon;
-              const allowed = isActionAllowed(action.key);
+              // "Warning" opens the type picker (6 referee warning types) instead of logging
+              // a generic warning; every other action records directly.
+              const isWarning = action.key === "warning";
+              const allowed = isWarning || isActionAllowed(action.key);
               return (
                 <button
                   className="flex h-16 flex-col items-center justify-center gap-1 rounded-xl border border-neutral-800 bg-neutral-900 text-center transition-colors hover:bg-neutral-800 focus:outline-none focus:ring-2 focus:ring-neutral-500 disabled:cursor-not-allowed disabled:opacity-35 lg:h-8 lg:gap-0 lg:rounded-md"
                   disabled={!allowed}
                   key={action.key}
                   type="button"
-                  onClick={() => onAction(action.key)}
+                  onClick={() => (isWarning ? onOpenWarning() : onAction(action.key))}
                 >
                   <Icon className={cn(action.color, "lg:size-[18px]")} size={20} />
                   <span className="text-[11px] font-black uppercase text-neutral-100">{action.label}</span>
@@ -4891,7 +5436,11 @@ function secondsToClock(totalSeconds: number) {
   return `${minutes.toString().padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`;
 }
 
-// Accepts "M:SS" / "MM:SS" or a plain seconds count; returns total seconds or undefined.
+// Accepts "M:SS" / "MM:SS", or digits-only entered scoreboard-style where the last two
+// digits are the seconds ("1000" -> 10:00, "230" -> 2:30, "45" -> 0:45). Returns total
+// seconds or undefined. Digits-only is NOT read as a raw seconds count — on a numeric
+// tablet keypad the colon is awkward to type, and reading "1000" as 1000s (16:40) was the
+// source of the "I typed a number and got a different time" confusion.
 function parseClockInput(value: string): number | undefined {
   const trimmed = value.trim();
   if (!trimmed) {
@@ -4914,11 +5463,18 @@ function parseClockInput(value: string): number | undefined {
     return clampWholeNumber(minutes * 60 + seconds, 0, 99 * 60 + 59);
   }
 
-  const asSeconds = Number(trimmed);
-  if (!Number.isFinite(asSeconds) || asSeconds < 0) {
+  if (!/^\d+$/.test(trimmed)) {
     return undefined;
   }
-  return clampWholeNumber(asSeconds, 0, 99 * 60 + 59);
+
+  // Digits-only: last two digits are seconds, the rest are minutes (MMSS).
+  const asNumber = Number(trimmed);
+  const minutes = Math.floor(asNumber / 100);
+  const seconds = asNumber % 100;
+  if (seconds >= 60) {
+    return undefined;
+  }
+  return clampWholeNumber(minutes * 60 + seconds, 0, 99 * 60 + 59);
 }
 
 function secondsToMinutes(seconds: number) {
