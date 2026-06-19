@@ -380,6 +380,10 @@ function App() {
   const [endGameOpen, setEndGameOpen] = useState(false);
   // When the scorer advances the period, show a summary of the period that just ended.
   const [endPeriodPrompt, setEndPeriodPrompt] = useState<number | undefined>(undefined);
+  // After the period summary, pick the starting five for the new period.
+  const [periodStartersOpen, setPeriodStartersOpen] = useState(false);
+  // When a player reaches 5 fouls they must come off — prompt for the replacement.
+  const [foulOutPrompt, setFoulOutPrompt] = useState<{ player: Player; team: TeamId } | undefined>(undefined);
   const [preGameOpen, setPreGameOpen] = useState(false);
   const [undoStack, setUndoStack] = useState<UndoItem[]>([]);
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>(
@@ -941,6 +945,15 @@ function App() {
     syncFlowState("Period changed", nextMatch);
   }
 
+  // Sets the on-court five for each team at the start of the new period. Reuses the
+  // substitution path so any change vs. the previous five is logged (no change = no-op).
+  function applyPeriodStarters(awayKeys: string[], homeKeys: string[]) {
+    const label = `Inicio ${getPeriodLabel(matchRef.current.period, periodSettings.periodCount)}`;
+    commitLineupChange("away", awayKeys, label);
+    commitLineupChange("home", homeKeys, label);
+    setPeriodStartersOpen(false);
+  }
+
   function setGameClock(seconds: number) {
     setIsClockRunning(false);
     const nextMatch = {
@@ -1385,6 +1398,29 @@ function App() {
       { player, team },
     );
     setTechOpen(false);
+    checkFoulOut(team, getPlayerKey(player));
+  }
+
+  // A 5th personal/tech foul means the player must leave — open the replacement popup.
+  function checkFoulOut(team: TeamId, playerKey: string) {
+    const updated = findPlayerByKey(matchRef.current[team], playerKey);
+    if (updated && updated.fouls >= 5) {
+      setFoulOutPrompt({ player: updated, team });
+    }
+  }
+
+  function replaceFouledOut(replacement: Player) {
+    if (!foulOutPrompt) {
+      return;
+    }
+    const team = foulOutPrompt.team;
+    const fouledKey = getPlayerKey(foulOutPrompt.player);
+    const replacementKey = getPlayerKey(replacement);
+    const nextKeys = matchRef.current[team].players
+      .map(getPlayerKey)
+      .map((key) => (key === fouledKey ? replacementKey : key));
+    commitLineupChange(team, nextKeys, `Salió por 5 faltas #${foulOutPrompt.player.number}`);
+    setFoulOutPrompt(undefined);
   }
 
   // An administrative technical (bench/coach/procedure) is ref-issued and does NOT add a
@@ -1514,6 +1550,7 @@ function App() {
     }
 
     setFoulPrompt(undefined);
+    checkFoulOut(committerTeam, getPlayerKey(committer));
   }
 
   function openSubstitution() {
@@ -2019,7 +2056,6 @@ function App() {
             selectedTeam={selectedTeam === "away"}
             onSelectPlayer={selectPlayer}
             onSelectTeam={() => setSelectedTeam("away")}
-            onToggleStarter={toggleStarter}
           />
 
           <RosterPanel
@@ -2029,7 +2065,6 @@ function App() {
             selectedTeam={selectedTeam === "home"}
             onSelectPlayer={selectPlayer}
             onSelectTeam={() => setSelectedTeam("home")}
-            onToggleStarter={toggleStarter}
           />
 
           <BottomPanel
@@ -2164,6 +2199,29 @@ function App() {
           periodCount={periodSettings.periodCount}
           summary={summary}
           onClose={() => setEndPeriodPrompt(undefined)}
+          onContinue={() => {
+            setEndPeriodPrompt(undefined);
+            setPeriodStartersOpen(true);
+          }}
+        />
+      )}
+
+      {periodStartersOpen && (
+        <PeriodStartersDialog
+          periodLabel={getPeriodLabel(match.period, periodSettings.periodCount)}
+          teams={{ away: match.away, home: match.home }}
+          onApply={applyPeriodStarters}
+          onClose={() => setPeriodStartersOpen(false)}
+        />
+      )}
+
+      {foulOutPrompt && (
+        <FoulOutDialog
+          player={foulOutPrompt.player}
+          side={foulOutPrompt.team}
+          team={match[foulOutPrompt.team]}
+          onClose={() => setFoulOutPrompt(undefined)}
+          onReplace={replaceFouledOut}
         />
       )}
 
@@ -3580,7 +3638,6 @@ function RosterPanel({
   selectedTeam,
   onSelectPlayer,
   onSelectTeam,
-  onToggleStarter,
 }: {
   side: TeamId;
   team: Team;
@@ -3588,7 +3645,6 @@ function RosterPanel({
   selectedTeam: boolean;
   onSelectPlayer: (team: TeamId, player: Player) => void;
   onSelectTeam: () => void;
-  onToggleStarter: (team: TeamId, player: Player) => void;
 }) {
   const isAway = side === "away";
   const cBase = `var(--c-${side})`;
@@ -3632,9 +3688,7 @@ function RosterPanel({
               key={getPlayerKey(player)}
               player={player}
               selected={selectedTeam && selectedPlayerKey === getPlayerKey(player)}
-              starterDisabled={false}
               onClick={() => onSelectPlayer(side, player)}
-              onToggleStarter={() => onToggleStarter(side, player)}
             />
           ))
         ) : (
@@ -3666,9 +3720,7 @@ function RosterPanel({
                 key={getPlayerKey(player)}
                 player={player}
                 selected={selectedTeam && selectedPlayerKey === getPlayerKey(player)}
-                starterDisabled={starterCount >= 5}
                 onClick={() => onSelectPlayer(side, player)}
-                onToggleStarter={() => onToggleStarter(side, player)}
               />
             ))
           ) : (
@@ -3687,22 +3739,18 @@ function PlayerRow({
   selected,
   compact = false,
   side,
-  starterDisabled,
   onClick,
-  onToggleStarter,
 }: {
   player: Player;
   selected: boolean;
   compact?: boolean;
   side: TeamId;
-  starterDisabled: boolean;
   onClick: () => void;
-  onToggleStarter: () => void;
 }) {
   const cBase = `var(--c-${side})`;
   return (
     <div
-      className="grid w-full grid-cols-[minmax(0,1fr)_44px] items-stretch border-b border-neutral-800 bg-neutral-950 text-neutral-100 transition-colors lg:grid-cols-[minmax(0,1fr)_36px]"
+      className="w-full border-b border-neutral-800 bg-neutral-950 text-neutral-100 transition-colors"
       style={{
         ...(player.active ? { borderLeftWidth: "4px", borderLeftColor: cBase } : null),
         ...(selected ? { backgroundColor: `var(--c-${side}-tint)`, boxShadow: `inset 0 0 0 1px var(--c-${side}-ring)` } : null),
@@ -3710,7 +3758,7 @@ function PlayerRow({
     >
       <button
         className={cn(
-          "grid min-w-0 grid-cols-[44px_1fr_20px] items-center bg-transparent text-left transition-colors hover:bg-neutral-900/70 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-neutral-500",
+          "grid w-full min-w-0 grid-cols-[44px_1fr_24px] items-center bg-transparent pr-2 text-left transition-colors hover:bg-neutral-900/70 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-neutral-500",
           compact ? "h-12 lg:h-10" : "h-16 lg:h-12",
         )}
         title={player.name}
@@ -3721,13 +3769,13 @@ function PlayerRow({
           {player.number}
         </div>
         <div className="min-w-0">
-          {/* Scoring view shows jersey numbers only — full names live in the pre-game/attendance dialog. */}
+          {/* Fouls first (fouling out matters most during play), then points. Numbers only. */}
           <div className="flex items-center gap-1 text-[11px] font-black uppercase tracking-wide text-neutral-500 tabular-nums">
+            <span className={cn(player.fouls >= 5 ? "text-red-400" : player.fouls >= 4 ? "text-amber-400" : "text-neutral-300")}>{player.fouls}</span>
+            <span>F</span>
+            <span className="text-neutral-700">·</span>
             <span className="text-neutral-300">{player.points}</span>
             <span>PTS</span>
-            <span className="text-neutral-700">·</span>
-            <span className={cn(player.fouls >= 4 ? "text-amber-400" : "text-neutral-300")}>{player.fouls}</span>
-            <span>F</span>
           </div>
         </div>
         <div className="flex items-center justify-center">
@@ -3739,19 +3787,6 @@ function PlayerRow({
             <span className={cn("size-2.5 rounded-full", player.active ? "" : "bg-neutral-700")} style={player.active ? { backgroundColor: cBase } : undefined} />
           )}
         </div>
-      </button>
-      <button
-        aria-label={player.active ? `Remove ${player.name} from starters` : `Make ${player.name} a starter`}
-        className={cn(
-          "flex items-center justify-center border-l border-neutral-800 bg-neutral-950 text-neutral-500 transition-colors hover:bg-neutral-900 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-neutral-500 disabled:cursor-not-allowed disabled:opacity-35",
-          player.active && "text-amber-400",
-        )}
-        disabled={starterDisabled}
-        title={player.active ? "Remove starter" : starterDisabled ? "Remove one starter first" : "Make starter"}
-        type="button"
-        onClick={onToggleStarter}
-      >
-        <Star fill={player.active ? "currentColor" : "none"} size={16} />
       </button>
     </div>
   );
@@ -4708,12 +4743,14 @@ function EndOfPeriodDialog({
   periodCount,
   summary,
   onClose,
+  onContinue,
 }: {
   endedPeriod: number;
   match: LiveMatch;
   periodCount: number;
   summary: Array<{ label: string; value: string }>;
   onClose: () => void;
+  onContinue: () => void;
 }) {
   const periodKey = getPlayerPeriodKey(endedPeriod);
   const periodPts = (team: Team) =>
@@ -4839,13 +4876,20 @@ function EndOfPeriodDialog({
           </div>
         </div>
 
-        <div className="flex justify-end border-t border-neutral-800 px-4 py-3">
+        <div className="flex items-center justify-between gap-2 border-t border-neutral-800 px-4 py-3">
           <button
-            className="flex h-11 items-center gap-2 rounded-lg border border-lime-500/50 bg-lime-500/15 px-5 text-sm font-black uppercase tracking-wide text-lime-100 transition-colors hover:bg-lime-500/25 focus:outline-none focus:ring-2 focus:ring-lime-500/50"
+            className="text-xs font-black uppercase tracking-wide text-neutral-500 transition-colors hover:text-neutral-200"
             type="button"
             onClick={onClose}
           >
-            Continuar
+            Saltar
+          </button>
+          <button
+            className="flex h-11 items-center gap-2 rounded-lg border border-lime-500/50 bg-lime-500/15 px-5 text-sm font-black uppercase tracking-wide text-lime-100 transition-colors hover:bg-lime-500/25 focus:outline-none focus:ring-2 focus:ring-lime-500/50"
+            type="button"
+            onClick={onContinue}
+          >
+            Elegir titulares
             <ChevronRight size={18} />
           </button>
         </div>
@@ -4859,6 +4903,265 @@ function EndPeriodStat({ label, value, warn }: { label: string; value: string; w
     <div className="rounded-lg border border-neutral-800 bg-neutral-900 px-2 py-1.5">
       <div className={cn("font-mono text-lg font-black tabular-nums", warn ? "text-amber-400" : "text-neutral-100")}>{value}</div>
       <div className="text-[9px] font-black uppercase tracking-wide text-neutral-500">{label}</div>
+    </div>
+  );
+}
+
+// Present players plus anyone already on court (eligible to be on the floor).
+function eligiblePlayers(team: Team): Player[] {
+  const onCourt = new Set(team.players.map(getPlayerKey));
+  return getRoster(team).filter(
+    (player) => player.present !== false || onCourt.has(getPlayerKey(player)),
+  );
+}
+
+function FoulOutDialog({
+  player,
+  side,
+  team,
+  onReplace,
+  onClose,
+}: {
+  player: Player;
+  side: TeamId;
+  team: Team;
+  onReplace: (replacement: Player) => void;
+  onClose: () => void;
+}) {
+  const bench = team.bench.filter((candidate) => candidate.present !== false);
+
+  return (
+    <div
+      aria-modal="true"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
+      role="dialog"
+      onClick={onClose}
+    >
+      <div
+        className="flex max-h-[92vh] w-full max-w-md flex-col overflow-hidden rounded-2xl border border-red-700/60 bg-neutral-900 shadow-2xl shadow-black/60"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="flex items-center justify-between gap-3 border-b border-neutral-800 px-4 py-3">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <OctagonAlert className="shrink-0 text-red-400" size={20} />
+            <div className="min-w-0">
+              <div className="text-[10px] font-black uppercase tracking-widest text-red-400">5 faltas · {team.label}</div>
+              <h2 className="truncate text-lg font-black text-neutral-50">
+                <span style={{ color: `var(--c-${side}-soft)` }}>#{player.number}</span> debe salir
+              </h2>
+            </div>
+          </div>
+          <button
+            aria-label="Close foul out"
+            className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-neutral-800 bg-neutral-950 text-neutral-400 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500"
+            type="button"
+            onClick={onClose}
+          >
+            <CircleX size={18} />
+          </button>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto scrollbar-slim p-3">
+          <div className="mb-2 text-xs font-semibold text-neutral-400">Elige el reemplazo (banca).</div>
+          {bench.length === 0 ? (
+            <div className="rounded-lg border border-dashed border-neutral-800 px-2 py-6 text-center text-[11px] font-semibold text-neutral-500">
+              Sin jugadores en banca.
+            </div>
+          ) : (
+            <CourtShooterGrid
+              accent={side}
+              label="Banca"
+              players={bench}
+              onPick={onReplace}
+            />
+          )}
+        </div>
+
+        <div className="flex justify-end border-t border-neutral-800 px-4 py-3">
+          <button
+            className="h-10 rounded-lg border border-neutral-800 bg-neutral-950 px-4 text-xs font-black uppercase tracking-wide text-neutral-300 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500"
+            type="button"
+            onClick={onClose}
+          >
+            Sin cambio
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PeriodStartersDialog({
+  periodLabel,
+  teams,
+  onApply,
+  onClose,
+}: {
+  periodLabel: string;
+  teams: Record<TeamId, Team>;
+  onApply: (awayKeys: string[], homeKeys: string[]) => void;
+  onClose: () => void;
+}) {
+  const awayTarget = Math.min(5, eligiblePlayers(teams.away).length);
+  const homeTarget = Math.min(5, eligiblePlayers(teams.home).length);
+  const [awayKeys, setAwayKeys] = useState<string[]>(() => teams.away.players.map(getPlayerKey));
+  const [homeKeys, setHomeKeys] = useState<string[]>(() => teams.home.players.map(getPlayerKey));
+
+  const canApply = awayKeys.length === awayTarget && homeKeys.length === homeTarget;
+
+  return (
+    <div
+      aria-modal="true"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
+      role="dialog"
+      onClick={onClose}
+    >
+      <div
+        className="flex max-h-[92vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-neutral-700 bg-neutral-900 shadow-2xl shadow-black/60"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="flex items-center justify-between gap-3 border-b border-neutral-800 px-4 py-3">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <Users className="shrink-0 text-amber-300" size={20} />
+            <div className="min-w-0">
+              <div className="text-[10px] font-black uppercase tracking-widest text-amber-300">Titulares · {periodLabel}</div>
+              <h2 className="truncate text-lg font-black text-neutral-50">Quién empieza el periodo</h2>
+            </div>
+          </div>
+          <button
+            aria-label="Close period starters"
+            className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-neutral-800 bg-neutral-950 text-neutral-400 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500"
+            type="button"
+            onClick={onClose}
+          >
+            <CircleX size={18} />
+          </button>
+        </div>
+
+        <div className="grid min-h-0 flex-1 gap-px overflow-y-auto scrollbar-slim bg-neutral-800 sm:grid-cols-2">
+          <PeriodStartersColumn side="away" team={teams.away} selectedKeys={awayKeys} target={awayTarget} onChange={setAwayKeys} />
+          <PeriodStartersColumn side="home" team={teams.home} selectedKeys={homeKeys} target={homeTarget} onChange={setHomeKeys} />
+        </div>
+
+        <div className="flex items-center justify-between gap-3 border-t border-neutral-800 px-4 py-3">
+          <div className="min-w-0 truncate text-xs font-semibold text-neutral-400">
+            {canApply ? "Cambios vs. el periodo anterior se registran." : "Elige los titulares de cada equipo."}
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            <button
+              className="h-10 rounded-lg border border-neutral-800 bg-neutral-950 px-4 text-xs font-black uppercase tracking-wide text-neutral-300 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500"
+              type="button"
+              onClick={onClose}
+            >
+              Cancel
+            </button>
+            <button
+              className="flex h-10 items-center gap-2 rounded-lg border border-lime-500/40 bg-lime-500/15 px-4 text-xs font-black uppercase tracking-wide text-lime-200 transition-colors hover:bg-lime-500/25 focus:outline-none focus:ring-2 focus:ring-lime-500/50 disabled:cursor-not-allowed disabled:opacity-40"
+              disabled={!canApply}
+              type="button"
+              onClick={() => onApply(awayKeys, homeKeys)}
+            >
+              <Check size={16} />
+              Confirmar
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PeriodStartersColumn({
+  side,
+  team,
+  selectedKeys,
+  target,
+  onChange,
+}: {
+  side: TeamId;
+  team: Team;
+  selectedKeys: string[];
+  target: number;
+  onChange: (keys: string[]) => void;
+}) {
+  const cSoft = `var(--c-${side}-soft)`;
+  const eligible = eligiblePlayers(team);
+  const onCourtSet = new Set(team.players.map(getPlayerKey));
+  const selectedSet = new Set(selectedKeys);
+  const atCapacity = selectedKeys.length >= target;
+
+  function toggle(key: string) {
+    if (selectedSet.has(key)) {
+      onChange(selectedKeys.filter((value) => value !== key));
+    } else if (selectedKeys.length < target) {
+      onChange([...selectedKeys, key]);
+    }
+  }
+
+  return (
+    <div className="bg-neutral-900 p-3">
+      <div className="mb-2 flex items-center gap-2">
+        <span aria-hidden className="h-4 w-1 rounded-full" style={{ backgroundColor: `var(--c-${side})` }} />
+        <span className="text-[10px] font-black uppercase tracking-wide" style={{ color: cSoft }}>{team.label}</span>
+        <span className="min-w-0 truncate text-[11px] font-bold text-neutral-400">{team.name}</span>
+        <span
+          className={cn(
+            "ml-auto rounded-full border px-2 py-0.5 font-mono text-[11px] font-black tabular-nums",
+            selectedKeys.length === target
+              ? "border-lime-500/50 bg-lime-500/10 text-lime-200"
+              : "border-neutral-700 bg-neutral-950 text-neutral-300",
+          )}
+        >
+          {selectedKeys.length}/{target}
+        </span>
+      </div>
+      {eligible.length === 0 ? (
+        <div className="rounded-lg border border-dashed border-neutral-800 px-2 py-6 text-center text-[11px] font-semibold text-neutral-500">
+          Nadie disponible.
+        </div>
+      ) : (
+        <div className="grid grid-cols-3 gap-1.5">
+          {eligible.map((player) => {
+            const key = getPlayerKey(player);
+            const selected = selectedSet.has(key);
+            const wasOnCourt = onCourtSet.has(key);
+            const lockedOut = !selected && atCapacity;
+            return (
+              <button
+                aria-pressed={selected}
+                className={cn(
+                  "relative flex flex-col items-center justify-center gap-0.5 rounded-xl border bg-neutral-950 px-2 py-2.5 transition-colors focus:outline-none focus:ring-2 focus:ring-neutral-500",
+                  selected ? "border-lime-500/60 bg-lime-500/10" : "border-neutral-800 hover:bg-neutral-800",
+                  lockedOut && "cursor-not-allowed opacity-40 hover:bg-neutral-950",
+                )}
+                disabled={lockedOut}
+                key={key}
+                title={lockedOut ? "Quita uno primero" : undefined}
+                type="button"
+                onClick={() => toggle(key)}
+              >
+                {wasOnCourt && (
+                  <span
+                    className="absolute left-1 top-1 rounded px-1 py-0.5 text-[8px] font-black uppercase leading-none tracking-wide"
+                    style={{ backgroundColor: `var(--c-${side}-tint)`, color: cSoft }}
+                  >
+                    On
+                  </span>
+                )}
+                {selected && (
+                  <span className="absolute right-1 top-1 flex size-4 items-center justify-center rounded-full" style={{ backgroundColor: "#84cc16" }}>
+                    <Check className="text-neutral-950" size={11} />
+                  </span>
+                )}
+                <span className="font-mono text-xl font-black tabular-nums text-neutral-50">{player.number}</span>
+                <span className="text-[9px] font-black uppercase tracking-wide text-neutral-500 tabular-nums">
+                  <span className={cn(player.fouls >= 4 ? "text-amber-400" : "text-neutral-300")}>{player.fouls}</span> f
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
