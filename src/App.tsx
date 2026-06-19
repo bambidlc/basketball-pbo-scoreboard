@@ -195,6 +195,7 @@ const WARNING_PLACEHOLDER_PLAYER: Player = {
   blocks: 0,
   defensiveRebounds: 0,
   fouls: 0,
+  techFouls: 0,
   freeThrowsAttempted: 0,
   freeThrowsMade: 0,
   name: "—",
@@ -402,6 +403,7 @@ function App() {
     initialCustomMode && initialCustomMatch ? initialCustomMatch : fallbackMatch,
   );
   const customModeRef = useRef(customMode);
+  const clockExpiryHandledRef = useRef(false);
   const matchOptionsLoadedRef = useRef(false);
   const preGameOpenRef = useRef(false);
   const pendingRefreshRef = useRef<{ gameId?: number; options: RefreshOptions } | null>(null);
@@ -440,6 +442,11 @@ function App() {
 
   const refreshMatch = useCallback(
     async (gameId?: number, options: RefreshOptions = {}) => {
+      // A custom (local) match owns the state — never let an Odoo load replace it.
+      if (customModeRef.current) {
+        return;
+      }
+
       const now = Date.now();
       const requestedGameId = gameId ?? selectedGameIdRef.current;
 
@@ -475,6 +482,11 @@ function App() {
 
         if (rateLimited) {
           rateLimitUntilRef.current = Date.now() + 30000;
+        }
+
+        // A custom match may have started while this load was in flight — keep it.
+        if (customModeRef.current) {
+          return;
         }
 
         setMatch((current) => {
@@ -603,6 +615,12 @@ function App() {
         matchRef.current = nextMatch;
         if (nextClockSeconds === 0) {
           setIsClockRunning(false);
+          // The running clock just hit 0 — the quarter is over. Defer the advance out of this
+          // updater (and guard against the next tick) so it runs once.
+          if (!clockExpiryHandledRef.current) {
+            clockExpiryHandledRef.current = true;
+            window.setTimeout(() => advanceOnClockExpiry(), 0);
+          }
         }
 
         return nextMatch;
@@ -896,6 +914,19 @@ function App() {
     appendLog(createLog("info", "Court sides switched", "Left and right basket assignments were flipped."));
   }
 
+  // The running game clock hit 0 — end the quarter: advance to the next period, which fires
+  // the end-of-period summary (and the starters chain) and resets team fouls.
+  function advanceOnClockExpiry() {
+    clockExpiryHandledRef.current = false;
+    const current = matchRef.current;
+    appendLog(createLog(
+      "info",
+      "Quarter ended",
+      `Clock hit 0 — ${getPeriodLabel(current.period, periodSettings.periodCount)} ended.`,
+    ));
+    setPeriod((current.period + 1) as LiveMatch["period"]);
+  }
+
   function setPeriod(period: LiveMatch["period"]) {
     setIsClockRunning(false);
     const endingPeriod = matchRef.current.period;
@@ -918,6 +949,10 @@ function App() {
 
     const baseMatch = {
       ...matchRef.current,
+      // Team fouls (the bonus count) reset at the start of each period. Individual player
+      // fouls are cumulative and untouched, so fouling out at 5 still works.
+      away: periodChanged ? { ...matchRef.current.away, fouls: 0 } : matchRef.current.away,
+      home: periodChanged ? { ...matchRef.current.home, fouls: 0 } : matchRef.current.home,
       clock: secondsToClock(getDefaultClockSeconds(period, periodSettings)),
       period,
       periodLabel: getPeriodLabel(period, periodSettings.periodCount),
@@ -5192,6 +5227,7 @@ type BoxTotals = {
   blk: number;
   to: number;
   pf: number;
+  tf: number;
   eff: number;
 };
 
@@ -5245,12 +5281,13 @@ function sumBoxTotals(rows: BoxRow[]): BoxTotals {
       totals.blk += p.blocks;
       totals.to += p.turnovers;
       totals.pf += p.fouls;
+      totals.tf += p.techFouls;
       totals.eff += row.eff;
       return totals;
     },
     {
       pts: 0, fgMade: 0, fgAtt: 0, tpMade: 0, tpAtt: 0, ftMade: 0, ftAtt: 0,
-      oreb: 0, dreb: 0, reb: 0, ast: 0, stl: 0, blk: 0, to: 0, pf: 0, eff: 0,
+      oreb: 0, dreb: 0, reb: 0, ast: 0, stl: 0, blk: 0, to: 0, pf: 0, tf: 0, eff: 0,
     },
   );
 }
@@ -5569,6 +5606,7 @@ function buildOverviewColumns(): BoxColumn[] {
     { key: "blk", label: "BLK", title: "Blocks", value: (r) => r.player.blocks, cell: (r) => r.player.blocks, total: (t) => t.blk },
     { key: "to", label: "TO", title: "Turnovers", value: (r) => r.player.turnovers, cell: (r) => r.player.turnovers, total: (t) => t.to },
     { key: "pf", label: "PF", title: "Personal fouls", value: (r) => r.player.fouls, cell: (r) => <FoulCount value={r.player.fouls} />, total: (t) => t.pf },
+    { key: "tf", label: "TF", title: "Technical fouls", value: (r) => r.player.techFouls, cell: (r) => <TechFoulCount value={r.player.techFouls} />, total: (t) => t.tf },
     { key: "eff", label: "EFF", title: "Efficiency rating", emphasize: true, value: (r) => r.eff, cell: (r) => <EffValue value={r.eff} />, total: (t) => t.eff },
   ];
 }
@@ -5592,6 +5630,7 @@ function buildQuarterColumns(showOt: boolean, mode: StatsMode): BoxColumn[] {
     tail.push(
       { key: "ft", label: "FT", title: "Free throws made/attempted", value: (r) => r.player.freeThrowsMade, cell: (r) => formatMadeAttempt(r.player.freeThrowsMade, r.player.freeThrowsAttempted), total: (t) => formatMadeAttempt(t.ftMade, t.ftAtt) },
       { key: "pf", label: "PF", title: "Personal fouls", value: (r) => r.player.fouls, cell: (r) => <FoulCount value={r.player.fouls} />, total: (t) => t.pf },
+      { key: "tf", label: "TF", title: "Technical fouls", value: (r) => r.player.techFouls, cell: (r) => <TechFoulCount value={r.player.techFouls} />, total: (t) => t.tf },
     );
   }
 
@@ -5620,6 +5659,10 @@ function FoulCount({ value }: { value: number }) {
       {value}
     </span>
   );
+}
+
+function TechFoulCount({ value }: { value: number }) {
+  return <span className={cn(value > 0 ? "font-black text-amber-400" : "text-neutral-500")}>{value}</span>;
 }
 
 function EffValue({ value }: { value: number }) {
@@ -7388,6 +7431,7 @@ function updateMatchAfterAction(
       defensiveRebounds:
         player.defensiveRebounds + (detail.action === "defensive rebound" ? 1 : 0),
       fouls: player.fouls + foulValue,
+      techFouls: player.techFouls + (detail.action === "tech foul" ? 1 : 0),
       freeThrowsAttempted: player.freeThrowsAttempted + (detail.freeThrowsAttempted ?? 0),
       freeThrowsMade: player.freeThrowsMade + (detail.freeThrowsMade ?? 0),
       offensiveRebounds:
@@ -7485,6 +7529,7 @@ function revertMatchAfterAction(match: LiveMatch, undoItem: UndoItem): LiveMatch
         detail.action === "defensive rebound" ? 1 : 0,
       ),
       fouls: subtractStat(player.fouls, foulValue),
+      techFouls: subtractStat(player.techFouls, detail.action === "tech foul" ? 1 : 0),
       freeThrowsAttempted: subtractStat(player.freeThrowsAttempted, detail.freeThrowsAttempted ?? 0),
       freeThrowsMade: subtractStat(player.freeThrowsMade, detail.freeThrowsMade ?? 0),
       offensiveRebounds: subtractStat(

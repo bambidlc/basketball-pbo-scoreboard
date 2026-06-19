@@ -60,6 +60,7 @@ export type Player = {
   blocks: number;
   defensiveRebounds: number;
   fouls: number;
+  techFouls: number;
   freeThrowsAttempted: number;
   freeThrowsMade: number;
   id?: number;
@@ -710,6 +711,7 @@ function createPlayer(player: Partial<Player> & Pick<Player, "name" | "number">)
     blocks: 0,
     defensiveRebounds: 0,
     fouls: 0,
+    techFouls: 0,
     freeThrowsAttempted: 0,
     freeThrowsMade: 0,
     offensiveRebounds: 0,
@@ -1159,6 +1161,7 @@ function normalizePlayer(
     blocks: numberValue(stat?.[PLAYER_STAT.blocks]),
     defensiveRebounds: numberValue(stat?.[PLAYER_STAT.defensiveRebounds]),
     fouls: numberValue(stat?.[PLAYER_STAT.fouls]),
+    techFouls: numberValue(stat?.[PLAYER_STAT.techFouls]),
     freeThrowsAttempted: numberValue(stat?.[PLAYER_STAT.freeThrowsAttempted]),
     freeThrowsMade: numberValue(stat?.[PLAYER_STAT.freeThrowsMade]),
     id: playerId,
@@ -1208,6 +1211,11 @@ async function savePlayerStat(
   }
 
   Object.assign(fullValues, coreValues);
+
+  // A technical foul is also tallied as its own stat (counts toward fouls above too).
+  if (input.action === "tech foul") {
+    fullValues[PLAYER_STAT.techFouls] = input.player.techFouls + 1;
+  }
 
   if (input.shotType === "2pt") {
     fullValues[PLAYER_STAT.twoPointersAttempted] = input.player.twoPointersAttempted + 1;
@@ -1546,6 +1554,7 @@ function playerToStatValues(player: Player) {
     [PLAYER_STAT.blocks]: player.blocks,
     [PLAYER_STAT.defensiveRebounds]: player.defensiveRebounds,
     [PLAYER_STAT.fouls]: player.fouls,
+    [PLAYER_STAT.techFouls]: player.techFouls,
     [PLAYER_STAT.freeThrowsAttempted]: player.freeThrowsAttempted,
     [PLAYER_STAT.freeThrowsMade]: player.freeThrowsMade,
     [PLAYER_STAT.offensiveRebounds]: player.offensiveRebounds,
