@@ -32,6 +32,7 @@ import {
   Trophy,
   Undo2,
   UserRoundX,
+  Users,
   Wifi,
   WifiOff,
 } from "lucide-react";
@@ -213,6 +214,66 @@ const WARNING_PLACEHOLDER_PLAYER: Player = {
   twoPointersMade: 0,
 };
 
+// --- Custom (local) match: a roster typed straight into the app, no Odoo behind it. ---
+type CustomPlayerInput = { number: string; name: string };
+type CustomMatchSetup = {
+  awayName: string;
+  homeName: string;
+  awayPlayers: CustomPlayerInput[];
+  homePlayers: CustomPlayerInput[];
+};
+
+function buildCustomTeam(
+  label: "Visitor" | "Home",
+  name: string,
+  inputs: CustomPlayerInput[],
+  idBase: number,
+): Team {
+  const players = inputs
+    .filter((input) => input.number.trim().length > 0)
+    .map((input, index): Player => ({
+      ...WARNING_PLACEHOLDER_PLAYER,
+      id: idBase - index, // synthetic negative ids keep player keys unique and off Odoo's range
+      name: input.name.trim() || `#${input.number.trim()}`,
+      number: input.number.trim(),
+      present: true,
+    }));
+
+  return {
+    bench: players.slice(5).map((player) => ({ ...player, active: false })),
+    fouls: 0,
+    label,
+    name: name.trim() || label,
+    players: players.slice(0, 5).map((player) => ({ ...player, active: true })),
+    presentCount: players.length,
+    timeouts: 0,
+  };
+}
+
+function buildCustomMatch(
+  setup: CustomMatchSetup,
+  periodSeconds: number,
+  periodCount: number,
+): LiveMatch {
+  const away = buildCustomTeam("Visitor", setup.awayName, setup.awayPlayers, -1000);
+  const home = buildCustomTeam("Home", setup.homeName, setup.homePlayers, -2000);
+  return {
+    away,
+    awayScore: 0,
+    clock: secondsToClock(periodSeconds),
+    events: [],
+    home,
+    homeScore: 0,
+    matchName: `${away.name} vs ${home.name}`,
+    period: 1,
+    periodLabel: getPeriodLabel(1, periodCount),
+    possession: "home",
+    shotClock: FULL_SHOT_CLOCK,
+    status: "Live",
+    syncMessage: "Custom local match — no Odoo sync.",
+  };
+}
+
 const eventIconClass: Record<GameEvent["icon"], string> = {
   made: "text-lime-400",
   missed: "text-red-400",
@@ -232,6 +293,8 @@ const STORAGE_KEYS = {
   officials: "pbo:officials",
   foulOnShot: "pbo:foulOnShot",
   mode: "pbo:mode",
+  customMatch: "pbo:customMatch",
+  customMode: "pbo:customMode",
   courtSides: "pbo:courtSides",
   openingJumpWinner: "pbo:openingJumpWinner",
   possessionArrow: "pbo:possessionArrow",
@@ -267,10 +330,23 @@ function App() {
     () => readStoredNumber(STORAGE_KEYS.selectedGameId) ?? apiConfig.liveGameId,
     [apiConfig.liveGameId],
   );
-  const [match, setMatch] = useState<LiveMatch>(fallbackMatch);
+  // Custom (local) match mode: a roster typed into the app with no Odoo behind it, for
+  // testing. When on, the stored match is restored on load and Odoo polling is paused.
+  const initialCustomMode = useMemo(() => readStoredBoolean(STORAGE_KEYS.customMode, false), []);
+  const initialCustomMatch = useMemo(
+    () => (initialCustomMode ? readStoredJson<LiveMatch>(STORAGE_KEYS.customMatch) : undefined),
+    [initialCustomMode],
+  );
+  const [customMode, setCustomMode] = useState(() => initialCustomMode && Boolean(initialCustomMatch));
+  const [customMatchOpen, setCustomMatchOpen] = useState(false);
+  const [match, setMatch] = useState<LiveMatch>(() =>
+    initialCustomMode && initialCustomMatch ? initialCustomMatch : fallbackMatch,
+  );
   const [matchOptions, setMatchOptions] = useState<MatchOption[]>([]);
   const [selectedGameId, setSelectedGameId] = useState<number | undefined>(initialSelectedGameId);
-  const [screenMode, setScreenMode] = useState<ScreenMode>("dashboard");
+  const [screenMode, setScreenMode] = useState<ScreenMode>(
+    initialCustomMode && initialCustomMatch ? "live" : "dashboard",
+  );
   const [statsMode, setStatsMode] = useState<StatsMode>(() => readStoredStatsMode("professional"));
   const [periodSettings, setPeriodSettings] = useState<PeriodSettings>(() => ({
     overtimeSeconds: readStoredPositiveNumber(STORAGE_KEYS.overtimeSeconds) ?? OVERTIME_CLOCK_SECONDS,
@@ -316,7 +392,10 @@ function App() {
   const clockRunningRef = useRef(false);
   const inFlightRefreshRef = useRef(false);
   const loadedGameIdRef = useRef<number | undefined>(undefined);
-  const matchRef = useRef<LiveMatch>(fallbackMatch);
+  const matchRef = useRef<LiveMatch>(
+    initialCustomMode && initialCustomMatch ? initialCustomMatch : fallbackMatch,
+  );
+  const customModeRef = useRef(customMode);
   const matchOptionsLoadedRef = useRef(false);
   const preGameOpenRef = useRef(false);
   const pendingRefreshRef = useRef<{ gameId?: number; options: RefreshOptions } | null>(null);
@@ -340,6 +419,18 @@ function App() {
   useEffect(() => {
     clockRunningRef.current = isClockRunning;
   }, [isClockRunning]);
+
+  useEffect(() => {
+    customModeRef.current = customMode;
+    writeStoredBoolean(STORAGE_KEYS.customMode, customMode);
+  }, [customMode]);
+
+  // While a custom (local) match is active, persist the whole match so a reload resumes it.
+  useEffect(() => {
+    if (customMode) {
+      writeStoredJson(STORAGE_KEYS.customMatch, match);
+    }
+  }, [customMode, match]);
 
   const refreshMatch = useCallback(
     async (gameId?: number, options: RefreshOptions = {}) => {
@@ -453,6 +544,11 @@ function App() {
   );
 
   useEffect(() => {
+    // A custom (local) match owns the state; don't load or poll Odoo over it.
+    if (customModeRef.current) {
+      return undefined;
+    }
+
     void refreshMatch(undefined, { loadOptions: true });
 
     if (!apiConfig.enabled) {
@@ -460,8 +556,8 @@ function App() {
     }
 
     const timerId = window.setInterval(() => {
-      // Don't let a background poll clobber in-progress roster/attendance edits.
-      if (document.visibilityState === "visible" && !preGameOpenRef.current) {
+      // Don't let a background poll clobber in-progress roster/attendance edits, or a custom match.
+      if (document.visibilityState === "visible" && !preGameOpenRef.current && !customModeRef.current) {
         void refreshMatch();
       }
     }, apiConfig.pollMs);
@@ -621,6 +717,12 @@ function App() {
     setIsClockRunning(false);
     setUndoStack([]);
     canceledEventIdsRef.current.clear();
+    // Choosing a real Odoo game leaves custom (local) mode.
+    if (customModeRef.current) {
+      customModeRef.current = false;
+      setCustomMode(false);
+      writeStoredJson(STORAGE_KEYS.customMatch, undefined);
+    }
     selectedGameIdRef.current = gameId;
     setSelectedGameId(gameId);
     void refreshMatch(gameId, { force: true });
@@ -635,6 +737,34 @@ function App() {
     }
 
     void refreshMatch(gameId, { force: true, loadOptions: true });
+  }
+
+  function startCustomMatch(setup: CustomMatchSetup) {
+    const built = buildCustomMatch(setup, periodSettings.periodSeconds, periodSettings.periodCount);
+    setIsClockRunning(false);
+    setUndoStack([]);
+    canceledEventIdsRef.current.clear();
+    setSelectedPlayers({});
+    selectedPlayersRef.current = {};
+    setSelectedTeam("home");
+    customModeRef.current = true;
+    setCustomMode(true);
+    matchRef.current = built;
+    setMatch(built);
+    writeStoredJson(STORAGE_KEYS.customMatch, built);
+    setCustomMatchOpen(false);
+    setScreenMode("live");
+    appendLog(createLog("success", "Custom match started", built.matchName));
+  }
+
+  function exitCustomMatch() {
+    setIsClockRunning(false);
+    customModeRef.current = false;
+    setCustomMode(false);
+    writeStoredJson(STORAGE_KEYS.customMatch, undefined);
+    setScreenMode("dashboard");
+    appendLog(createLog("info", "Custom match closed", "Back to Odoo games."));
+    void refreshMatch(undefined, { force: true, loadOptions: true });
   }
 
   function updatePeriodSettings(values: Partial<PeriodSettings>) {
@@ -1803,22 +1933,31 @@ function App() {
 
   if (screenMode === "dashboard") {
     return (
-      <GameDashboard
-        apiEnabled={apiConfig.enabled}
-        connectionStatus={connectionStatus}
-        currentMatch={match}
-        isRefreshing={isRefreshing}
-        matchOptions={matchOptions}
-        periodSettings={periodSettings}
-        selectedGameId={selectedGameId}
-        statsMode={statsMode}
-        syncMessage={match.syncMessage}
-        onActivate={activateLiveView}
-        onGameSelect={handleGameSelect}
-        onPeriodSettingsChange={updatePeriodSettings}
-        onRefresh={() => refreshMatch(undefined, { force: true, loadOptions: true })}
-        onStatsModeChange={setStatsMode}
-      />
+      <>
+        <GameDashboard
+          apiEnabled={apiConfig.enabled}
+          connectionStatus={connectionStatus}
+          currentMatch={match}
+          customMatchActive={customMode}
+          isRefreshing={isRefreshing}
+          matchOptions={matchOptions}
+          periodSettings={periodSettings}
+          selectedGameId={selectedGameId}
+          statsMode={statsMode}
+          syncMessage={match.syncMessage}
+          onActivate={activateLiveView}
+          onExitCustomMatch={exitCustomMatch}
+          onGameSelect={handleGameSelect}
+          onOpenCustomMatch={() => setCustomMatchOpen(true)}
+          onPeriodSettingsChange={updatePeriodSettings}
+          onRefresh={() => refreshMatch(undefined, { force: true, loadOptions: true })}
+          onResumeCustomMatch={() => setScreenMode("live")}
+          onStatsModeChange={setStatsMode}
+        />
+        {customMatchOpen && (
+          <CustomMatchDialog onClose={() => setCustomMatchOpen(false)} onStart={startCustomMatch} />
+        )}
+      </>
     );
   }
 
@@ -2142,6 +2281,7 @@ function GameDashboard({
   apiEnabled,
   connectionStatus,
   currentMatch,
+  customMatchActive,
   isRefreshing,
   matchOptions,
   periodSettings,
@@ -2149,14 +2289,18 @@ function GameDashboard({
   statsMode,
   syncMessage,
   onActivate,
+  onExitCustomMatch,
   onGameSelect,
+  onOpenCustomMatch,
   onPeriodSettingsChange,
   onRefresh,
+  onResumeCustomMatch,
   onStatsModeChange,
 }: {
   apiEnabled: boolean;
   connectionStatus: ConnectionStatus;
   currentMatch: LiveMatch;
+  customMatchActive: boolean;
   isRefreshing: boolean;
   matchOptions: MatchOption[];
   periodSettings: PeriodSettings;
@@ -2164,9 +2308,12 @@ function GameDashboard({
   statsMode: StatsMode;
   syncMessage: string;
   onActivate: (mode: StatsMode, gameId?: number) => void;
+  onExitCustomMatch: () => void;
   onGameSelect: (gameId: number | undefined) => void;
+  onOpenCustomMatch: () => void;
   onPeriodSettingsChange: (settings: Partial<PeriodSettings>) => void;
   onRefresh: () => void;
+  onResumeCustomMatch: () => void;
   onStatsModeChange: (mode: StatsMode) => void;
 }) {
   const selectedOption = matchOptions.find((option) => option.id === selectedGameId);
@@ -2269,6 +2416,40 @@ function GameDashboard({
             Activate {statsMode}
             <ChevronRight size={18} />
           </button>
+
+          {/* Custom local match — test with a roster typed in, no Odoo. */}
+          {customMatchActive ? (
+            <div className="mt-3 rounded-xl border border-violet-500/40 bg-violet-500/10 p-3">
+              <div className="text-[10px] font-black uppercase tracking-widest text-violet-300">Custom match active</div>
+              <div className="mt-0.5 truncate text-sm font-bold text-neutral-100">{currentMatch.matchName}</div>
+              <div className="mt-2 grid grid-cols-2 gap-2">
+                <button
+                  className="flex h-10 items-center justify-center gap-1.5 rounded-lg border border-violet-400/50 bg-violet-500/20 text-xs font-black uppercase tracking-wide text-violet-100 transition-colors hover:bg-violet-500/30 focus:outline-none focus:ring-2 focus:ring-violet-500/50"
+                  type="button"
+                  onClick={onResumeCustomMatch}
+                >
+                  <Play size={14} />
+                  Resume
+                </button>
+                <button
+                  className="h-10 rounded-lg border border-neutral-700 bg-neutral-950 text-xs font-black uppercase tracking-wide text-neutral-300 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500"
+                  type="button"
+                  onClick={onExitCustomMatch}
+                >
+                  Exit
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button
+              className="mt-3 flex h-12 w-full items-center justify-center gap-2 rounded-xl border border-violet-500/40 bg-violet-500/10 text-sm font-black uppercase tracking-wide text-violet-200 transition-colors hover:bg-violet-500/20 focus:outline-none focus:ring-2 focus:ring-violet-500/50"
+              type="button"
+              onClick={onOpenCustomMatch}
+            >
+              <Users size={17} />
+              Custom Match
+            </button>
+          )}
         </aside>
 
         <section className="rounded-2xl border border-neutral-800 bg-gradient-to-b from-neutral-900 to-neutral-900/60 p-4 shadow-xl shadow-black/30">
@@ -2376,6 +2557,192 @@ function ModeButton({
       {icon}
       {label}
     </button>
+  );
+}
+
+function emptyCustomRoster(): CustomPlayerInput[] {
+  return Array.from({ length: 6 }, () => ({ number: "", name: "" }));
+}
+
+function CustomMatchDialog({
+  onClose,
+  onStart,
+}: {
+  onClose: () => void;
+  onStart: (setup: CustomMatchSetup) => void;
+}) {
+  const [awayName, setAwayName] = useState("Visitor");
+  const [homeName, setHomeName] = useState("Home");
+  const [awayPlayers, setAwayPlayers] = useState<CustomPlayerInput[]>(emptyCustomRoster);
+  const [homePlayers, setHomePlayers] = useState<CustomPlayerInput[]>(emptyCustomRoster);
+
+  const awayValid = awayPlayers.filter((player) => player.number.trim().length > 0).length;
+  const homeValid = homePlayers.filter((player) => player.number.trim().length > 0).length;
+  const canStart = awayValid >= 1 && homeValid >= 1;
+
+  function start() {
+    if (canStart) {
+      onStart({ awayName, homeName, awayPlayers, homePlayers });
+    }
+  }
+
+  return (
+    <div
+      aria-modal="true"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
+      role="dialog"
+      onClick={onClose}
+    >
+      <div
+        className="flex max-h-[92vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-neutral-700 bg-neutral-900 shadow-2xl shadow-black/60"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="flex items-center justify-between gap-3 border-b border-neutral-800 px-4 py-3">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <Users className="shrink-0 text-violet-300" size={20} />
+            <div className="min-w-0">
+              <div className="text-[10px] font-black uppercase tracking-widest text-violet-300">Custom match · local</div>
+              <h2 className="truncate text-lg font-black text-neutral-50">Type in a roster (no Odoo)</h2>
+            </div>
+          </div>
+          <button
+            aria-label="Close custom match"
+            className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-neutral-800 bg-neutral-950 text-neutral-400 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500"
+            type="button"
+            onClick={onClose}
+          >
+            <CircleX size={18} />
+          </button>
+        </div>
+
+        <div className="grid min-h-0 flex-1 gap-px overflow-y-auto scrollbar-slim bg-neutral-800 sm:grid-cols-2">
+          <CustomTeamColumn
+            accent={AWAY_FALLBACK.base}
+            label="Visitor"
+            name={awayName}
+            players={awayPlayers}
+            validCount={awayValid}
+            onNameChange={setAwayName}
+            onPlayersChange={setAwayPlayers}
+          />
+          <CustomTeamColumn
+            accent={HOME_FALLBACK.base}
+            label="Home"
+            name={homeName}
+            players={homePlayers}
+            validCount={homeValid}
+            onNameChange={setHomeName}
+            onPlayersChange={setHomePlayers}
+          />
+        </div>
+
+        <div className="flex items-center justify-between gap-3 border-t border-neutral-800 px-4 py-3">
+          <div className="min-w-0 truncate text-xs font-semibold text-neutral-400">
+            {canStart
+              ? `${awayName || "Visitor"} (${awayValid}) vs ${homeName || "Home"} (${homeValid}) · first 5 start`
+              : "Add at least one number per team (5 recommended)."}
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            <button
+              className="h-10 rounded-lg border border-neutral-800 bg-neutral-950 px-4 text-xs font-black uppercase tracking-wide text-neutral-300 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500"
+              type="button"
+              onClick={onClose}
+            >
+              Cancel
+            </button>
+            <button
+              className="flex h-10 items-center gap-2 rounded-lg border border-violet-500/50 bg-violet-500/15 px-4 text-xs font-black uppercase tracking-wide text-violet-100 transition-colors hover:bg-violet-500/25 focus:outline-none focus:ring-2 focus:ring-violet-500/50 disabled:cursor-not-allowed disabled:opacity-40"
+              disabled={!canStart}
+              type="button"
+              onClick={start}
+            >
+              <Play size={16} />
+              Start Match
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CustomTeamColumn({
+  accent,
+  label,
+  name,
+  players,
+  validCount,
+  onNameChange,
+  onPlayersChange,
+}: {
+  accent: string;
+  label: "Visitor" | "Home";
+  name: string;
+  players: CustomPlayerInput[];
+  validCount: number;
+  onNameChange: (name: string) => void;
+  onPlayersChange: (players: CustomPlayerInput[]) => void;
+}) {
+  function updateRow(index: number, field: keyof CustomPlayerInput, value: string) {
+    onPlayersChange(players.map((player, i) => (i === index ? { ...player, [field]: value } : player)));
+  }
+
+  return (
+    <div className="bg-neutral-900 p-3">
+      <div className="mb-2 flex items-center gap-2">
+        <span aria-hidden className="h-4 w-1 rounded-full" style={{ backgroundColor: accent }} />
+        <span className="text-[10px] font-black uppercase tracking-wide" style={{ color: accent }}>{label}</span>
+        <span className="ml-auto rounded-full border border-neutral-700 bg-neutral-950 px-2 py-0.5 font-mono text-[11px] font-black tabular-nums text-neutral-400">
+          {validCount} {validCount === 1 ? "player" : "players"}
+        </span>
+      </div>
+      <input
+        aria-label={`${label} team name`}
+        className="mb-2 h-10 w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3 text-sm font-bold text-neutral-100 outline-none focus:ring-2 focus:ring-neutral-500"
+        placeholder={`${label} team name`}
+        value={name}
+        onChange={(event) => onNameChange(event.currentTarget.value)}
+      />
+      <div className="space-y-1.5">
+        {players.map((player, index) => (
+          <div className="flex items-center gap-1.5" key={index}>
+            <input
+              aria-label={`${label} player ${index + 1} number`}
+              className="h-9 w-14 shrink-0 rounded-lg border border-neutral-800 bg-neutral-950 px-2 text-center font-mono text-sm font-black tabular-nums text-neutral-100 outline-none focus:ring-2 focus:ring-neutral-500"
+              inputMode="numeric"
+              placeholder="#"
+              value={player.number}
+              onChange={(event) => updateRow(index, "number", event.currentTarget.value.replace(/[^0-9]/g, "").slice(0, 3))}
+            />
+            <input
+              aria-label={`${label} player ${index + 1} name`}
+              className="h-9 min-w-0 flex-1 rounded-lg border border-neutral-800 bg-neutral-950 px-2 text-sm font-semibold text-neutral-100 outline-none focus:ring-2 focus:ring-neutral-500"
+              placeholder="Name (optional)"
+              value={player.name}
+              onChange={(event) => updateRow(index, "name", event.currentTarget.value)}
+            />
+            <button
+              aria-label={`Remove ${label} player ${index + 1}`}
+              className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-neutral-800 bg-neutral-950 text-neutral-500 transition-colors hover:bg-neutral-800 hover:text-red-300 focus:outline-none focus:ring-2 focus:ring-neutral-500 disabled:opacity-30"
+              disabled={players.length <= 1}
+              type="button"
+              onClick={() => onPlayersChange(players.filter((_, i) => i !== index))}
+            >
+              <CircleX size={15} />
+            </button>
+          </div>
+        ))}
+      </div>
+      <button
+        className="mt-2 flex h-9 w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-neutral-700 bg-neutral-950 text-[11px] font-black uppercase tracking-wide text-neutral-400 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500"
+        type="button"
+        onClick={() => onPlayersChange([...players, { number: "", name: "" }])}
+      >
+        <Plus size={14} />
+        Add player
+      </button>
+      <p className="mt-2 text-[10px] font-semibold text-neutral-500">First 5 start; the rest are bench.</p>
+    </div>
   );
 }
 
@@ -6033,12 +6400,21 @@ function writeStoredNumber(key: string, value: number | undefined) {
   writeStoredText(key, typeof value === "number" && Number.isFinite(value) ? String(value) : undefined);
 }
 
+function writeStoredBoolean(key: string, value: boolean) {
+  writeStoredText(key, value ? "true" : undefined);
+}
+
 function writeStoredJson(key: string, value: unknown) {
   if (typeof window === "undefined") {
     return;
   }
 
   try {
+    if (value === undefined) {
+      window.localStorage.removeItem(key);
+      return;
+    }
+
     window.localStorage.setItem(key, JSON.stringify(value));
   } catch {
     // Local storage can be unavailable in restricted browser contexts.
