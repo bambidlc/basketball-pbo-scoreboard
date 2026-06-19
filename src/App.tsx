@@ -378,6 +378,8 @@ function App() {
   const [freeThrowPrompt, setFreeThrowPrompt] = useState<{ made: boolean } | undefined>(undefined);
   const [techOpen, setTechOpen] = useState(false);
   const [endGameOpen, setEndGameOpen] = useState(false);
+  // When the scorer advances the period, show a summary of the period that just ended.
+  const [endPeriodPrompt, setEndPeriodPrompt] = useState<number | undefined>(undefined);
   const [preGameOpen, setPreGameOpen] = useState(false);
   const [undoStack, setUndoStack] = useState<UndoItem[]>([]);
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>(
@@ -892,7 +894,13 @@ function App() {
 
   function setPeriod(period: LiveMatch["period"]) {
     setIsClockRunning(false);
-    const periodChanged = period !== matchRef.current.period;
+    const endingPeriod = matchRef.current.period;
+    const periodChanged = period !== endingPeriod;
+
+    // Advancing to a later period ends the current one — show its summary to the scorer.
+    if (period > endingPeriod) {
+      setEndPeriodPrompt(endingPeriod);
+    }
 
     // A new quarter flips the possession arrow (alternating possession), but only
     // if a jump ball during the quarter that just ended did not already change it.
@@ -2146,6 +2154,16 @@ function App() {
           homeScore={match.homeScore}
           onClose={closeEndGame}
           onFinish={finishGame}
+        />
+      )}
+
+      {endPeriodPrompt !== undefined && (
+        <EndOfPeriodDialog
+          endedPeriod={endPeriodPrompt}
+          match={match}
+          periodCount={periodSettings.periodCount}
+          summary={summary}
+          onClose={() => setEndPeriodPrompt(undefined)}
         />
       )}
 
@@ -4680,6 +4698,167 @@ function TechDialog({
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+function EndOfPeriodDialog({
+  endedPeriod,
+  match,
+  periodCount,
+  summary,
+  onClose,
+}: {
+  endedPeriod: number;
+  match: LiveMatch;
+  periodCount: number;
+  summary: Array<{ label: string; value: string }>;
+  onClose: () => void;
+}) {
+  const periodKey = getPlayerPeriodKey(endedPeriod);
+  const periodPts = (team: Team) =>
+    getRoster(team).reduce((total, player) => total + player[periodKey], 0);
+  const topScorer = (team: Team) => {
+    let best: Player | undefined;
+    for (const player of getRoster(team)) {
+      if (player[periodKey] > 0 && (!best || player[periodKey] > best[periodKey])) {
+        best = player;
+      }
+    }
+    return best;
+  };
+
+  const awayPts = periodPts(match.away);
+  const homePts = periodPts(match.home);
+  const awayTop = topScorer(match.away);
+  const homeTop = topScorer(match.home);
+  const label = getPeriodLabel(endedPeriod, periodCount);
+  const awayLed = awayPts > homePts;
+  const homeLed = homePts > awayPts;
+
+  const teamRows: Array<{ side: TeamId; team: Team; pts: number; total: number; top?: Player; led: boolean }> = [
+    { side: "away", team: match.away, pts: awayPts, total: match.awayScore, top: awayTop, led: awayLed },
+    { side: "home", team: match.home, pts: homePts, total: match.homeScore, top: homeTop, led: homeLed },
+  ];
+
+  return (
+    <div
+      aria-modal="true"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
+      role="dialog"
+      onClick={onClose}
+    >
+      <div
+        className="flex max-h-[92vh] w-full max-w-xl flex-col overflow-hidden rounded-2xl border border-neutral-700 bg-neutral-900 shadow-2xl shadow-black/60"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="flex items-center justify-between gap-3 border-b border-neutral-800 px-4 py-3">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <Clock3 className="shrink-0 text-amber-400" size={20} />
+            <div className="min-w-0">
+              <div className="text-[10px] font-black uppercase tracking-widest text-amber-400">Fin del periodo</div>
+              <h2 className="truncate text-lg font-black text-neutral-50">End of {label}</h2>
+            </div>
+          </div>
+          <button
+            aria-label="Close period summary"
+            className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-neutral-800 bg-neutral-950 text-neutral-400 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500"
+            type="button"
+            onClick={onClose}
+          >
+            <CircleX size={18} />
+          </button>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto scrollbar-slim p-4">
+          {/* Period score — the headline visual feedback. */}
+          <div className="rounded-2xl border border-neutral-800 bg-neutral-950 p-4">
+            <div className="text-center text-[10px] font-black uppercase tracking-widest text-neutral-500">Puntos del periodo</div>
+            <div className="mt-1 grid grid-cols-[1fr_auto_1fr] items-center gap-3">
+              <div className="text-center">
+                <div className="truncate text-[11px] font-black uppercase tracking-wide" style={{ color: "var(--c-away-soft)" }}>{match.away.name}</div>
+                <div className="font-mono text-5xl font-black tabular-nums" style={{ color: awayLed ? "var(--c-away-soft)" : undefined }}>{awayPts}</div>
+              </div>
+              <div className="text-2xl font-black text-neutral-600">–</div>
+              <div className="text-center">
+                <div className="truncate text-[11px] font-black uppercase tracking-wide" style={{ color: "var(--c-home-soft)" }}>{match.home.name}</div>
+                <div className="font-mono text-5xl font-black tabular-nums" style={{ color: homeLed ? "var(--c-home-soft)" : undefined }}>{homePts}</div>
+              </div>
+            </div>
+            <div className="mt-2 text-center text-xs font-bold text-neutral-400">
+              Total: <span className="font-mono tabular-nums text-neutral-100">{match.awayScore}–{match.homeScore}</span>
+            </div>
+          </div>
+
+          {/* Per-team breakdown. */}
+          <div className="mt-3 grid gap-2 sm:grid-cols-2">
+            {teamRows.map((row) => (
+              <div
+                className="rounded-xl border border-neutral-800 bg-neutral-950 p-3"
+                key={row.side}
+                style={row.led ? { boxShadow: `inset 0 0 0 1px var(--c-${row.side}-ring)` } : undefined}
+              >
+                <div className="flex items-center gap-2">
+                  <span aria-hidden className="h-4 w-1 rounded-full" style={{ backgroundColor: `var(--c-${row.side})` }} />
+                  <span className="min-w-0 truncate text-xs font-black uppercase tracking-wide" style={{ color: `var(--c-${row.side}-soft)` }}>
+                    {row.team.name}
+                  </span>
+                  {row.led && <Crown className="ml-auto text-amber-400" size={14} />}
+                </div>
+                <div className="mt-2 grid grid-cols-2 gap-1.5 text-center">
+                  <EndPeriodStat label="Periodo" value={String(row.pts)} />
+                  <EndPeriodStat label="Total" value={String(row.total)} />
+                  <EndPeriodStat label="Faltas" value={String(row.team.fouls)} warn={row.team.fouls >= 7} />
+                  <EndPeriodStat label="Tiempos" value={String(row.team.timeouts)} />
+                </div>
+                <div className="mt-2 flex items-center justify-between rounded-lg border border-neutral-800 bg-neutral-900 px-2.5 py-1.5">
+                  <span className="text-[10px] font-black uppercase tracking-wide text-neutral-500">Mejor anotador</span>
+                  {row.top ? (
+                    <span className="font-mono text-sm font-black tabular-nums text-neutral-100">
+                      #{row.top.number} · {row.top[periodKey]}
+                    </span>
+                  ) : (
+                    <span className="text-xs font-semibold text-neutral-600">—</span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Game summary (same items as the bottom Game Summary panel). */}
+          <div className="mt-3 space-y-1.5">
+            {summary.map((item) => (
+              <div
+                className="flex items-center justify-between gap-4 rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-1.5 text-sm"
+                key={item.label}
+              >
+                <span className="text-[11px] font-black uppercase tracking-wide text-neutral-500">{item.label}</span>
+                <span className="truncate font-bold text-neutral-100">{item.value}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="flex justify-end border-t border-neutral-800 px-4 py-3">
+          <button
+            className="flex h-11 items-center gap-2 rounded-lg border border-lime-500/50 bg-lime-500/15 px-5 text-sm font-black uppercase tracking-wide text-lime-100 transition-colors hover:bg-lime-500/25 focus:outline-none focus:ring-2 focus:ring-lime-500/50"
+            type="button"
+            onClick={onClose}
+          >
+            Continuar
+            <ChevronRight size={18} />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function EndPeriodStat({ label, value, warn }: { label: string; value: string; warn?: boolean }) {
+  return (
+    <div className="rounded-lg border border-neutral-800 bg-neutral-900 px-2 py-1.5">
+      <div className={cn("font-mono text-lg font-black tabular-nums", warn ? "text-amber-400" : "text-neutral-100")}>{value}</div>
+      <div className="text-[9px] font-black uppercase tracking-wide text-neutral-500">{label}</div>
     </div>
   );
 }
