@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Basketball PBO">
+  <rect width="512" height="512" fill="#F79D2E"/>
+  <g fill="none" stroke="#171717" stroke-width="13" stroke-linecap="round">
+    <circle cx="256" cy="256" r="150"/>
+    <line x1="256" y1="107" x2="256" y2="405"/>
+    <line x1="107" y1="256" x2="405" y2="256"/>
+    <path d="M256 108 Q150 256 256 404"/>
+    <path d="M256 108 Q362 256 256 404"/>
+  </g>
+</svg>

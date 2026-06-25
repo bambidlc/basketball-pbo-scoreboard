@@ -56,6 +56,8 @@ import {
   type LiveMatch,
   type MatchOption,
   type Player,
+  type SaveMatchActionInput,
+  type SaveMatchActionResult,
   type ShotLocation,
   type ShotType,
   type SyncLogEntry,
@@ -63,6 +65,7 @@ import {
   type TeamId,
 } from "./api/liveMatch";
 import { OdooClient, getOdooConfig } from "./api/odooClient";
+import { makeOpId, trimMatchForOutbox, type OutboxOp } from "./api/outbox";
 import { CourtSvg } from "./components/CourtSvg";
 import { cn } from "./lib/cn";
 
@@ -296,6 +299,8 @@ const STORAGE_KEYS = {
   mode: "pbo:mode",
   customMatch: "pbo:customMatch",
   customMode: "pbo:customMode",
+  liveMatch: "pbo:liveMatch",
+  outbox: "pbo:outbox",
   courtSides: "pbo:courtSides",
   openingJumpWinner: "pbo:openingJumpWinner",
   possessionArrow: "pbo:possessionArrow",
@@ -338,15 +343,25 @@ function App() {
     () => (initialCustomMode ? readStoredJson<LiveMatch>(STORAGE_KEYS.customMatch) : undefined),
     [initialCustomMode],
   );
+  // Last Odoo-backed match scored on this device, persisted on every change. Restored on
+  // load so a reload/crash — or a cold start with no signal — resumes the whole game
+  // (events, score, clock) instead of an empty board. Only seeded when it matches the
+  // selected game; a live Odoo poll later merges fresh server data over it.
+  const initialLiveMatch = useMemo(
+    () => (initialCustomMode ? undefined : readStoredLiveMatch(initialSelectedGameId)),
+    [initialCustomMode, initialSelectedGameId],
+  );
+  const seededMatch = initialCustomMode && initialCustomMatch ? initialCustomMatch : initialLiveMatch;
   const [customMode, setCustomMode] = useState(() => initialCustomMode && Boolean(initialCustomMatch));
   const [customMatchOpen, setCustomMatchOpen] = useState(false);
-  const [match, setMatch] = useState<LiveMatch>(() =>
-    initialCustomMode && initialCustomMatch ? initialCustomMatch : fallbackMatch,
-  );
+  const [match, setMatch] = useState<LiveMatch>(() => seededMatch ?? fallbackMatch);
   const [matchOptions, setMatchOptions] = useState<MatchOption[]>([]);
   const [selectedGameId, setSelectedGameId] = useState<number | undefined>(initialSelectedGameId);
-  const [screenMode, setScreenMode] = useState<ScreenMode>(
-    initialCustomMode && initialCustomMatch ? "live" : "dashboard",
+  const [screenMode, setScreenMode] = useState<ScreenMode>(() =>
+    // Resume straight into the live view when the seeded game is still in progress.
+    (initialCustomMode && initialCustomMatch) || initialLiveMatch?.status === "Live"
+      ? "live"
+      : "dashboard",
   );
   const [statsMode, setStatsMode] = useState<StatsMode>(() => readStoredStatsMode("professional"));
   const [periodSettings, setPeriodSettings] = useState<PeriodSettings>(() => ({
@@ -394,14 +409,20 @@ function App() {
   const [syncLog, setSyncLog] = useState<SyncLogEntry[]>(() =>
     readStoredSyncLog(apiConfig.enabled),
   );
+  // Durable outbox of Odoo writes not yet confirmed synced (parked while offline / on
+  // failure) and a live online/offline flag, both surfaced in the sync indicator.
+  const [pendingOps, setPendingOps] = useState<OutboxOp[]>(
+    () => readStoredJson<OutboxOp[]>(STORAGE_KEYS.outbox) ?? [],
+  );
+  const [isOnline, setIsOnline] = useState(() =>
+    typeof navigator === "undefined" ? true : navigator.onLine,
+  );
   const arrowChangedThisPeriodRef = useRef(false);
   const canceledEventIdsRef = useRef(new Set<number>());
   const clockRunningRef = useRef(false);
   const inFlightRefreshRef = useRef(false);
   const loadedGameIdRef = useRef<number | undefined>(undefined);
-  const matchRef = useRef<LiveMatch>(
-    initialCustomMode && initialCustomMatch ? initialCustomMatch : fallbackMatch,
-  );
+  const matchRef = useRef<LiveMatch>(seededMatch ?? fallbackMatch);
   const customModeRef = useRef(customMode);
   const clockExpiryHandledRef = useRef(false);
   const matchOptionsLoadedRef = useRef(false);
@@ -411,6 +432,11 @@ function App() {
   const rateLimitUntilRef = useRef(0);
   const selectedGameIdRef = useRef<number | undefined>(initialSelectedGameId);
   const selectedPlayersRef = useRef<PlayerSelection>({});
+  // Mirrors `pendingOps` for use inside the flush loop; `flushingRef` serializes flushes;
+  // `inFlightOpIdsRef` marks ops the inline path is sending so a flush never double-sends.
+  const pendingOpsRef = useRef(pendingOps);
+  const flushingRef = useRef(false);
+  const inFlightOpIdsRef = useRef<Set<string>>(new Set());
 
   const appendLog = useCallback((entry: SyncLogEntry) => {
     setSyncLog((current) => [entry, ...current].slice(0, SYNC_LOG_LIMIT));
@@ -439,6 +465,24 @@ function App() {
       writeStoredJson(STORAGE_KEYS.customMatch, match);
     }
   }, [customMode, match]);
+
+  // Persist every Odoo-backed match snapshot so the game survives a reload/crash and is
+  // available offline. Keyed by gameId; the loader only restores it for the same game.
+  useEffect(() => {
+    if (!customMode && match.gameId) {
+      writeStoredJson(STORAGE_KEYS.liveMatch, {
+        gameId: match.gameId,
+        savedAt: Date.now(),
+        match,
+      } satisfies StoredLiveMatch);
+    }
+  }, [customMode, match]);
+
+  // Keep the outbox mirror ref + its persisted copy in lockstep with the queue state.
+  useEffect(() => {
+    pendingOpsRef.current = pendingOps;
+    writeStoredJson(STORAGE_KEYS.outbox, pendingOps);
+  }, [pendingOps]);
 
   const refreshMatch = useCallback(
     async (gameId?: number, options: RefreshOptions = {}) => {
@@ -560,6 +604,187 @@ function App() {
     },
     [apiClient, appendLog],
   );
+
+  // Stamp a delayed sync's serverEventId back onto the matching local event + undo record,
+  // so a later edit/undo of an action first synced offline can still target the server row.
+  const linkServerEventId = useCallback((localEventId: number, serverEventId: number) => {
+    setUndoStack((current) =>
+      current.map((item) => (item.eventId === localEventId ? { ...item, serverEventId } : item)),
+    );
+    setMatch((current) => {
+      const next = {
+        ...current,
+        events: current.events.map((event) =>
+          event.id === localEventId ? { ...event, serverEventId } : event,
+        ),
+      };
+      matchRef.current = next;
+      return next;
+    });
+  }, []);
+
+  // Replay parked writes in FIFO order once back online. Stops at the first failure to keep
+  // ordering, skips ops the inline path is still sending, and drops each op only after Odoo
+  // confirms it (the write path is idempotent, so a retried op never duplicates data).
+  const flushOutbox = useCallback(async () => {
+    if (!apiClient.enabled || flushingRef.current) {
+      return;
+    }
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
+      return;
+    }
+
+    flushingRef.current = true;
+    try {
+      const queue = pendingOpsRef.current.filter((op) => !inFlightOpIdsRef.current.has(op.id));
+      let failed = false;
+
+      for (const op of queue) {
+        if (typeof navigator !== "undefined" && !navigator.onLine) {
+          failed = true;
+          break;
+        }
+
+        let result: SaveMatchActionResult;
+        try {
+          result =
+            op.kind === "action"
+              ? await saveMatchAction(apiClient, op.input)
+              : await saveMatchStatus(apiClient, op.match, op.status, op.note);
+        } catch {
+          result = { saved: false, log: createLog("error", "Sync retry failed", "Network error") };
+        }
+
+        if (result.saved) {
+          if (result.eventId && op.eventId != null) {
+            linkServerEventId(op.eventId, result.eventId);
+          }
+          setPendingOps((current) => current.filter((item) => item.id !== op.id));
+        } else {
+          setPendingOps((current) =>
+            current.map((item) => (item.id === op.id ? { ...item, attempts: item.attempts + 1 } : item)),
+          );
+          failed = true;
+          break;
+        }
+      }
+
+      if (queue.length > 0) {
+        setConnectionStatus(failed ? (navigator.onLine ? "error" : "local") : "connected");
+      }
+    } finally {
+      flushingRef.current = false;
+    }
+  }, [apiClient, linkServerEventId]);
+
+  // Optimistic, durable send of a scoring action: park it in the outbox, fire the write,
+  // and drop it on confirmed success. If offline/failed it stays queued for `flushOutbox`.
+  // Returns the live result so each call site's existing reconcile runs unchanged.
+  const dispatchSaveAction = useCallback(
+    (input: SaveMatchActionInput, eventId?: number): Promise<SaveMatchActionResult> => {
+      const op: OutboxOp = {
+        id: makeOpId(),
+        kind: "action",
+        createdAt: Date.now(),
+        attempts: 0,
+        eventId,
+        input: { ...input, match: trimMatchForOutbox(input.match) },
+      };
+      setPendingOps((current) => [...current, op]);
+      inFlightOpIdsRef.current.add(op.id);
+
+      return saveMatchAction(apiClient, input)
+        .then((result) => {
+          if (result.saved) {
+            setPendingOps((current) => current.filter((item) => item.id !== op.id));
+          }
+          return result;
+        })
+        .catch(
+          () =>
+            ({ saved: false, log: createLog("error", "Action sync failed", "Network error") }) as SaveMatchActionResult,
+        )
+        .finally(() => {
+          inFlightOpIdsRef.current.delete(op.id);
+        });
+    },
+    [apiClient],
+  );
+
+  // Same optimistic + durable wrapper for a game-status change (start / suspend / end).
+  const dispatchSaveStatus = useCallback(
+    (nextMatch: LiveMatch, status: string, note?: string, eventId?: number): Promise<SaveMatchActionResult> => {
+      const op: OutboxOp = {
+        id: makeOpId(),
+        kind: "status",
+        createdAt: Date.now(),
+        attempts: 0,
+        eventId,
+        match: trimMatchForOutbox(nextMatch),
+        status,
+        note,
+      };
+      setPendingOps((current) => [...current, op]);
+      inFlightOpIdsRef.current.add(op.id);
+
+      return saveMatchStatus(apiClient, nextMatch, status, note)
+        .then((result) => {
+          if (result.saved) {
+            setPendingOps((current) => current.filter((item) => item.id !== op.id));
+          }
+          return result;
+        })
+        .catch(
+          () =>
+            ({ saved: false, log: createLog("error", "Status sync failed", "Network error") }) as SaveMatchActionResult,
+        )
+        .finally(() => {
+          inFlightOpIdsRef.current.delete(op.id);
+        });
+    },
+    [apiClient],
+  );
+
+  // Reconnect handling: track the browser online/offline flag, and whenever connectivity
+  // returns, drain the outbox and pull fresh server data. A periodic sweep covers cases
+  // where the `online` event never fires (e.g. flaky links that just start working).
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return undefined;
+    }
+
+    const handleOnline = () => {
+      setIsOnline(true);
+      void flushOutbox();
+      void refreshMatch(undefined, { force: true });
+    };
+    const handleOffline = () => {
+      setIsOnline(false);
+      setConnectionStatus("local");
+    };
+
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+    };
+  }, [flushOutbox, refreshMatch]);
+
+  useEffect(() => {
+    if (!apiConfig.enabled) {
+      return undefined;
+    }
+
+    // Try to drain on mount (crash recovery) and on an interval while anything is queued.
+    void flushOutbox();
+    const timerId = window.setInterval(() => {
+      if (pendingOpsRef.current.length > 0) {
+        void flushOutbox();
+      }
+    }, Math.max(5000, apiConfig.pollMs));
+    return () => window.clearInterval(timerId);
+  }, [apiConfig.enabled, apiConfig.pollMs, flushOutbox]);
 
   useEffect(() => {
     // A custom (local) match owns the state; don't load or poll Odoo over it.
@@ -1270,14 +1495,14 @@ function App() {
     previousPossessionRef.current = null;
     appendLog(createLog("info", "Action queued", `${committedDetail.label} - ${formatPlayer(actingPlayer)}`));
 
-    void saveMatchAction(apiClient, {
+    void dispatchSaveAction({
       ...committedDetail,
       match: nextMatch,
       nextAwayScore,
       nextHomeScore,
       player: actingPlayer,
       selectedTeam: actingTeam,
-    }).then((result) => {
+    }, event.id).then((result) => {
       if (result.eventId || result.playerStatId || result.opponentTurnoverStatId) {
         const wasCanceled = result.eventId ? canceledEventIdsRef.current.has(event.id) : false;
 
@@ -1493,7 +1718,7 @@ function App() {
     setTechOpen(false);
     appendLog(createLog("info", "Administrative tech", nextMatch[team].name));
 
-    void saveMatchAction(apiClient, {
+    void dispatchSaveAction({
       action: "admin tech",
       issuedByRef: true,
       label,
@@ -1504,7 +1729,7 @@ function App() {
       player: WARNING_PLACEHOLDER_PLAYER,
       points: 0,
       selectedTeam: team,
-    }).then((result) => {
+    }, event.id).then((result) => {
       if (result.eventId) {
         setUndoStack((stack) =>
           stack.map((item) =>
@@ -1702,7 +1927,7 @@ function App() {
     // Persist each swap as its own event/undo record, mirroring the single-sub path.
     pairs.forEach((pair, index) => {
       const event = events[index];
-      void saveMatchAction(apiClient, {
+      void dispatchSaveAction({
         action: "substitution",
         label: event.label,
         match: nextMatch,
@@ -1712,7 +1937,7 @@ function App() {
         player: pair.inPlayer,
         points: 0,
         selectedTeam: team,
-      }).then((result) => {
+      }, event.id).then((result) => {
         if (result.eventId) {
           setUndoStack((stack) =>
             stack.map((item) =>
@@ -1794,7 +2019,7 @@ function App() {
     setWarningOpen(false);
     appendLog(createLog("info", "Warning", `${nextMatch[selectedTeam].name}: ${type.label}`));
 
-    void saveMatchAction(apiClient, {
+    void dispatchSaveAction({
       action: "warning",
       issuedByRef: true,
       label,
@@ -1805,7 +2030,7 @@ function App() {
       player: player ?? WARNING_PLACEHOLDER_PLAYER,
       points: 0,
       selectedTeam,
-    }).then((result) => {
+    }, event.id).then((result) => {
       if (result.eventId) {
         setUndoStack((stack) =>
           stack.map((item) =>
@@ -1887,11 +2112,11 @@ function App() {
           ),
     );
 
-    void saveMatchStatus(
-      apiClient,
+    void dispatchSaveStatus(
       nextMatch,
       status,
       status === "Suspended" ? reasonText : undefined,
+      suspensionEvent?.id,
     ).then((result) => {
       if (result.eventId && suspensionEvent) {
         setMatch((latest) => {
@@ -1960,6 +2185,15 @@ function App() {
     setMatch(nextMatch);
     setUndoStack((current) => current.filter((item) => item.eventId !== eventId));
     appendLog(createLog("info", "Event undone", undoItem.event.label));
+
+    // If the undone action is still parked in the outbox and was never sent, cancel it —
+    // to Odoo it simply never happened, so no server correction is needed. (An action that
+    // is mid-flight falls through; the canceledEventIdsRef path corrects it once it syncs.)
+    const queuedOp = pendingOpsRef.current.find((op) => op.eventId === eventId);
+    if (queuedOp && !inFlightOpIdsRef.current.has(queuedOp.id)) {
+      setPendingOps((current) => current.filter((op) => op.id !== queuedOp.id));
+      return;
+    }
 
     void saveMatchCorrection(apiClient, {
       label: `Undo ${undoItem.event.label}`,
@@ -2116,7 +2350,9 @@ function App() {
             connectionStatus={connectionStatus}
             foulOnShot={foulOnShot}
             isClockRunning={isClockRunning}
+            isOnline={isOnline}
             isRefreshing={isRefreshing}
+            pendingCount={pendingOps.length}
             mode={statsMode}
             period={match.period}
             periodOptions={periodOptions}
@@ -2440,7 +2676,7 @@ function GameDashboard({
 
   return (
     <main className="min-h-dvh bg-neutral-950 p-3 text-neutral-100 [font-family:Inter,ui-sans-serif,system-ui,sans-serif] sm:p-4">
-      <section className="mx-auto grid max-w-[1640px] gap-3 sm:gap-4 lg:grid-cols-[340px_minmax(0,1fr)]">
+      <section className="mx-auto grid max-w-[1640px] grid-cols-1 gap-3 sm:gap-4 lg:grid-cols-[340px_minmax(0,1fr)]">
         <aside className="rounded-2xl border border-neutral-800 bg-gradient-to-b from-neutral-900 to-neutral-900/60 p-4 shadow-xl shadow-black/30">
           <div className="flex items-start justify-between gap-3">
             <div>
@@ -2607,7 +2843,7 @@ function GameDashboard({
                         · {locationGroup.games.length}
                       </span>
                     </div>
-                    <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
                       {locationGroup.games.map((option) => (
                         <GameCard
                           key={option.id}
@@ -3034,6 +3270,19 @@ function hexToRgba(hex: string, alpha: number) {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
+// The court rim label sits on a near-black (#0a0a0a) box. A club "Color de Letra" can
+// itself be black / very dark — it is meant to sit on the shirt color, not on the court —
+// which made the team name unreadable there (black on black). Lighten any too-dark color
+// toward white (keeping its hue) so it stays legible on the dark box.
+function readableOnDark(hex: string): string {
+  const { r, g, b } = parseHexColor(hex);
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  if (luminance >= 0.5) {
+    return hex;
+  }
+  return lightenHex(hex, Math.min(0.78, 0.55 + (0.5 - luminance)));
+}
+
 function teamPalette(color: string | undefined, fallback: { base: string; soft: string }) {
   const base = color ?? fallback.base;
   const soft = color ? lightenHex(color, 0.42) : fallback.soft;
@@ -3389,7 +3638,12 @@ function CourtPanel({
     const fallback = teamId === "away" ? AWAY_FALLBACK : HOME_FALLBACK;
     const teamColor = teams[teamId].color;
     const accentColor = teamColor ?? fallback.base;
-    const textColor = teams[teamId].textColor ?? (teamColor ? lightenHex(teamColor, 0.42) : fallback.soft);
+    const letterColor = teams[teamId].textColor;
+    const textColor = letterColor
+      ? readableOnDark(letterColor)
+      : teamColor
+        ? lightenHex(teamColor, 0.42)
+        : fallback.soft;
 
     return (
       <g pointerEvents="none">
@@ -6201,7 +6455,9 @@ function ActionPanel({
   connectionStatus,
   foulOnShot,
   isClockRunning,
+  isOnline,
   isRefreshing,
+  pendingCount,
   mode,
   period,
   periodOptions,
@@ -6244,7 +6500,9 @@ function ActionPanel({
   connectionStatus: ConnectionStatus;
   foulOnShot: boolean;
   isClockRunning: boolean;
+  isOnline: boolean;
   isRefreshing: boolean;
+  pendingCount: number;
   mode: StatsMode;
   period: LiveMatch["period"];
   periodOptions: number[];
@@ -6614,7 +6872,9 @@ function ActionPanel({
 
           <DevLogPanel
             connectionStatus={connectionStatus}
+            isOnline={isOnline}
             isRefreshing={isRefreshing}
+            pendingCount={pendingCount}
             syncLog={syncLog}
             syncMessage={syncMessage}
           />
@@ -6731,22 +6991,27 @@ function TimeoutPanel({
 
 function DevLogPanel({
   connectionStatus,
+  isOnline,
   isRefreshing,
+  pendingCount,
   syncLog,
   syncMessage,
 }: {
   connectionStatus: ConnectionStatus;
+  isOnline: boolean;
   isRefreshing: boolean;
+  pendingCount: number;
   syncLog: SyncLogEntry[];
   syncMessage: string;
 }) {
-  const connected = connectionStatus === "connected";
-  const statusLabel =
-    connectionStatus === "syncing"
+  const connected = connectionStatus === "connected" && isOnline;
+  const statusLabel = !isOnline
+    ? "Offline"
+    : connectionStatus === "syncing"
       ? "Syncing"
       : connectionStatus === "error"
         ? "Sync Issue"
-        : connected
+        : connectionStatus === "connected"
           ? "Live Data"
           : "Local Data";
 
@@ -6757,13 +7022,17 @@ function DevLogPanel({
           <span
             className={cn(
               "inline-flex size-2.5 shrink-0 rounded-full",
-              connectionStatus === "connected"
-                ? "bg-lime-400 shadow-[0_0_8px] shadow-lime-400/60"
-                : connectionStatus === "syncing"
+              !isOnline
+                ? "bg-neutral-500"
+                : pendingCount > 0
                   ? "bg-amber-400"
-                  : connectionStatus === "error"
-                    ? "bg-red-400"
-                    : "bg-neutral-500",
+                  : connectionStatus === "connected"
+                    ? "bg-lime-400 shadow-[0_0_8px] shadow-lime-400/60"
+                    : connectionStatus === "syncing"
+                      ? "bg-amber-400"
+                      : connectionStatus === "error"
+                        ? "bg-red-400"
+                        : "bg-neutral-500",
             )}
           />
           <div className="min-w-0">
@@ -6771,6 +7040,11 @@ function DevLogPanel({
             <div className="mt-0.5 flex items-center gap-1.5 text-[11px] font-semibold text-neutral-500">
               {connected ? <Wifi size={13} /> : <WifiOff size={13} />}
               <span className="truncate">{isRefreshing ? "Refreshing" : statusLabel}</span>
+              {pendingCount > 0 && (
+                <span className="shrink-0 rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-bold text-amber-300">
+                  {pendingCount} queued
+                </span>
+              )}
             </div>
           </div>
         </div>
@@ -6887,6 +7161,19 @@ function readStoredJson<TValue>(key: string) {
   } catch {
     return undefined;
   }
+}
+
+type StoredLiveMatch = { gameId: number; savedAt: number; match: LiveMatch };
+
+// Restores the persisted Odoo-backed match only when it belongs to the requested game,
+// so one game's data never shows under another game's id.
+function readStoredLiveMatch(gameId: number | undefined): LiveMatch | undefined {
+  if (!gameId) {
+    return undefined;
+  }
+
+  const stored = readStoredJson<StoredLiveMatch>(STORAGE_KEYS.liveMatch);
+  return stored && stored.gameId === gameId && stored.match ? stored.match : undefined;
 }
 
 function readStoredSyncLog(apiEnabled: boolean) {

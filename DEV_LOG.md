@@ -1,5 +1,17 @@
 # Dev Log
 
+## 2026-06-25 Offline-First + PWA Pass
+
+- Fixed unreadable court rim labels: a club "Color de Letra" that is black/dark was drawn on the near-black rim box; `readableOnDark` now lightens too-dark letter colors (keeping hue) so the team name stays legible.
+- Resolved club color palette NAMES (e.g. "Verde Boston") to hex in the scoring app (`src/api/colorPalette.ts`) and the 4 Odoo public templates, so named color fields render instead of going blank.
+- Added a thin PWA (`vite-plugin-pwa`): precaches the app shell so the scorer opens with no signal, never caches `/odoo`, auto-updates after deploy. Web manifest + themed `public/pwa-icon.svg`.
+- Persist every Odoo-backed match snapshot to `localStorage` (`pbo:liveMatch`, keyed by gameId) and restore it on load, so a reload/crash or cold start with no signal resumes the whole game; jumps straight back to the live view when the game is still `Live`.
+- Added a durable FIFO outbox (`src/api/outbox.ts`, `pbo:outbox`): scoring actions + status changes are parked when offline/failed and replayed in order on reconnect. Replay is idempotent (stats upsert by game+player, score is written absolutely, events are created only after the throw-prone steps). Offline-undo of a still-parked action drops it instead of sending a correction.
+- Online/offline detection plus a "N queued" / "Offline" state in the sync indicator.
+- Made the dashboard grids `grid-cols-1` on mobile (`minmax(0,1fr)` tracks) so panels and game cards stop overflowing on phones.
+- Public HTML team names shortened to club + A/B letter (parsed from the computed `x_name` "… - Equipo X" suffix); categoria + sexo moved to a small separate meta badge, so the long composite names no longer make the cards uneven. Applied across all 4 templates (cards, scoreboard, shot-filter pills, box score, standings, team profile, opponent rows). The scoring app and the match title are intentionally left full.
+- Verified with `npm run build` and a browser smoke test: no console errors, an 80-event live match persisted and restored on reload, no horizontal overflow at 375px or 1024px, and the offline indicator toggles correctly.
+
 ## 2026-04-24 Odoo Capability Guard
 
 - Added one-time Odoo model/field discovery for live scoring.
