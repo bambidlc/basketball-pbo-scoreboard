@@ -587,13 +587,15 @@
                 </tr>
               </thead>
               <tbody class="pbo-standings-body">
+                <t t-set="pbo_palette" t-value="{'negro':'#000000','gris charcoal':'#3F4A4C','gris platiado':'#677378','gris claro':'#9BA9B1','blanco':'#FEFEFE','verde oscuro':'#00471D','verde boston':'#039132','teal':'#0FC099','verde neón':'#A5EA53','verde neon':'#A5EA53','navy':'#2D345A','azul':'#253899','royal':'#103FE7','cyan':'#0090FE','ocean blue':'#198ECE','azul celeste':'#4FD1FD','azul victory':'#90C3E2','azul cielo':'#9AE2FA','marrón':'#471E0B','marron':'#471E0B','rojo':'#EC100D','morado':'#430A75','violeta':'#721D80','cardinal':'#672748','magenta':'#F30781','rosado fucsia':'#F902A2','rosado neón':'#FF1979','rosado neon':'#FF1979','rosado':'#F6A1B4','orange neón':'#E45B01','orange neon':'#E45B01','orange':'#F79D2E','amarillo gold':'#FFCC02','amarillo pollito':'#FFF100','dorado':'#C0AA20','vegas gold':'#D6B568'}"/>
                 <t t-foreach="records" t-as="record">
                   <t t-set="wins" t-value="record.x_wins or 0"/>
                   <t t-set="losses" t-value="record.x_losses or 0"/>
                   <t t-set="games_played" t-value="record.x_games_played or (wins + losses)"/>
                   <t t-set="win_pct_raw" t-value="record.x_win_pct or 0"/>
                   <t t-set="win_pct_value" t-value="int(win_pct_raw * 100) if win_pct_raw and win_pct_raw &lt;= 1 else int(win_pct_raw or 0)"/>
-                  <t t-set="row_color" t-value="record.x_studio_club_id.x_studio_primary_color if record.x_studio_club_id else ''"/>
+                  <t t-set="row_raw" t-value="(record.x_studio_club_id.x_studio_primary_color or '') if record.x_studio_club_id else ''"/>
+                  <t t-set="row_color" t-value="pbo_palette.get(row_raw.strip().lower()) or (row_raw if row_raw.startswith('#') else ('#' + row_raw if row_raw else ''))"/>
                   <tr class="pbo-team-row" t-att-data-wins="wins" t-att-data-losses="losses" t-att-data-games="games_played" t-att-data-pct="win_pct_value">
                     <td class="pbo-rank-cell">--</td>
                     <td>

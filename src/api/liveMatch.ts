@@ -18,6 +18,7 @@ import {
   TEAM_FIELDS,
 } from "./schema";
 import { OdooClient, type OdooRecord } from "./odooClient";
+import { resolveClubColor } from "./colorPalette";
 
 export type TeamId = "away" | "home";
 
@@ -1119,9 +1120,9 @@ async function loadTeamClubColors(
         continue;
       }
 
-      const color = normalizeHexColor(club[CLUB.primaryColor]);
-      const textColor = normalizeHexColor(club[CLUB.secondaryColor]);
-      const accentColor = normalizeHexColor(club[CLUB.accentColor]);
+      const color = resolveClubColor(club[CLUB.primaryColor]);
+      const textColor = resolveClubColor(club[CLUB.secondaryColor]);
+      const accentColor = resolveClubColor(club[CLUB.accentColor]);
       if (color || textColor || accentColor) {
         colorsByClubId.set(clubId, { accentColor, color, textColor });
       }
@@ -1703,23 +1704,6 @@ function uniqueStrings(values: readonly string[]) {
 
 function uniqueNumbers(values: readonly number[]) {
   return [...new Set(values)];
-}
-
-// Accepts a hex color from the club color fields and returns a normalized #rrggbb /
-// #rgb string, or undefined for anything that is not a usable hex value. A leading "#"
-// is optional in the stored data, so it is added when missing.
-function normalizeHexColor(value: unknown): string | undefined {
-  if (typeof value !== "string") {
-    return undefined;
-  }
-
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return undefined;
-  }
-
-  const withHash = trimmed.startsWith("#") ? trimmed : `#${trimmed}`;
-  return /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(withHash) ? withHash.toLowerCase() : undefined;
 }
 
 function uniquePlayers(players: Array<Player | undefined>) {

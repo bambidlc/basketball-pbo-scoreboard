@@ -1002,8 +1002,11 @@
         <t t-set="home_team_id" t-value="record.x_studio_home_team.id"/>
         <t t-set="away_player_ids" t-value="record.x_studio_away_team.x_studio_players.ids"/>
         <t t-set="home_player_ids" t-value="record.x_studio_home_team.x_studio_players.ids"/>
-        <t t-set="away_color" t-value="record.x_studio_away_team.x_studio_club_id.x_studio_primary_color if record.x_studio_away_team.x_studio_club_id else ''"/>
-        <t t-set="home_color" t-value="record.x_studio_home_team.x_studio_club_id.x_studio_primary_color if record.x_studio_home_team.x_studio_club_id else ''"/>
+        <t t-set="pbo_palette" t-value="{'negro':'#000000','gris charcoal':'#3F4A4C','gris platiado':'#677378','gris claro':'#9BA9B1','blanco':'#FEFEFE','verde oscuro':'#00471D','verde boston':'#039132','teal':'#0FC099','verde neón':'#A5EA53','verde neon':'#A5EA53','navy':'#2D345A','azul':'#253899','royal':'#103FE7','cyan':'#0090FE','ocean blue':'#198ECE','azul celeste':'#4FD1FD','azul victory':'#90C3E2','azul cielo':'#9AE2FA','marrón':'#471E0B','marron':'#471E0B','rojo':'#EC100D','morado':'#430A75','violeta':'#721D80','cardinal':'#672748','magenta':'#F30781','rosado fucsia':'#F902A2','rosado neón':'#FF1979','rosado neon':'#FF1979','rosado':'#F6A1B4','orange neón':'#E45B01','orange neon':'#E45B01','orange':'#F79D2E','amarillo gold':'#FFCC02','amarillo pollito':'#FFF100','dorado':'#C0AA20','vegas gold':'#D6B568'}"/>
+        <t t-set="away_raw" t-value="(record.x_studio_away_team.x_studio_club_id.x_studio_primary_color or '') if record.x_studio_away_team.x_studio_club_id else ''"/>
+        <t t-set="home_raw" t-value="(record.x_studio_home_team.x_studio_club_id.x_studio_primary_color or '') if record.x_studio_home_team.x_studio_club_id else ''"/>
+        <t t-set="away_color" t-value="pbo_palette.get(away_raw.strip().lower()) or (away_raw if away_raw.startswith('#') else ('#' + away_raw if away_raw else ''))"/>
+        <t t-set="home_color" t-value="pbo_palette.get(home_raw.strip().lower()) or (home_raw if home_raw.startswith('#') else ('#' + home_raw if home_raw else ''))"/>
         <t t-set="shot_count" t-value="0"/>
         <t t-set="made_shot_count" t-value="0"/>
         <t t-set="missed_shot_count" t-value="0"/>
