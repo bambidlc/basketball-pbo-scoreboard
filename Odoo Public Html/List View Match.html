@@ -397,6 +397,14 @@
             <t t-set="home_raw" t-value="(record.x_studio_home_team.x_studio_club_id.x_studio_primary_color or '') if record.x_studio_home_team.x_studio_club_id else ''"/>
             <t t-set="away_color" t-value="pbo_palette.get(away_raw.strip().lower()) or (away_raw if away_raw.startswith('#') else ('#' + away_raw if away_raw else ''))"/>
             <t t-set="home_color" t-value="pbo_palette.get(home_raw.strip().lower()) or (home_raw if home_raw.startswith('#') else ('#' + home_raw if home_raw else ''))"/>
+            <t t-set="away_team" t-value="record.x_studio_away_team"/>
+            <t t-set="home_team" t-value="record.x_studio_home_team"/>
+            <t t-set="away_label" t-value="((away_team.x_studio_club_id.x_name if away_team.x_studio_club_id else False) or (away_team.display_name or '').split(' - ')[0]) + ((' ' + (away_team.display_name or '').split('Equipo')[-1].strip()) if 'Equipo' in (away_team.display_name or '') else '')"/>
+            <t t-set="home_label" t-value="((home_team.x_studio_club_id.x_name if home_team.x_studio_club_id else False) or (home_team.display_name or '').split(' - ')[0]) + ((' ' + (home_team.display_name or '').split('Equipo')[-1].strip()) if 'Equipo' in (home_team.display_name or '') else '')"/>
+            <t t-set="away_cat" t-value="(away_team.x_studio_categoria or '').upper()"/>
+            <t t-set="away_sex" t-value="away_team.x_studio_sexo or ''"/>
+            <t t-set="home_cat" t-value="(home_team.x_studio_categoria or '').upper()"/>
+            <t t-set="home_sex" t-value="home_team.x_studio_sexo or ''"/>
             <t t-set="status_raw" t-value="record.x_studio_status or 'Scheduled'"/>
             <t t-set="is_live" t-value="'live' in status_raw.lower()"/>
             <t t-set="has_score" t-value="record.x_studio_status in ['Played', 'Live']"/>
@@ -409,11 +417,6 @@
                   <span t-if="record.x_studio_week" class="pbo-week">Week <span class="pbo-num" t-field="record.x_studio_week"/></span>
                 </div>
 
-                <h2 class="pbo-match-name">
-                  <span t-if="record.x_studio_match_name" t-field="record.x_studio_match_name"/>
-                  <span t-else="" t-field="record.x_name"/>
-                </h2>
-
                 <div class="pbo-score-row">
                   <div t-attf-class="pbo-team-line #{'is-winner' if has_score and away_score &gt; home_score else ''}" t-att-style="'border-left:4px solid %s' % away_color if away_color else None">
                     <div class="min-w-0">
@@ -421,7 +424,10 @@
                         <span t-if="away_color" class="pbo-team-dot" t-att-style="'background:%s' % away_color"/>Away
                       </div>
                       <div class="pbo-team-name">
-                        <span t-field="record.x_studio_away_team"/>
+                        <t t-out="away_label"/>
+                      </div>
+                      <div t-if="away_cat or away_sex" class="pbo-team-cat" style="margin-top:2px;font-size:11px;font-weight:600;opacity:.55">
+                        <t t-out="away_cat"/><t t-if="away_cat and away_sex"> · </t><t t-out="away_sex"/>
                       </div>
                     </div>
                     <div class="pbo-score">
@@ -436,7 +442,10 @@
                         <span t-if="home_color" class="pbo-team-dot" t-att-style="'background:%s' % home_color"/>Home
                       </div>
                       <div class="pbo-team-name">
-                        <span t-field="record.x_studio_home_team"/>
+                        <t t-out="home_label"/>
+                      </div>
+                      <div t-if="home_cat or home_sex" class="pbo-team-cat" style="margin-top:2px;font-size:11px;font-weight:600;opacity:.55">
+                        <t t-out="home_cat"/><t t-if="home_cat and home_sex"> · </t><t t-out="home_sex"/>
                       </div>
                     </div>
                     <div class="pbo-score">

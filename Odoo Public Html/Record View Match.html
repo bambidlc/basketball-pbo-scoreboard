@@ -997,7 +997,6 @@
         <t t-set="home_score" t-value="record.x_studio_home_score or 0"/>
         <t t-set="total_points" t-value="away_score + home_score"/>
         <t t-set="lead_margin" t-value="away_score - home_score if away_score &gt;= home_score else home_score - away_score"/>
-        <t t-set="leader_name" t-value="record.x_studio_away_team.display_name if away_score &gt; home_score else record.x_studio_home_team.display_name if home_score &gt; away_score else 'Tied'"/>
         <t t-set="away_team_id" t-value="record.x_studio_away_team.id"/>
         <t t-set="home_team_id" t-value="record.x_studio_home_team.id"/>
         <t t-set="away_player_ids" t-value="record.x_studio_away_team.x_studio_players.ids"/>
@@ -1007,6 +1006,18 @@
         <t t-set="home_raw" t-value="(record.x_studio_home_team.x_studio_club_id.x_studio_primary_color or '') if record.x_studio_home_team.x_studio_club_id else ''"/>
         <t t-set="away_color" t-value="pbo_palette.get(away_raw.strip().lower()) or (away_raw if away_raw.startswith('#') else ('#' + away_raw if away_raw else ''))"/>
         <t t-set="home_color" t-value="pbo_palette.get(home_raw.strip().lower()) or (home_raw if home_raw.startswith('#') else ('#' + home_raw if home_raw else ''))"/>
+        <t t-set="away_team" t-value="record.x_studio_away_team"/>
+        <t t-set="home_team" t-value="record.x_studio_home_team"/>
+        <t t-set="away_label" t-value="((away_team.x_studio_club_id.x_name if away_team.x_studio_club_id else False) or (away_team.display_name or '').split(' - ')[0]) + ((' ' + (away_team.display_name or '').split('Equipo')[-1].strip()) if 'Equipo' in (away_team.display_name or '') else '')"/>
+        <t t-set="home_label" t-value="((home_team.x_studio_club_id.x_name if home_team.x_studio_club_id else False) or (home_team.display_name or '').split(' - ')[0]) + ((' ' + (home_team.display_name or '').split('Equipo')[-1].strip()) if 'Equipo' in (home_team.display_name or '') else '')"/>
+        <t t-set="away_cat" t-value="(away_team.x_studio_categoria or '').upper()"/>
+        <t t-set="away_sex" t-value="away_team.x_studio_sexo or ''"/>
+        <t t-set="home_cat" t-value="(home_team.x_studio_categoria or '').upper()"/>
+        <t t-set="home_sex" t-value="home_team.x_studio_sexo or ''"/>
+        <t t-set="away_meta_cs" t-value="away_cat + ' · ' + away_sex if (away_cat and away_sex) else (away_cat or away_sex)"/>
+        <t t-set="home_meta_cs" t-value="home_cat + ' · ' + home_sex if (home_cat and home_sex) else (home_cat or home_sex)"/>
+        <t t-set="leader_name" t-value="away_label if away_score &gt; home_score else home_label if home_score &gt; away_score else 'Tied'"/>
+        <t t-set="match_title" t-value="(away_label or 'Away') + ' vs ' + (home_label or 'Home')"/>
         <t t-set="shot_count" t-value="0"/>
         <t t-set="made_shot_count" t-value="0"/>
         <t t-set="missed_shot_count" t-value="0"/>
@@ -1045,15 +1056,14 @@
             </a>
           </li>
           <li class="breadcrumb-item active">
-            <span t-field="record.x_name"/>
+            <t t-out="match_title"/>
           </li>
         </ol>
 
         <section class="pbo-card pbo-board" aria-labelledby="pbo-match-record-title">
           <div class="pbo-board-top">
             <h1 id="pbo-match-record-title" class="pbo-match-name">
-              <span t-if="record.x_studio_match_name" t-field="record.x_studio_match_name"/>
-              <span t-else="" t-field="record.x_name"/>
+              <t t-out="match_title"/>
             </h1>
             <span class="pbo-status">
               <span t-field="record.x_studio_status"/>
@@ -1067,8 +1077,9 @@
                   <span t-if="away_color" class="pbo-team-dot" t-att-style="'background:%s' % away_color"/>Away
                 </div>
                 <div class="pbo-team-name">
-                  <span t-field="record.x_studio_away_team"/>
+                  <t t-out="away_label"/>
                 </div>
+                <div t-if="away_meta_cs" class="pbo-team-meta"><t t-out="away_meta_cs"/></div>
                 <div class="pbo-team-meta">
                   Fouls <span class="pbo-num" t-field="record.x_studio_away_team_fouls"/> &#183; TO <span class="pbo-num" t-field="record.x_studio_away_timeouts"/>
                 </div>
@@ -1089,8 +1100,9 @@
                   <span t-if="home_color" class="pbo-team-dot" t-att-style="'background:%s' % home_color"/>Home
                 </div>
                 <div class="pbo-team-name">
-                  <span t-field="record.x_studio_home_team"/>
+                  <t t-out="home_label"/>
                 </div>
+                <div t-if="home_meta_cs" class="pbo-team-meta"><t t-out="home_meta_cs"/></div>
                 <div class="pbo-team-meta">
                   Fouls <span class="pbo-num" t-field="record.x_studio_home_team_fouls"/> &#183; TO <span class="pbo-num" t-field="record.x_studio_home_timeouts"/>
                 </div>
@@ -1139,10 +1151,10 @@
             <div class="pbo-filter-row" aria-label="Filter shot map by team">
               <button type="button" class="pbo-pillbtn is-active" data-pbo-shot-filter="all" aria-pressed="true">All Teams</button>
               <button t-if="record.x_studio_away_team" type="button" class="pbo-pillbtn" t-att-data-pbo-shot-filter="record.x_studio_away_team.id" aria-pressed="false">
-                <span t-field="record.x_studio_away_team"/>
+                <t t-out="away_label"/>
               </button>
               <button t-if="record.x_studio_home_team" type="button" class="pbo-pillbtn" t-att-data-pbo-shot-filter="record.x_studio_home_team.id" aria-pressed="false">
-                <span t-field="record.x_studio_home_team"/>
+                <t t-out="home_label"/>
               </button>
             </div>
             <div class="pbo-filter-row" aria-label="Filter shot map by result">
@@ -1270,6 +1282,7 @@
           <t t-foreach="[['Away', record.x_studio_away_team, away_team_id, away_player_ids, 'away', away_color], ['Home', record.x_studio_home_team, home_team_id, home_player_ids, 'home', home_color]]" t-as="side">
             <t t-set="side_label" t-value="side[0]"/>
             <t t-set="side_team" t-value="side[1]"/>
+            <t t-set="side_team_label" t-value="((side_team.x_studio_club_id.x_name if side_team.x_studio_club_id else False) or (side_team.display_name or '').split(' - ')[0]) + ((' ' + (side_team.display_name or '').split('Equipo')[-1].strip()) if 'Equipo' in (side_team.display_name or '') else '')"/>
             <t t-set="side_team_id" t-value="side[2]"/>
             <t t-set="side_player_ids" t-value="side[3]"/>
             <t t-set="side_key" t-value="side[4]"/>
@@ -1278,7 +1291,7 @@
               <summary>
                 <span class="pbo-summary-title">
                   <span t-attf-class="pbo-box-side pbo-box-side-#{side_key}"><t t-out="side_label"/></span>
-                  <span class="pbo-box-team-name"><span t-if="side_color" class="pbo-team-dot" t-att-style="'background:%s' % side_color"/><t t-out="side_team.display_name or side_label"/></span>
+                  <span class="pbo-box-team-name"><span t-if="side_color" class="pbo-team-dot" t-att-style="'background:%s' % side_color"/><t t-out="side_team_label or side_team.display_name or side_label"/></span>
                 </span>
               </summary>
               <div class="pbo-box-toolbar pbo-box-toolbar-end">

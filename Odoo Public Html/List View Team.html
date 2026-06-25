@@ -596,6 +596,10 @@
                   <t t-set="win_pct_value" t-value="int(win_pct_raw * 100) if win_pct_raw and win_pct_raw &lt;= 1 else int(win_pct_raw or 0)"/>
                   <t t-set="row_raw" t-value="(record.x_studio_club_id.x_studio_primary_color or '') if record.x_studio_club_id else ''"/>
                   <t t-set="row_color" t-value="pbo_palette.get(row_raw.strip().lower()) or (row_raw if row_raw.startswith('#') else ('#' + row_raw if row_raw else ''))"/>
+                  <t t-set="team_label" t-value="((record.x_studio_club_id.x_name if record.x_studio_club_id else False) or (record.display_name or '').split(' - ')[0]) + ((' ' + (record.display_name or '').split('Equipo')[-1].strip()) if 'Equipo' in (record.display_name or '') else '')"/>
+                  <t t-set="team_cat" t-value="(record.x_studio_categoria or '').upper()"/>
+                  <t t-set="team_sex" t-value="record.x_studio_sexo or ''"/>
+                  <t t-set="team_meta_cs" t-value="team_cat + ' · ' + team_sex if (team_cat and team_sex) else (team_cat or team_sex)"/>
                   <tr class="pbo-team-row" t-att-data-wins="wins" t-att-data-losses="losses" t-att-data-games="games_played" t-att-data-pct="win_pct_value">
                     <td class="pbo-rank-cell">--</td>
                     <td>
@@ -607,10 +611,11 @@
                           <t t-out="(record.x_name or '?')[:1]"/>
                         </span>
                         <span class="pbo-team-text">
-                          <span class="pbo-team-name"><span t-if="row_color" class="pbo-team-dot" t-att-style="'background:%s' % row_color"/><span t-field="record.x_name"/></span>
+                          <span class="pbo-team-name"><span t-if="row_color" class="pbo-team-dot" t-att-style="'background:%s' % row_color"/><t t-out="team_label"/></span>
                           <span class="pbo-team-sub">
+                            <t t-if="team_meta_cs"><t t-out="team_meta_cs"/><t t-if="record.x_studio_coach"> · </t></t>
                             <t t-if="record.x_studio_coach">Coach <span t-field="record.x_studio_coach"/></t>
-                            <t t-else="">Team profile</t>
+                            <t t-if="not team_meta_cs and not record.x_studio_coach">Team profile</t>
                           </span>
                         </span>
                       </a>
