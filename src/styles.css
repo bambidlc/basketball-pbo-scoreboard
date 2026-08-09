@@ -6,16 +6,23 @@
 
 html {
   background: #0a0a0a;
+  color-scheme: dark;
   -webkit-text-size-adjust: 100%;
 }
 
 body {
   margin: 0;
-  background:
-    radial-gradient(1100px 700px at 50% -15%, #161821 0%, rgba(10, 10, 10, 0) 55%),
-    #0a0a0a;
+  background: #0a0a0a;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+/* Full-screen dialogs stay clear of tablet notches and home indicators. */
+.fixed.inset-0 {
+  padding-top: max(1rem, env(safe-area-inset-top));
+  padding-right: max(1rem, env(safe-area-inset-right));
+  padding-bottom: max(1rem, env(safe-area-inset-bottom));
+  padding-left: max(1rem, env(safe-area-inset-left));
 }
 
 button {

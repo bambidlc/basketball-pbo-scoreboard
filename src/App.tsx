@@ -2277,11 +2277,11 @@ function App() {
 
   return (
     <main
-      className="min-h-dvh bg-neutral-950 p-2 text-neutral-100 [font-family:Inter,ui-sans-serif,system-ui,sans-serif] sm:p-3 lg:h-dvh lg:overflow-hidden"
+      className="min-h-dvh bg-neutral-950 p-2 text-neutral-100 [font-family:Inter,ui-sans-serif,system-ui,sans-serif] sm:p-3 2xl:h-dvh 2xl:overflow-hidden"
       style={teamColorVars(match.away, match.home)}
     >
-      <section className="mx-auto max-w-[1640px] overflow-hidden rounded-xl border border-neutral-800 bg-neutral-800 shadow-2xl shadow-black/50 ring-1 ring-white/5 lg:h-full">
-        <div className="grid gap-px bg-neutral-800 md:grid-cols-2 lg:h-full lg:min-h-0 lg:grid-cols-[148px_minmax(0,1fr)_148px_280px] lg:grid-rows-[auto_minmax(0,1fr)_150px] xl:grid-cols-[170px_minmax(0,1fr)_170px_320px] xl:grid-rows-[auto_minmax(0,1fr)_166px] 2xl:grid-cols-[200px_minmax(0,1fr)_200px_350px] 2xl:grid-rows-[auto_minmax(0,1fr)_182px]">
+      <section className="mx-auto max-w-[1640px] overflow-hidden rounded-xl border border-neutral-800 bg-neutral-800 shadow-xl shadow-black/40 2xl:h-full">
+        <div className="grid gap-px bg-neutral-800 md:grid-cols-2 lg:grid-cols-[240px_minmax(0,1fr)_240px] xl:grid-cols-[260px_minmax(0,1fr)_260px] 2xl:h-full 2xl:min-h-0 2xl:grid-cols-[200px_minmax(0,1fr)_200px_350px] 2xl:grid-rows-[auto_minmax(0,1fr)_182px]">
           <ScoreHeader
             away={match.away}
             awayScore={match.awayScore}
@@ -2675,13 +2675,16 @@ function GameDashboard({
           : "Local";
 
   return (
-    <main className="min-h-dvh bg-neutral-950 p-3 text-neutral-100 [font-family:Inter,ui-sans-serif,system-ui,sans-serif] sm:p-4">
-      <section className="mx-auto grid max-w-[1640px] grid-cols-1 gap-3 sm:gap-4 lg:grid-cols-[340px_minmax(0,1fr)]">
-        <aside className="rounded-2xl border border-neutral-800 bg-gradient-to-b from-neutral-900 to-neutral-900/60 p-4 shadow-xl shadow-black/30">
+    <main
+      className="min-h-dvh bg-neutral-950 px-3 py-4 text-neutral-100 [font-family:Inter,ui-sans-serif,system-ui,sans-serif] sm:px-5 sm:py-6"
+      style={teamColorVars(currentMatch.away, currentMatch.home)}
+    >
+      <section className="mx-auto grid max-w-[1640px] grid-cols-1 gap-4 md:grid-cols-[280px_minmax(0,1fr)] md:items-start lg:grid-cols-[320px_minmax(0,1fr)]">
+        <aside className="rounded-xl border border-neutral-800 bg-neutral-900 p-4 shadow-sm md:sticky md:top-5">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <div className="text-[11px] font-black uppercase tracking-widest text-amber-400">Basketball PBO</div>
-              <h1 className="mt-1 text-2xl font-black text-neutral-50 text-balance">Game Dashboard</h1>
+              <div className="text-xs font-semibold text-amber-300">Basketball PBO</div>
+              <h1 className="mt-1 text-xl font-semibold text-neutral-50 text-balance">Scoring operations</h1>
             </div>
             <button
               aria-label="Refresh games"
@@ -2694,10 +2697,10 @@ function GameDashboard({
             </button>
           </div>
 
-          <div className="mt-4 rounded-xl border border-neutral-800 bg-neutral-950 p-3">
+          <div className="mt-4 rounded-lg border border-neutral-800 bg-neutral-950 p-3">
             <div className="flex items-center justify-between gap-3">
-              <span className="text-[11px] font-black uppercase tracking-wide text-neutral-500">Connection</span>
-              <span className="flex items-center gap-2 text-[11px] font-black uppercase tracking-wide text-neutral-300">
+              <span className="text-xs font-semibold text-neutral-500">Connection</span>
+              <span className="flex items-center gap-2 text-xs font-semibold text-neutral-300">
                 <span
                   className={cn(
                     "size-2 rounded-full",
@@ -2713,14 +2716,14 @@ function GameDashboard({
                 {statusText}
               </span>
             </div>
-            <div className="mt-2 truncate text-xs text-neutral-500">{syncMessage}</div>
+            <div className="mt-2 truncate text-xs text-neutral-500" title={syncMessage}>{syncMessage}</div>
           </div>
 
           <div className="mt-3 grid grid-cols-2 gap-2">
             <ModeButton
               active={statsMode === "professional"}
               icon={<Target size={17} />}
-              label="Professional"
+              label="Pro stats"
               onClick={() => onStatsModeChange("professional")}
             />
             <ModeButton
@@ -2739,10 +2742,10 @@ function GameDashboard({
           </div>
 
           <label className="mt-4 block">
-            <span className="mb-1.5 block text-[10px] font-black uppercase tracking-wide text-neutral-500">Selected Game</span>
+            <span className="mb-1.5 block text-xs font-semibold text-neutral-400">Selected game</span>
             <select
               aria-label="Selected game"
-              className="h-12 w-full rounded-xl border border-neutral-800 bg-neutral-950 px-3 text-sm font-bold text-neutral-100 outline-none focus:ring-2 focus:ring-neutral-500"
+              className="h-12 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 text-sm font-semibold text-neutral-100 outline-none focus:ring-2 focus:ring-amber-400/60"
               value={selectedGameId ?? ""}
               onChange={(event) => onGameSelect(readSelectNumber(event.currentTarget.value))}
             >
@@ -2756,22 +2759,22 @@ function GameDashboard({
           </label>
 
           <button
-            className="mt-4 flex h-12 w-full items-center justify-center gap-2 rounded-xl border border-neutral-300 bg-neutral-100 text-sm font-black uppercase tracking-wide text-neutral-950 transition-colors hover:bg-white focus:outline-none focus:ring-2 focus:ring-neutral-400"
+            className="mt-4 flex h-12 w-full items-center justify-center gap-2 rounded-lg border border-amber-300 bg-amber-300 text-sm font-bold text-neutral-950 transition-colors hover:border-amber-200 hover:bg-amber-200 focus:outline-none focus:ring-2 focus:ring-amber-400/60"
             type="button"
             onClick={() => onActivate(statsMode, selectedGameId)}
           >
-            Activate {statsMode}
+            Open {statsMode === "professional" ? "pro" : "youth"} scorer
             <ChevronRight size={18} />
           </button>
 
           {/* Custom local match — test with a roster typed in, no Odoo. */}
           {customMatchActive ? (
-            <div className="mt-3 rounded-xl border border-violet-500/40 bg-violet-500/10 p-3">
-              <div className="text-[10px] font-black uppercase tracking-widest text-violet-300">Custom match active</div>
-              <div className="mt-0.5 truncate text-sm font-bold text-neutral-100">{currentMatch.matchName}</div>
+            <div className="mt-3 rounded-lg border border-neutral-700 bg-neutral-950 p-3">
+              <div className="text-xs font-semibold text-amber-300">Custom match active</div>
+              <div className="mt-1 truncate text-sm font-semibold text-neutral-100">{currentMatch.matchName}</div>
               <div className="mt-2 grid grid-cols-2 gap-2">
                 <button
-                  className="flex h-10 items-center justify-center gap-1.5 rounded-lg border border-violet-400/50 bg-violet-500/20 text-xs font-black uppercase tracking-wide text-violet-100 transition-colors hover:bg-violet-500/30 focus:outline-none focus:ring-2 focus:ring-violet-500/50"
+                  className="flex h-10 items-center justify-center gap-1.5 rounded-lg border border-neutral-200 bg-neutral-100 text-xs font-bold text-neutral-950 transition-colors hover:bg-white focus:outline-none focus:ring-2 focus:ring-neutral-400"
                   type="button"
                   onClick={onResumeCustomMatch}
                 >
@@ -2779,7 +2782,7 @@ function GameDashboard({
                   Resume
                 </button>
                 <button
-                  className="h-10 rounded-lg border border-neutral-700 bg-neutral-950 text-xs font-black uppercase tracking-wide text-neutral-300 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500"
+                  className="h-10 rounded-lg border border-neutral-700 bg-neutral-900 text-xs font-bold text-neutral-300 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500"
                   type="button"
                   onClick={onExitCustomMatch}
                 >
@@ -2789,61 +2792,63 @@ function GameDashboard({
             </div>
           ) : (
             <button
-              className="mt-3 flex h-12 w-full items-center justify-center gap-2 rounded-xl border border-violet-500/40 bg-violet-500/10 text-sm font-black uppercase tracking-wide text-violet-200 transition-colors hover:bg-violet-500/20 focus:outline-none focus:ring-2 focus:ring-violet-500/50"
+              className="mt-3 flex h-11 w-full items-center justify-center gap-2 rounded-lg border border-neutral-700 bg-transparent text-sm font-semibold text-neutral-300 transition-colors hover:border-neutral-600 hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500"
               type="button"
               onClick={onOpenCustomMatch}
             >
               <Users size={17} />
-              Custom Match
+              Create custom match
             </button>
           )}
         </aside>
 
-        <section className="rounded-2xl border border-neutral-800 bg-gradient-to-b from-neutral-900 to-neutral-900/60 p-4 shadow-xl shadow-black/30">
+        <section className="rounded-xl border border-neutral-800 bg-neutral-900 p-4 shadow-sm sm:p-5">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h2 className="text-xl font-black text-neutral-50 text-balance">All Games</h2>
-              <div className="mt-1 text-xs font-semibold text-neutral-500 tabular-nums">
-                {matchOptions.length} loaded
+              <h2 className="text-xl font-semibold text-neutral-50 text-balance">Game schedule</h2>
+              <div className="mt-1 text-sm text-neutral-500 tabular-nums">
+                {matchOptions.length} {matchOptions.length === 1 ? "game" : "games"} available
               </div>
             </div>
             {selectedOption && (
-              <div className="rounded-xl border border-neutral-800 bg-neutral-950 px-3 py-2 text-right">
-                <div className="text-[10px] font-black uppercase tracking-wide text-neutral-500">Active Selection</div>
-                <div className="max-w-[260px] truncate text-sm font-bold">{selectedOption.name}</div>
+              <div className="rounded-lg border border-amber-400/30 bg-amber-400/5 px-3 py-2 text-right">
+                <div className="text-xs font-semibold text-amber-300">Selected</div>
+                <div className="max-w-[260px] truncate text-sm font-semibold">{selectedOption.name}</div>
               </div>
             )}
           </div>
 
-          <div className="mt-4 grid gap-6">
+          <div className="mt-5 grid gap-8">
             {dateGroups.map((group) => (
-              <div key={group.dateKey || "__pending__"} className="grid gap-3">
-                <div className="flex items-center gap-2 border-b border-neutral-800 pb-2">
-                  <CalendarDays className="text-amber-400" size={16} />
-                  <h3 className="text-sm font-black uppercase tracking-wide text-neutral-100">
+              <div key={group.dateKey || "__pending__"} className="grid gap-4">
+                <div className="flex items-center gap-3 border-b border-neutral-800 pb-3">
+                  <span className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-neutral-800 bg-neutral-950 text-neutral-300">
+                    <CalendarDays size={16} />
+                  </span>
+                  <h3 className="min-w-0 flex-1 truncate text-sm font-semibold text-neutral-100">
                     {group.dateLabel}
                   </h3>
-                  <span className="ml-auto text-[11px] font-bold text-neutral-500 tabular-nums">
+                  <span className="ml-auto shrink-0 text-xs font-medium text-neutral-500 tabular-nums">
                     {group.total} {group.total === 1 ? "game" : "games"}
                   </span>
                 </div>
                 {group.locations.map((locationGroup) => (
-                  <div key={locationGroup.key} className="grid gap-2.5">
-                    <div className="flex items-center gap-1.5">
+                  <div key={locationGroup.key} className="grid gap-3">
+                    <div className="flex items-center gap-2">
                       <MapPin className="text-neutral-500" size={13} />
                       <span
                         className={cn(
-                          "text-[11px] font-black uppercase tracking-wide",
+                          "truncate text-xs font-medium",
                           locationGroup.hasLocation ? "text-neutral-300" : "text-neutral-600",
                         )}
                       >
                         {locationGroup.location}
                       </span>
-                      <span className="text-[11px] font-semibold text-neutral-600 tabular-nums">
+                      <span className="text-xs font-medium text-neutral-600 tabular-nums">
                         · {locationGroup.games.length}
                       </span>
                     </div>
-                    <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
+                    <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 xl:grid-cols-3">
                       {locationGroup.games.map((option) => (
                         <GameCard
                           key={option.id}
@@ -2861,15 +2866,16 @@ function GameDashboard({
           </div>
 
           {matchOptions.length === 0 && (
-            <div className="mt-4 rounded-xl border border-dashed border-neutral-700 bg-neutral-950 p-8 text-center">
-              <div className="text-sm font-bold text-neutral-300">{currentMatch.matchName}</div>
-              <div className="mt-1 text-xs text-neutral-500">No game list loaded.</div>
+            <div className="mt-5 rounded-xl border border-dashed border-neutral-700 bg-neutral-950 px-5 py-12 text-center">
+              <CalendarDays className="mx-auto text-neutral-600" size={24} />
+              <div className="mt-3 text-sm font-semibold text-neutral-200">No games are available yet</div>
+              <div className="mt-1 text-sm text-pretty text-neutral-500">Refresh the schedule, or create a local custom match.</div>
               <button
-                className="mt-4 h-11 rounded-lg border border-neutral-700 bg-neutral-900 px-4 text-xs font-black uppercase tracking-wide text-neutral-200 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500"
+                className="mt-4 h-10 rounded-lg border border-neutral-700 bg-neutral-900 px-4 text-xs font-semibold text-neutral-200 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500"
                 type="button"
                 onClick={onRefresh}
               >
-                Refresh Games
+                Refresh schedule
               </button>
             </div>
           )}
@@ -2893,10 +2899,10 @@ function ModeButton({
   return (
     <button
       className={cn(
-        "flex h-12 items-center justify-center gap-2 rounded-xl border text-xs font-black uppercase tracking-wide transition-colors focus:outline-none focus:ring-2 focus:ring-neutral-500",
+        "flex h-11 items-center justify-center gap-2 rounded-lg border text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-amber-400/60",
         active
-          ? "border-neutral-100 bg-neutral-100 text-neutral-950 shadow-lg shadow-black/20"
-          : "border-neutral-800 bg-neutral-950 text-neutral-300 hover:bg-neutral-800 hover:text-neutral-100",
+          ? "border-amber-300 bg-amber-300 text-neutral-950"
+          : "border-neutral-700 bg-neutral-950 text-neutral-300 hover:border-neutral-600 hover:bg-neutral-800 hover:text-neutral-100",
       )}
       type="button"
       onClick={onClick}
@@ -3108,17 +3114,17 @@ function GameCard({
     <article
       className={cn(
         "rounded-xl border bg-neutral-950 p-4 transition-colors",
-        selected ? "border-neutral-200 ring-1 ring-inset ring-neutral-500/40" : "border-neutral-800 hover:border-neutral-700",
+        selected ? "border-amber-400/70 ring-1 ring-inset ring-amber-400/20" : "border-neutral-800 hover:border-neutral-700",
       )}
     >
-      <button className="block w-full text-left focus:outline-none" type="button" onClick={onSelect}>
+      <button className="block w-full rounded-lg text-left focus:outline-none focus:ring-2 focus:ring-amber-400/50" type="button" onClick={onSelect}>
         <div className="flex items-center justify-between gap-3">
-          <span className="rounded-full border border-neutral-700 bg-neutral-900 px-2.5 py-1 text-[10px] font-black uppercase tracking-wide text-neutral-400">
+          <span className="rounded-full border border-neutral-700 bg-neutral-900 px-2.5 py-1 text-xs font-semibold text-neutral-400">
             {option.status}
           </span>
           <span className="font-mono text-xs text-neutral-500 tabular-nums">{option.week || `#${option.id}`}</span>
         </div>
-        <h3 className="mt-2.5 truncate text-base font-black text-neutral-50">{option.name}</h3>
+        <h3 className="mt-3 truncate text-base font-semibold text-neutral-50">{option.name}</h3>
         <div className="mt-3 grid gap-1.5">
           <GameTeamLine label="Visitor" name={option.awayName} score={option.awayScore} team="away" />
           <GameTeamLine label="Home" name={option.homeName} score={option.homeScore} team="home" />
@@ -3132,16 +3138,16 @@ function GameCard({
           </span>
         </div>
       </button>
-      <div className="mt-4 grid grid-cols-2 gap-2">
+      <div className="mt-4 grid grid-cols-2 gap-2 border-t border-neutral-800 pt-3">
         <button
-          className="h-11 rounded-lg border border-neutral-700 bg-neutral-900 text-[11px] font-black uppercase tracking-wide text-neutral-100 transition-colors hover:bg-neutral-800 focus:outline-none focus:ring-2 focus:ring-neutral-500"
+          className="h-10 rounded-lg border border-neutral-200 bg-neutral-100 text-xs font-semibold text-neutral-950 transition-colors hover:bg-white focus:outline-none focus:ring-2 focus:ring-neutral-400"
           type="button"
           onClick={() => onActivate("professional", option.id)}
         >
-          Professional
+          Pro stats
         </button>
         <button
-          className="h-11 rounded-lg border border-neutral-700 bg-neutral-900 text-[11px] font-black uppercase tracking-wide text-neutral-100 transition-colors hover:bg-neutral-800 focus:outline-none focus:ring-2 focus:ring-neutral-500"
+          className="h-10 rounded-lg border border-neutral-700 bg-neutral-900 text-xs font-semibold text-neutral-200 transition-colors hover:bg-neutral-800 focus:outline-none focus:ring-2 focus:ring-neutral-500"
           type="button"
           onClick={() => onActivate("youth", option.id)}
         >
@@ -3165,11 +3171,11 @@ function GameTeamLine({
 }) {
   return (
     <div className="grid grid-cols-[44px_minmax(0,1fr)_36px] items-center gap-2 rounded-lg border border-neutral-800 bg-neutral-900 px-3 py-2">
-      <span className="text-[10px] font-black uppercase tracking-wide" style={{ color: `var(--c-${team}-soft)` }}>
+      <span className="text-xs font-semibold" style={{ color: `var(--c-${team}-soft)` }}>
         {label}
       </span>
-      <span className="truncate text-sm font-bold text-neutral-200">{name}</span>
-      <span className="text-right font-mono text-lg font-black tabular-nums text-neutral-50">{score}</span>
+      <span className="truncate text-sm font-semibold text-neutral-200">{name}</span>
+      <span className="text-right font-mono text-lg font-bold tabular-nums text-neutral-50">{score}</span>
     </div>
   );
 }
@@ -3182,8 +3188,8 @@ function PeriodSettingsControls({
   onChange: (settings: Partial<PeriodSettings>) => void;
 }) {
   return (
-    <div className="rounded-xl border border-neutral-800 bg-neutral-950 p-3 lg:rounded-md lg:p-2">
-      <div className="mb-2 flex items-center gap-2 text-[11px] font-black uppercase tracking-wide text-neutral-400">
+    <div className="rounded-lg border border-neutral-800 bg-neutral-950 p-3 2xl:rounded-md 2xl:p-2">
+      <div className="mb-2 flex items-center gap-2 text-xs font-semibold text-neutral-400">
         <Clock3 size={14} />
         Period Setup
       </div>
@@ -3233,9 +3239,9 @@ function NumberField({
 }) {
   return (
     <label className="block">
-      <span className="mb-1 block text-[10px] font-black uppercase tracking-wide text-neutral-500">{label}</span>
+      <span className="mb-1 block text-[11px] font-semibold text-neutral-500">{label}</span>
       <input
-        className="h-11 w-full rounded-lg border border-neutral-800 bg-neutral-900 px-2 text-center text-base font-bold text-neutral-100 outline-none tabular-nums focus:ring-2 focus:ring-neutral-500 lg:h-8 lg:rounded-md lg:text-sm"
+        className="h-11 w-full rounded-lg border border-neutral-800 bg-neutral-900 px-2 text-center text-base font-bold text-neutral-100 outline-none tabular-nums focus:ring-2 focus:ring-neutral-500 2xl:h-8 2xl:rounded-md 2xl:text-sm"
         max={max}
         min={min}
         step={step}
@@ -3353,7 +3359,7 @@ function ScoreHeader({
   onToggleFoulBall: () => void;
 }) {
   return (
-    <header className="order-1 grid items-stretch bg-gradient-to-b from-neutral-900/70 to-neutral-950 md:col-span-2 md:grid-cols-[minmax(0,1fr)_minmax(224px,260px)_minmax(0,1fr)] lg:col-span-3 lg:col-start-1 lg:row-start-1 lg:items-center 2xl:grid-cols-[minmax(0,1fr)_290px_minmax(0,1fr)]">
+    <header className="order-1 grid items-stretch bg-neutral-950 md:col-span-2 md:grid-cols-[minmax(0,1fr)_minmax(224px,260px)_minmax(0,1fr)] lg:col-span-3 lg:col-start-1 lg:row-start-1 2xl:items-center 2xl:grid-cols-[minmax(0,1fr)_290px_minmax(0,1fr)]">
       <TeamHeaderBlock
         align="right"
         color="red"
@@ -3367,11 +3373,11 @@ function ScoreHeader({
         onClick={() => onSelectTeam("away")}
       />
 
-      <div className="flex flex-col items-center justify-center gap-2 border-y border-neutral-800 px-3 py-3 text-center md:border-x md:border-y-0 lg:gap-0.5 lg:py-1">
+      <div className="flex flex-col items-center justify-center gap-2 border-y border-neutral-800 px-3 py-3 text-center md:border-x md:border-y-0 lg:gap-1 lg:py-2 2xl:gap-0.5 2xl:py-1">
         <div className="flex w-full items-center justify-between gap-2">
           <button
             aria-label="Back to dashboard"
-            className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-neutral-800 bg-neutral-900 text-neutral-300 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500 lg:size-7 lg:rounded-md"
+            className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-neutral-800 bg-neutral-900 text-neutral-300 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500 2xl:size-7 2xl:rounded-md"
             type="button"
             onClick={onBackToDashboard}
           >
@@ -3384,7 +3390,7 @@ function ScoreHeader({
           <div
             aria-hidden={statsMode === "youth"}
             className={cn(
-              "flex shrink-0 items-center gap-1.5 rounded-lg border border-neutral-700 bg-neutral-900 px-2.5 py-1 lg:rounded-md",
+              "flex shrink-0 items-center gap-1.5 rounded-lg border border-neutral-700 bg-neutral-900 px-2.5 py-1 2xl:rounded-md",
               statsMode === "youth" && "invisible",
             )}
           >
@@ -3394,7 +3400,7 @@ function ScoreHeader({
         </div>
         <button
           aria-label="Possession arrow"
-          className="flex h-9 w-full min-w-0 items-center justify-center gap-2 rounded-lg border bg-neutral-900 px-2 text-[11px] font-black uppercase tracking-wide transition-colors hover:bg-neutral-800 focus:outline-none focus:ring-2 focus:ring-amber-500/50 lg:h-7 lg:rounded-md"
+          className="flex h-9 w-full min-w-0 items-center justify-center gap-2 rounded-lg border bg-neutral-900 px-2 text-[11px] font-black uppercase tracking-wide transition-colors hover:bg-neutral-800 focus:outline-none focus:ring-2 focus:ring-amber-500/50 2xl:h-7 2xl:rounded-md"
           style={{ borderColor: `var(--c-${foulBallTeam}-ring)`, color: `var(--c-${foulBallTeam}-soft)` }}
           title="Possession arrow (alternating possession). Tap to flip it — every flip is logged in the event feed."
           type="button"
@@ -3408,7 +3414,7 @@ function ScoreHeader({
           <span className="sr-only">Select match</span>
           <select
             aria-label="Select match"
-            className="h-9 w-full rounded-lg border border-neutral-700 bg-neutral-900 px-2 text-xs font-bold text-neutral-100 outline-none focus:ring-2 focus:ring-neutral-500 lg:h-8 lg:rounded-md"
+            className="h-9 w-full rounded-lg border border-neutral-700 bg-neutral-900 px-2 text-xs font-bold text-neutral-100 outline-none focus:ring-2 focus:ring-neutral-500 2xl:h-8 2xl:rounded-md"
             value={selectedGameId ?? ""}
             onChange={(event) => onGameSelect(readSelectNumber(event.currentTarget.value))}
           >
@@ -3488,7 +3494,7 @@ function TeamHeaderBlock({
   return (
     <button
       className={cn(
-        "relative flex items-center gap-3 px-3 py-3 text-left transition-colors hover:bg-neutral-900/70 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-neutral-500 sm:px-4 sm:gap-4 lg:py-1.5",
+        "relative flex items-center gap-3 px-3 py-3 text-left transition-colors hover:bg-neutral-900/70 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-neutral-500 sm:gap-4 sm:px-4 lg:py-2 2xl:py-1.5",
         align === "right" ? "justify-start sm:justify-end sm:text-right" : "justify-start",
       )}
       style={selected ? { backgroundColor: cTint, boxShadow: `inset 0 0 0 1px ${cRing}` } : undefined}
@@ -3503,7 +3509,7 @@ function TeamHeaderBlock({
       )}
       <div className={cn("min-w-0 max-w-52", align === "right" && "sm:flex sm:flex-col sm:items-end")}>
         <div className="text-[11px] font-black uppercase tracking-wide" style={{ color: cSoft }}>{label}</div>
-        <div className="mt-0.5 truncate text-xl font-bold text-neutral-50 sm:text-2xl lg:text-xl">{name}</div>
+        <div className="mt-0.5 max-w-full truncate text-xl font-bold text-neutral-50 sm:text-2xl lg:text-xl">{name}</div>
         {record && <div className="mt-0.5 text-xs font-semibold text-neutral-500 tabular-nums lg:hidden">{record}</div>}
         {/* Fouls and time-outs are kept as two clearly-labelled, separated groups so the numbers
             can't be mis-read as a single "3 to 2". The 7th team foul triggers the bonus (6 balls). */}
@@ -3519,7 +3525,7 @@ function TeamHeaderBlock({
                 />
               ))}
             </span>
-            <span className="font-mono text-sm font-black tabular-nums text-neutral-100 lg:text-base">{fouls}</span>
+            <span className="font-mono text-sm font-black tabular-nums text-neutral-100 2xl:text-base">{fouls}</span>
             {fouls >= 7 && (
               <span className="rounded-full border border-amber-500/60 bg-amber-500/15 px-1.5 py-px text-[9px] font-black uppercase tracking-wide text-amber-300">
                 Bonus
@@ -3528,7 +3534,7 @@ function TeamHeaderBlock({
           </span>
           <span className="flex items-center gap-1.5">
             <span className="text-[10px] font-black uppercase tracking-wide text-neutral-500">Timeouts</span>
-            <span className="font-mono text-sm font-black tabular-nums text-neutral-100 lg:text-base">{timeouts}</span>
+            <span className="font-mono text-sm font-black tabular-nums text-neutral-100 2xl:text-base">{timeouts}</span>
           </span>
         </div>
       </div>
@@ -3939,7 +3945,7 @@ function RosterPanel({
   const cBase = `var(--c-${side})`;
   const cSoft = `var(--c-${side}-soft)`;
   const starterCount = team.players.length;
-  const [benchCollapsed, setBenchCollapsed] = useState(false);
+  const [benchCollapsed, setBenchCollapsed] = useState(true);
 
   return (
     <aside
@@ -3950,7 +3956,7 @@ function RosterPanel({
     >
       <button
         className={cn(
-          "relative flex h-12 items-center gap-3 border-b border-neutral-800 px-3 pl-4 text-left transition-colors hover:bg-neutral-900/70 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-neutral-500 lg:h-10",
+          "relative flex h-12 items-center gap-3 border-b border-neutral-800 px-3 pl-4 text-left transition-colors hover:bg-neutral-900/70 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-neutral-500 2xl:h-10",
           selectedTeam && "bg-neutral-900",
         )}
         type="button"
@@ -4048,13 +4054,13 @@ function PlayerRow({
       <button
         className={cn(
           "grid w-full min-w-0 grid-cols-[44px_1fr_24px] items-center bg-transparent pr-2 text-left transition-colors hover:bg-neutral-900/70 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-neutral-500",
-          compact ? "h-12 lg:h-10" : "h-16 lg:h-12",
+          compact ? "h-12 2xl:h-10" : "h-16 2xl:h-12",
         )}
         title={player.name}
         type="button"
         onClick={onClick}
       >
-        <div className={cn("pl-2.5 font-mono text-2xl font-black tabular-nums lg:text-xl", player.active ? "text-neutral-50" : "text-neutral-400")}>
+        <div className={cn("pl-2.5 font-mono text-2xl font-black tabular-nums 2xl:text-xl", player.active ? "text-neutral-50" : "text-neutral-400")}>
           {player.number}
         </div>
         <div className="min-w-0">
@@ -6381,13 +6387,13 @@ function BottomPanel({
   onUndoEvent: (eventId: number) => void;
 }) {
   return (
-    <section className="order-6 grid gap-px overflow-hidden bg-neutral-800 md:col-span-2 md:grid-cols-2 lg:col-span-3 lg:col-start-1 lg:row-start-3 lg:min-h-0 lg:grid-cols-[minmax(300px,1.6fr)_minmax(220px,1fr)]">
-      <div className="min-h-0 overflow-hidden bg-neutral-950 p-3 md:col-span-2 lg:col-span-1 lg:p-2">
+    <section className="order-6 grid gap-px overflow-hidden bg-neutral-800 md:col-span-2 md:grid-cols-2 lg:col-span-3 lg:col-start-1 lg:row-start-4 lg:grid-cols-[minmax(300px,1.6fr)_minmax(220px,1fr)] 2xl:row-start-3 2xl:min-h-0">
+      <div className="min-h-0 overflow-hidden bg-neutral-950 p-3 md:col-span-2 lg:col-span-1 2xl:p-2">
         <PanelTitle>{`Event Feed (${events.length})`}</PanelTitle>
-        <div className="mt-2 max-h-72 overflow-y-auto rounded-lg border border-neutral-800 md:max-h-56 lg:mt-1 lg:max-h-[116px] lg:rounded-md 2xl:max-h-[132px]">
+        <div className="mt-2 max-h-72 overflow-y-auto rounded-lg border border-neutral-800 md:max-h-56 2xl:mt-1 2xl:max-h-[132px] 2xl:rounded-md">
           {events.map((event) => (
             <div
-              className="grid min-h-11 grid-cols-[26px_48px_minmax(72px,1fr)_minmax(0,1.3fr)_56px_32px_32px] items-center gap-1 border-b border-neutral-800/70 bg-neutral-900/40 px-2 last:border-b-0 lg:min-h-8"
+              className="grid min-h-11 grid-cols-[26px_48px_minmax(72px,1fr)_minmax(0,1.3fr)_56px_32px_32px] items-center gap-1 border-b border-neutral-800/70 bg-neutral-900/40 px-2 last:border-b-0 2xl:min-h-8"
               key={event.id}
             >
               <ClipboardList className={eventIconClass[event.icon]} size={16} />
@@ -6407,7 +6413,7 @@ function BottomPanel({
               </span>
               <button
                 aria-label={`Edit ${event.label}`}
-                className="flex size-8 items-center justify-center rounded-md text-neutral-500 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500 lg:size-6"
+                className="flex size-8 items-center justify-center rounded-md text-neutral-500 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500 2xl:size-6"
                 type="button"
                 onClick={() => onEditEvent(event.id)}
               >
@@ -6415,7 +6421,7 @@ function BottomPanel({
               </button>
               <button
                 aria-label={`Undo ${event.label}`}
-                className="flex size-8 items-center justify-center rounded-md text-neutral-500 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500 lg:size-6"
+                className="flex size-8 items-center justify-center rounded-md text-neutral-500 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500 2xl:size-6"
                 type="button"
                 onClick={() => onUndoEvent(event.id)}
               >
@@ -6431,12 +6437,12 @@ function BottomPanel({
         </div>
       </div>
 
-      <div className="min-h-0 overflow-hidden bg-neutral-950 p-3 lg:p-2 lg:overflow-y-auto lg:scrollbar-slim">
+      <div className="min-h-0 overflow-hidden bg-neutral-950 p-3 2xl:overflow-y-auto 2xl:p-2 2xl:scrollbar-slim">
         <PanelTitle>Game Summary</PanelTitle>
-        <div className="mt-2 space-y-1.5 lg:mt-1.5 lg:space-y-1">
+        <div className="mt-2 space-y-1.5 2xl:mt-1.5 2xl:space-y-1">
           {summary.map((item) => (
             <div
-              className="flex items-center justify-between gap-4 rounded-lg border border-neutral-800 bg-neutral-900 px-3 py-2 text-sm lg:py-1"
+              className="flex items-center justify-between gap-4 rounded-lg border border-neutral-800 bg-neutral-900 px-3 py-2 text-sm 2xl:py-1"
               key={item.label}
             >
               <span className="text-[11px] font-black uppercase tracking-wide text-neutral-500">{item.label}</span>
@@ -6567,18 +6573,18 @@ function ActionPanel({
   }
 
   return (
-    <aside className="order-5 flex min-h-0 flex-col bg-neutral-950 p-3 md:col-span-2 lg:col-span-1 lg:col-start-4 lg:row-span-3 lg:row-start-1 lg:h-full lg:overflow-y-auto lg:p-1.5">
-      <div className="mb-3 flex items-center justify-between gap-3 lg:mb-1.5">
+    <aside className="order-5 flex min-h-0 flex-col bg-neutral-950 p-3 md:col-span-2 lg:col-span-3 lg:col-start-1 lg:row-start-3 2xl:col-span-1 2xl:col-start-4 2xl:row-span-3 2xl:row-start-1 2xl:h-full 2xl:overflow-y-auto 2xl:p-1.5">
+      <div className="mb-3 flex items-center justify-between gap-3 2xl:mb-1.5">
         <div className="min-w-0">
-          <h2 className="text-base font-black uppercase tracking-wide text-neutral-100 text-balance lg:text-sm">Scorer Console</h2>
-          <p className="mt-0.5 truncate text-xs font-semibold text-neutral-500 text-pretty lg:hidden">
+          <h2 className="text-base font-black uppercase tracking-wide text-neutral-100 text-balance 2xl:text-sm">Scorer Console</h2>
+          <p className="mt-0.5 truncate text-xs font-semibold text-neutral-500 text-pretty 2xl:hidden">
             {mode === "professional" ? "Professional stat tracking" : "Youth: points, fouls, free throws"}
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <button
             aria-label="Open live box score"
-            className="flex size-10 items-center justify-center rounded-lg border border-sky-500/40 bg-sky-500/10 text-sky-300 transition-colors hover:bg-sky-500/20 hover:text-sky-200 focus:outline-none focus:ring-2 focus:ring-sky-500/50 lg:size-8 lg:rounded-md"
+            className="flex size-10 items-center justify-center rounded-lg border border-sky-500/40 bg-sky-500/10 text-sky-300 transition-colors hover:bg-sky-500/20 hover:text-sky-200 focus:outline-none focus:ring-2 focus:ring-sky-500/50 2xl:size-8 2xl:rounded-md"
             title="Box score: live per-player performance for coaches"
             type="button"
             onClick={onOpenBoxScore}
@@ -6587,7 +6593,7 @@ function ActionPanel({
           </button>
           <button
             aria-label="Open pre-game roster, attendance and officials"
-            className="flex size-10 items-center justify-center rounded-lg border border-amber-500/40 bg-amber-500/10 text-amber-300 transition-colors hover:bg-amber-500/20 hover:text-amber-200 focus:outline-none focus:ring-2 focus:ring-amber-500/50 lg:size-8 lg:rounded-md"
+            className="flex size-10 items-center justify-center rounded-lg border border-amber-500/40 bg-amber-500/10 text-amber-300 transition-colors hover:bg-amber-500/20 hover:text-amber-200 focus:outline-none focus:ring-2 focus:ring-amber-500/50 2xl:size-8 2xl:rounded-md"
             title="Pre-game: attendance, starters, referee/scorekeeper, equalization"
             type="button"
             onClick={onOpenPreGame}
@@ -6596,7 +6602,7 @@ function ActionPanel({
           </button>
           <button
             aria-label="Reset local match controls"
-            className="flex size-10 items-center justify-center rounded-lg border border-neutral-800 bg-neutral-900 text-neutral-400 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500 lg:size-8 lg:rounded-md"
+            className="flex size-10 items-center justify-center rounded-lg border border-neutral-800 bg-neutral-900 text-neutral-400 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500 2xl:size-8 2xl:rounded-md"
             type="button"
             onClick={onResetMatchState}
           >
@@ -6604,7 +6610,7 @@ function ActionPanel({
           </button>
           <button
             aria-label="Refresh live data"
-            className="flex size-10 items-center justify-center rounded-lg border border-neutral-800 bg-neutral-900 text-neutral-400 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500 disabled:cursor-not-allowed disabled:opacity-60 lg:size-8 lg:rounded-md"
+            className="flex size-10 items-center justify-center rounded-lg border border-neutral-800 bg-neutral-900 text-neutral-400 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500 disabled:cursor-not-allowed disabled:opacity-60 2xl:size-8 2xl:rounded-md"
             disabled={isRefreshing}
             type="button"
             onClick={onRefresh}
@@ -6614,16 +6620,16 @@ function ActionPanel({
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-1 lg:gap-1.5">
-        <div className="flex flex-col gap-3 lg:gap-1.5">
-          <div className="rounded-xl border border-neutral-800 bg-gradient-to-b from-neutral-900 to-neutral-900/40 p-3 shadow-sm shadow-black/20 lg:rounded-md lg:p-1.5">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-1 2xl:gap-1.5">
+        <div className="flex flex-col gap-3 2xl:gap-1.5">
+          <div className="rounded-xl border border-neutral-800 bg-neutral-900 p-3 shadow-sm shadow-black/20 2xl:rounded-md 2xl:p-1.5">
             <div className="flex items-center justify-between gap-3">
               <span className="text-[11px] font-black uppercase tracking-wide text-neutral-500">Game Clock</span>
               {editingClock ? (
                 <input
                   aria-label="Edit remaining time — type mmss (e.g. 1000 = 10:00) or mm:ss"
                   autoFocus
-                  className="w-28 rounded-md border border-lime-500/50 bg-neutral-950 px-2 text-right font-mono text-3xl font-black leading-none tabular-nums text-lime-300 outline-none focus:ring-2 focus:ring-lime-500/50 lg:w-20 lg:text-xl"
+                  className="w-28 rounded-md border border-lime-500/50 bg-neutral-950 px-2 text-right font-mono text-3xl font-black leading-none tabular-nums text-lime-300 outline-none focus:ring-2 focus:ring-lime-500/50 2xl:w-20 2xl:text-xl"
                   inputMode="numeric"
                   placeholder="mmss"
                   value={clockDraft}
@@ -6641,7 +6647,7 @@ function ActionPanel({
                 <button
                   aria-label="Edit remaining time"
                   className={cn(
-                    "rounded-md font-mono text-3xl font-black leading-none tabular-nums transition-colors hover:text-lime-300 focus:outline-none focus:ring-2 focus:ring-neutral-500 lg:text-xl",
+                    "rounded-md font-mono text-3xl font-black leading-none tabular-nums transition-colors hover:text-lime-300 focus:outline-none focus:ring-2 focus:ring-neutral-500 2xl:text-xl",
                     isClockRunning ? "text-lime-400" : "text-neutral-100",
                   )}
                   title="Click to set the remaining time (mm:ss)"
@@ -6652,7 +6658,7 @@ function ActionPanel({
                 </button>
               )}
             </div>
-            <div className="mt-3 grid grid-cols-5 gap-1.5 lg:mt-1 lg:gap-1">
+            <div className="mt-3 grid grid-cols-5 gap-1.5 2xl:mt-1 2xl:gap-1">
               <TimerButton label="-10" onClick={() => onAdjustClock(-10)}>
                 <Minus size={13} />
                 10
@@ -6664,7 +6670,7 @@ function ActionPanel({
               <button
                 aria-label={isClockRunning ? "Pause clock" : "Start clock"}
                 className={cn(
-                  "flex h-11 items-center justify-center rounded-lg border text-xs font-black uppercase transition-colors focus:outline-none focus:ring-2 focus:ring-neutral-500 lg:h-7 lg:rounded-md",
+                  "flex h-11 items-center justify-center rounded-lg border text-xs font-black uppercase transition-colors focus:outline-none focus:ring-2 focus:ring-neutral-500 2xl:h-7 2xl:rounded-md",
                   isClockRunning
                     ? "border-lime-400 bg-lime-400 text-neutral-950 hover:bg-lime-300"
                     : "border-neutral-700 bg-neutral-100 text-neutral-950 hover:bg-white",
@@ -6683,16 +6689,16 @@ function ActionPanel({
                 10
               </TimerButton>
             </div>
-            <div className="mt-2 grid grid-cols-2 gap-1.5 lg:mt-1 lg:gap-1">
+            <div className="mt-2 grid grid-cols-2 gap-1.5 2xl:mt-1 2xl:gap-1">
               <button
-                className="h-10 rounded-lg border border-neutral-800 bg-neutral-950 text-[11px] font-black uppercase text-neutral-300 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500 lg:h-7 lg:rounded-md"
+                className="h-10 rounded-lg border border-neutral-800 bg-neutral-950 text-[11px] font-black uppercase text-neutral-300 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500 2xl:h-7 2xl:rounded-md"
                 type="button"
                 onClick={onResetGameClock}
               >
                 Reset Q
               </button>
               <button
-                className="flex h-10 items-center justify-center gap-1 rounded-lg border border-neutral-800 bg-neutral-950 text-[11px] font-black uppercase text-neutral-300 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500 lg:h-7 lg:rounded-md"
+                className="flex h-10 items-center justify-center gap-1 rounded-lg border border-neutral-800 bg-neutral-950 text-[11px] font-black uppercase text-neutral-300 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500 2xl:h-7 2xl:rounded-md"
                 type="button"
                 onClick={startClockEdit}
               >
@@ -6703,28 +6709,28 @@ function ActionPanel({
             {/* Youth games do not use a shot clock. */}
             {mode !== "youth" && (
               <>
-            <div className="mt-3 flex items-center justify-between lg:mt-1">
+            <div className="mt-3 flex items-center justify-between 2xl:mt-1">
               <span className="text-[11px] font-black uppercase tracking-wide text-neutral-500">Shot Clock</span>
-              <span className="font-mono text-lg font-black tabular-nums text-neutral-100 lg:text-base">{shotClock}</span>
+              <span className="font-mono text-lg font-black tabular-nums text-neutral-100 2xl:text-base">{shotClock}</span>
             </div>
-            <div className="mt-1.5 grid grid-cols-4 gap-1.5 lg:mt-1 lg:gap-1">
+            <div className="mt-1.5 grid grid-cols-4 gap-1.5 2xl:mt-1 2xl:gap-1">
               <button
                 aria-label="Decrease shot clock by one second"
-                className="h-10 rounded-lg border border-neutral-800 bg-neutral-950 text-[11px] font-black uppercase text-neutral-300 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500 lg:h-7 lg:rounded-md"
+                className="h-10 rounded-lg border border-neutral-800 bg-neutral-950 text-[11px] font-black uppercase text-neutral-300 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500 2xl:h-7 2xl:rounded-md"
                 type="button"
                 onClick={() => onAdjustShotClock(-1)}
               >
                 -1
               </button>
               <button
-                className="h-10 rounded-lg border border-neutral-800 bg-neutral-950 text-[11px] font-black uppercase text-neutral-300 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500 lg:h-7 lg:rounded-md"
+                className="h-10 rounded-lg border border-neutral-800 bg-neutral-950 text-[11px] font-black uppercase text-neutral-300 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500 2xl:h-7 2xl:rounded-md"
                 type="button"
                 onClick={() => onResetShotClock(FULL_SHOT_CLOCK)}
               >
                 24
               </button>
               <button
-                className="h-10 rounded-lg border border-neutral-800 bg-neutral-950 text-[11px] font-black uppercase text-neutral-300 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500 lg:h-7 lg:rounded-md"
+                className="h-10 rounded-lg border border-neutral-800 bg-neutral-950 text-[11px] font-black uppercase text-neutral-300 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500 2xl:h-7 2xl:rounded-md"
                 type="button"
                 onClick={() => onResetShotClock(SHORT_SHOT_CLOCK)}
               >
@@ -6732,7 +6738,7 @@ function ActionPanel({
               </button>
               <button
                 aria-label="Increase shot clock by one second"
-                className="h-10 rounded-lg border border-neutral-800 bg-neutral-950 text-[11px] font-black uppercase text-neutral-300 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500 lg:h-7 lg:rounded-md"
+                className="h-10 rounded-lg border border-neutral-800 bg-neutral-950 text-[11px] font-black uppercase text-neutral-300 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500 2xl:h-7 2xl:rounded-md"
                 type="button"
                 onClick={() => onAdjustShotClock(1)}
               >
@@ -6743,19 +6749,19 @@ function ActionPanel({
             )}
           </div>
 
-          {/* Period length/count is set on the dashboard; hide here in the fixed tablet layout to save height. */}
-          <div className="lg:hidden">
+          {/* Period length/count is set on the dashboard; hide it only in the fixed desktop console to save height. */}
+          <div className="2xl:hidden">
             <PeriodSettingsControls settings={periodSettings} onChange={onPeriodSettingsChange} />
           </div>
         </div>
 
-        <div className="flex flex-col gap-3 lg:gap-1.5">
+        <div className="flex flex-col gap-3 2xl:gap-1.5">
           {mode === "professional" && (
-            <label className="flex h-12 items-center justify-between gap-3 rounded-xl border border-neutral-800 bg-neutral-900 px-4 lg:h-8 lg:rounded-md lg:px-3">
+            <label className="flex h-12 items-center justify-between gap-3 rounded-xl border border-neutral-800 bg-neutral-900 px-4 2xl:h-8 2xl:rounded-md 2xl:px-3">
               <span className="text-xs font-black uppercase tracking-wide text-neutral-200">Foul on shot</span>
               <input
                 checked={foulOnShot}
-                className="size-5 accent-amber-400 lg:size-4"
+                className="size-5 accent-amber-400 2xl:size-4"
                 disabled={!canRecordShot}
                 type="checkbox"
                 onChange={(event) => onSetFoulOnShot(event.currentTarget.checked)}
@@ -6765,7 +6771,7 @@ function ActionPanel({
 
           <div className="grid grid-cols-2 gap-2">
             <button
-              className="flex h-12 items-center justify-center gap-2 rounded-xl border border-lime-500/30 bg-lime-500/10 text-xs font-black uppercase text-lime-200 transition-colors hover:bg-lime-500/20 focus:outline-none focus:ring-2 focus:ring-lime-500/50 lg:h-8 lg:rounded-md"
+              className="flex h-12 items-center justify-center gap-2 rounded-xl border border-lime-500/30 bg-lime-500/10 text-xs font-black uppercase text-lime-200 transition-colors hover:bg-lime-500/20 focus:outline-none focus:ring-2 focus:ring-lime-500/50 2xl:h-8 2xl:rounded-md"
               type="button"
               onClick={() => onFreeThrow(true)}
             >
@@ -6773,7 +6779,7 @@ function ActionPanel({
               FT Made
             </button>
             <button
-              className="flex h-12 items-center justify-center gap-2 rounded-xl border border-red-500/30 bg-red-500/10 text-xs font-black uppercase text-red-200 transition-colors hover:bg-red-500/20 focus:outline-none focus:ring-2 focus:ring-red-500/50 lg:h-8 lg:rounded-md"
+              className="flex h-12 items-center justify-center gap-2 rounded-xl border border-red-500/30 bg-red-500/10 text-xs font-black uppercase text-red-200 transition-colors hover:bg-red-500/20 focus:outline-none focus:ring-2 focus:ring-red-500/50 2xl:h-8 2xl:rounded-md"
               type="button"
               onClick={() => onFreeThrow(false)}
             >
@@ -6801,13 +6807,13 @@ function ActionPanel({
                     : () => onAction(action.key);
               return (
                 <button
-                  className="flex h-16 flex-col items-center justify-center gap-1 rounded-xl border border-neutral-800 bg-neutral-900 text-center transition-colors hover:bg-neutral-800 focus:outline-none focus:ring-2 focus:ring-neutral-500 disabled:cursor-not-allowed disabled:opacity-35 lg:h-8 lg:gap-0 lg:rounded-md"
+                  className="flex h-16 flex-col items-center justify-center gap-1 rounded-xl border border-neutral-800 bg-neutral-900 text-center transition-colors hover:bg-neutral-800 focus:outline-none focus:ring-2 focus:ring-neutral-500 disabled:cursor-not-allowed disabled:opacity-35 2xl:h-8 2xl:gap-0 2xl:rounded-md"
                   disabled={!allowed}
                   key={action.key}
                   type="button"
                   onClick={handleClick}
                 >
-                  <Icon className={cn(action.color, "lg:size-[18px]")} size={20} />
+                  <Icon className={cn(action.color, "2xl:size-[18px]")} size={20} />
                   <span className="text-[11px] font-black uppercase text-neutral-100">{action.label}</span>
                 </button>
               );
@@ -6816,7 +6822,7 @@ function ActionPanel({
 
           <div className="grid grid-cols-2 gap-2">
             <button
-              className="flex h-12 items-center justify-center gap-2 rounded-xl border border-neutral-800 bg-neutral-900 text-xs font-black uppercase text-neutral-100 transition-colors hover:bg-neutral-800 focus:outline-none focus:ring-2 focus:ring-neutral-500 lg:h-8 lg:rounded-md"
+              className="flex h-12 items-center justify-center gap-2 rounded-xl border border-neutral-800 bg-neutral-900 text-xs font-black uppercase text-neutral-100 transition-colors hover:bg-neutral-800 focus:outline-none focus:ring-2 focus:ring-neutral-500 2xl:h-8 2xl:rounded-md"
               type="button"
               onClick={onOpenSubstitution}
             >
@@ -6824,7 +6830,7 @@ function ActionPanel({
               Sub
             </button>
             <button
-              className="flex h-12 items-center justify-center gap-2 rounded-xl border border-amber-500/40 bg-amber-500/10 text-xs font-black uppercase tracking-wide text-amber-200 transition-colors hover:bg-amber-500/20 focus:outline-none focus:ring-2 focus:ring-amber-500/50 lg:h-8 lg:rounded-md"
+              className="flex h-12 items-center justify-center gap-2 rounded-xl border border-amber-500/40 bg-amber-500/10 text-xs font-black uppercase tracking-wide text-amber-200 transition-colors hover:bg-amber-500/20 focus:outline-none focus:ring-2 focus:ring-amber-500/50 2xl:h-8 2xl:rounded-md"
               type="button"
               onClick={onJumpBall}
             >
@@ -6834,7 +6840,7 @@ function ActionPanel({
           </div>
 
           <button
-            className="flex h-12 items-center justify-center gap-2 rounded-xl border border-red-500/40 bg-red-500/10 text-xs font-black uppercase tracking-wide text-red-200 transition-colors hover:bg-red-500/20 focus:outline-none focus:ring-2 focus:ring-red-500/50 lg:h-8 lg:rounded-md"
+            className="flex h-12 items-center justify-center gap-2 rounded-xl border border-red-500/40 bg-red-500/10 text-xs font-black uppercase tracking-wide text-red-200 transition-colors hover:bg-red-500/20 focus:outline-none focus:ring-2 focus:ring-red-500/50 2xl:h-8 2xl:rounded-md"
             type="button"
             onClick={onEndGame}
           >
@@ -6843,12 +6849,12 @@ function ActionPanel({
           </button>
         </div>
 
-        <div className="flex flex-col gap-3 lg:gap-1.5">
+        <div className="flex flex-col gap-3 sm:col-span-2 lg:col-span-1 2xl:gap-1.5">
           <label className="block">
             <span className="mb-1.5 block text-[11px] font-black uppercase tracking-wide text-neutral-500">Current Period</span>
             <select
               aria-label="Select period"
-              className="h-12 w-full rounded-xl border border-neutral-800 bg-neutral-900 px-3 text-sm font-bold text-neutral-100 outline-none focus:ring-2 focus:ring-neutral-500 lg:h-8 lg:rounded-md lg:px-2"
+              className="h-12 w-full rounded-xl border border-neutral-800 bg-neutral-900 px-3 text-sm font-bold text-neutral-100 outline-none focus:ring-2 focus:ring-neutral-500 2xl:h-8 2xl:rounded-md 2xl:px-2"
               value={period}
               onChange={(event) => onPeriodChange(Number(event.currentTarget.value) as LiveMatch["period"])}
             >
@@ -6896,7 +6902,7 @@ function TimerButton({
   return (
     <button
       aria-label={`Adjust clock ${label} seconds`}
-      className="flex h-11 items-center justify-center gap-0.5 rounded-lg border border-neutral-800 bg-neutral-950 text-[11px] font-black text-neutral-200 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500 lg:h-7 lg:rounded-md"
+      className="flex h-11 items-center justify-center gap-0.5 rounded-lg border border-neutral-800 bg-neutral-950 text-[11px] font-black text-neutral-200 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500 2xl:h-7 2xl:rounded-md"
       type="button"
       onClick={onClick}
     >
@@ -6923,20 +6929,20 @@ function TimeoutPanel({
   onStopClock: () => void;
 }) {
   return (
-    <div className="rounded-xl border border-neutral-800 bg-neutral-900 p-3 lg:rounded-md lg:p-1.5">
-      <div className="mb-2 grid grid-cols-[minmax(0,1fr)_auto_auto_auto] items-center gap-2 lg:mb-1 lg:gap-1">
+    <div className="rounded-xl border border-neutral-800 bg-neutral-900 p-3 2xl:rounded-md 2xl:p-1.5">
+      <div className="mb-2 grid grid-cols-[minmax(0,1fr)_auto_auto_auto] items-center gap-2 2xl:mb-1 2xl:gap-1">
         <div className="min-w-0">
           <div className="text-[11px] font-black uppercase tracking-wide text-neutral-500">Timeout Clock</div>
           <div className="truncate text-[11px] font-bold text-neutral-400">
             {timeoutTeam ? `${teams[timeoutTeam].label} running` : "Ready"}
           </div>
         </div>
-        <span className="font-mono text-base font-black tabular-nums text-neutral-100 lg:text-sm">
+        <span className="font-mono text-base font-black tabular-nums text-neutral-100 2xl:text-sm">
           {secondsToClock(remainingSeconds || durationSeconds)}
         </span>
         <button
           aria-label="Decrease timeout clock by fifteen seconds"
-          className="flex size-9 items-center justify-center rounded-lg border border-neutral-800 bg-neutral-950 text-neutral-300 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500 lg:size-6 lg:rounded-sm"
+          className="flex size-9 items-center justify-center rounded-lg border border-neutral-800 bg-neutral-950 text-neutral-300 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500 2xl:size-6 2xl:rounded-sm"
           type="button"
           onClick={() => onAdjustDuration(-15)}
         >
@@ -6944,17 +6950,17 @@ function TimeoutPanel({
         </button>
         <button
           aria-label={remainingSeconds > 0 ? "Stop timeout clock" : "Increase timeout clock by fifteen seconds"}
-          className="flex size-9 items-center justify-center rounded-lg border border-neutral-800 bg-neutral-950 text-neutral-300 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500 lg:size-6 lg:rounded-sm"
+          className="flex size-9 items-center justify-center rounded-lg border border-neutral-800 bg-neutral-950 text-neutral-300 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500 2xl:size-6 2xl:rounded-sm"
           type="button"
           onClick={remainingSeconds > 0 ? onStopClock : () => onAdjustDuration(15)}
         >
           {remainingSeconds > 0 ? <Pause size={13} /> : <Plus size={13} />}
         </button>
       </div>
-      <div className="grid gap-1.5 lg:gap-1">
+      <div className="grid gap-1.5 2xl:gap-1">
         {(["away", "home"] as TeamId[]).map((teamId) => (
           <div
-            className="grid grid-cols-[44px_minmax(0,1fr)_auto_auto_auto] items-center gap-2 rounded-lg border border-neutral-800 bg-neutral-950 px-2 py-1.5 lg:gap-1 lg:rounded-none lg:border-0 lg:bg-transparent lg:p-0"
+            className="grid grid-cols-[44px_minmax(0,1fr)_auto_auto_auto] items-center gap-2 rounded-lg border border-neutral-800 bg-neutral-950 px-2 py-1.5 2xl:gap-1 2xl:rounded-none 2xl:border-0 2xl:bg-transparent 2xl:p-0"
             key={teamId}
           >
             <span className="text-[10px] font-black uppercase" style={{ color: `var(--c-${teamId}-soft)` }}>
@@ -6968,7 +6974,7 @@ function TimeoutPanel({
             </span>
             <button
               aria-label={`Remove ${teams[teamId].label} timeout`}
-              className="flex size-9 items-center justify-center rounded-lg border border-neutral-800 bg-neutral-900 text-neutral-300 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500 lg:size-6 lg:rounded-sm lg:bg-neutral-950"
+              className="flex size-9 items-center justify-center rounded-lg border border-neutral-800 bg-neutral-900 text-neutral-300 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500 2xl:size-6 2xl:rounded-sm 2xl:bg-neutral-950"
               type="button"
               onClick={() => onAdjustTimeout(teamId, -1)}
             >
@@ -6976,7 +6982,7 @@ function TimeoutPanel({
             </button>
             <button
               aria-label={`Register ${teams[teamId].label} timeout`}
-              className="flex size-9 items-center justify-center rounded-lg border border-neutral-800 bg-neutral-900 text-neutral-300 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500 lg:size-6 lg:rounded-sm lg:bg-neutral-950"
+              className="flex size-9 items-center justify-center rounded-lg border border-neutral-800 bg-neutral-900 text-neutral-300 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500 2xl:size-6 2xl:rounded-sm 2xl:bg-neutral-950"
               type="button"
               onClick={() => onAdjustTimeout(teamId, 1)}
             >
@@ -7016,7 +7022,7 @@ function DevLogPanel({
           : "Local Data";
 
   return (
-    <div className="overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900 p-3 lg:rounded-md lg:p-1.5">
+    <div className="overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900 p-3 2xl:rounded-md 2xl:p-1.5">
       <div className="flex items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2.5">
           <span
