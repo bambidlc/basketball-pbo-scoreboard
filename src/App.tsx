@@ -299,7 +299,7 @@ const STORAGE_KEYS = {
   attendance: "pbo:attendance",
   officials: "pbo:officials",
   foulOnShot: "pbo:foulOnShot",
-  mode: "pbo:mode",
+  mode: "pbo:mode:v2",
   customMatch: "pbo:customMatch",
   customMode: "pbo:customMode",
   liveMatch: "pbo:liveMatch",
@@ -366,7 +366,7 @@ function App() {
       ? "live"
       : "dashboard",
   );
-  const [statsMode, setStatsMode] = useState<StatsMode>(() => readStoredStatsMode("professional"));
+  const [statsMode, setStatsMode] = useState<StatsMode>(() => readStoredStatsMode("youth"));
   const [periodSettings, setPeriodSettings] = useState<PeriodSettings>(() => ({
     overtimeSeconds: readStoredPositiveNumber(STORAGE_KEYS.overtimeSeconds) ?? OVERTIME_CLOCK_SECONDS,
     periodCount: readStoredIntegerInRange(STORAGE_KEYS.periodCount, 1, 8) ?? DEFAULT_PERIOD_COUNT,
@@ -2668,7 +2668,6 @@ function GameDashboard({
   onResumeCustomMatch: () => void;
   onStatsModeChange: (mode: StatsMode) => void;
 }) {
-  const selectedOption = matchOptions.find((option) => option.id === selectedGameId);
   const dateGroups = useMemo(() => groupGamesByDateAndLocation(matchOptions), [matchOptions]);
   const statusText =
     connectionStatus === "connected"
@@ -2684,28 +2683,20 @@ function GameDashboard({
       className="min-h-dvh bg-neutral-950 px-3 py-4 text-neutral-100 [font-family:Inter,ui-sans-serif,system-ui,sans-serif] sm:px-5 sm:py-6 md:h-dvh md:overflow-hidden"
       style={teamColorVars(currentMatch.away, currentMatch.home)}
     >
-      <section className="mx-auto grid max-w-[1640px] grid-cols-1 gap-4 md:h-full md:min-h-0 md:grid-cols-[280px_minmax(0,1fr)] md:items-start lg:grid-cols-[320px_minmax(0,1fr)]">
-        <aside className="rounded-xl border border-neutral-800 bg-neutral-900 p-4 shadow-sm md:max-h-full md:overflow-y-auto md:scrollbar-slim">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <div className="text-xs font-semibold text-amber-300">Basketball PBO</div>
-              <h1 className="mt-1 text-xl font-semibold text-neutral-50 text-balance">Scoring operations</h1>
+      <section className="mx-auto flex max-w-[1640px] flex-col gap-3 md:h-full md:min-h-0">
+        <header className="flex shrink-0 items-center justify-between gap-3 px-1">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-neutral-700 bg-neutral-900 text-amber-300">
+              <CalendarDays size={17} />
             </div>
-            <button
-              aria-label="Refresh games"
-              className="flex size-10 items-center justify-center rounded-lg border border-neutral-800 bg-neutral-950 text-neutral-400 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500 disabled:cursor-not-allowed disabled:opacity-60"
-              disabled={isRefreshing}
-              type="button"
-              onClick={onRefresh}
-            >
-              <RefreshCw className={isRefreshing ? "text-amber-300" : ""} size={16} />
-            </button>
+            <div className="min-w-0">
+              <div className="text-xs font-semibold text-amber-300">Basketball PBO</div>
+              <h1 className="truncate text-lg font-semibold text-balance text-neutral-50">Game schedule</h1>
+            </div>
           </div>
-
-          <div className="mt-4 rounded-lg border border-neutral-800 bg-neutral-950 p-3">
-            <div className="flex items-center justify-between gap-3">
-              <span className="text-xs font-semibold text-neutral-500">Connection</span>
-              <span className="flex items-center gap-2 text-xs font-semibold text-neutral-300">
+          <div className="flex shrink-0 items-center gap-2">
+            <div className="hidden max-w-56 text-right sm:block">
+              <div className="flex items-center justify-end gap-2 text-xs font-semibold text-neutral-300">
                 <span
                   className={cn(
                     "size-2 rounded-full",
@@ -2719,111 +2710,113 @@ function GameDashboard({
                   )}
                 />
                 {statusText}
-              </span>
+              </div>
+              <div className="truncate text-xs text-neutral-600" title={syncMessage}>{syncMessage}</div>
             </div>
-            <div className="mt-2 truncate text-xs text-neutral-500" title={syncMessage}>{syncMessage}</div>
+            <button
+              aria-label="Refresh games"
+              className="flex size-9 items-center justify-center rounded-lg border border-neutral-800 bg-neutral-900 text-neutral-400 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500 disabled:cursor-not-allowed disabled:opacity-60"
+              disabled={isRefreshing}
+              type="button"
+              onClick={onRefresh}
+            >
+              <RefreshCw className={isRefreshing ? "text-amber-300" : ""} size={15} />
+            </button>
           </div>
+        </header>
 
-          <div className="mt-3 grid grid-cols-2 gap-2">
-            <ModeButton
-              active={statsMode === "professional"}
-              icon={<Target size={17} />}
-              label="Pro stats"
-              onClick={() => onStatsModeChange("professional")}
-            />
+        <section aria-label="Scorer setup" className="relative z-30 grid shrink-0 grid-cols-2 gap-2 rounded-xl border border-neutral-800 bg-neutral-900 p-2 shadow-sm lg:grid-cols-[190px_minmax(240px,1fr)_auto_auto_auto]">
+          <div className="col-span-2 grid grid-cols-2 gap-1 rounded-lg border border-neutral-800 bg-neutral-950 p-1 sm:col-span-1">
             <ModeButton
               active={statsMode === "youth"}
-              icon={<OctagonAlert size={17} />}
+              icon={<Users size={16} />}
               label="Youth"
               onClick={() => onStatsModeChange("youth")}
             />
-          </div>
-
-          <div className="mt-3">
-            <PeriodSettingsControls
-              settings={periodSettings}
-              onChange={onPeriodSettingsChange}
+            <ModeButton
+              active={statsMode === "professional"}
+              icon={<Target size={16} />}
+              label="Pro"
+              onClick={() => onStatsModeChange("professional")}
             />
           </div>
 
-          <label className="mt-4 block">
-            <span className="mb-1.5 block text-xs font-semibold text-neutral-400">Selected game</span>
+          <label className="col-span-2 min-w-0 sm:col-span-1">
+            <span className="sr-only">Selected game</span>
             <select
               aria-label="Selected game"
-              className="h-12 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 text-sm font-semibold text-neutral-100 outline-none focus:ring-2 focus:ring-amber-400/60"
+              className="h-11 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 text-sm font-semibold text-neutral-100 outline-none focus:ring-2 focus:ring-amber-400/60"
               value={selectedGameId ?? ""}
               onChange={(event) => onGameSelect(readSelectNumber(event.currentTarget.value))}
             >
-              {selectedGameId ? null : <option value="">Choose game</option>}
+              {selectedGameId ? null : <option value="">Choose a game</option>}
               {matchOptions.map((option) => (
-                <option key={option.id} value={option.id}>
-                  {option.name}
-                </option>
+                <option key={option.id} value={option.id}>{option.name}</option>
               ))}
             </select>
           </label>
 
+          <details className="group relative col-span-2 lg:col-span-1">
+            <summary className="flex h-11 cursor-pointer list-none items-center justify-center gap-2 rounded-lg border border-neutral-700 bg-neutral-950 px-3 text-xs font-semibold text-neutral-300 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500">
+              <Clock3 size={15} />
+              Game setup
+              <ChevronDown className="text-neutral-500 transition-transform duration-150 group-open:rotate-180" size={14} />
+            </summary>
+            <div className="mt-2 sm:absolute sm:right-0 sm:top-full sm:z-30 sm:w-80 sm:rounded-xl sm:border sm:border-neutral-700 sm:bg-neutral-900 sm:p-2 sm:shadow-xl">
+              <PeriodSettingsControls settings={periodSettings} onChange={onPeriodSettingsChange} />
+            </div>
+          </details>
+
           <button
-            className="mt-4 flex h-12 w-full items-center justify-center gap-2 rounded-lg border border-amber-300 bg-amber-300 text-sm font-bold text-neutral-950 transition-colors hover:border-amber-200 hover:bg-amber-200 focus:outline-none focus:ring-2 focus:ring-amber-400/60"
+            className="flex h-11 items-center justify-center gap-2 rounded-lg border border-amber-300 bg-amber-300 px-4 text-sm font-bold text-neutral-950 transition-colors hover:border-amber-200 hover:bg-amber-200 focus:outline-none focus:ring-2 focus:ring-amber-400/60"
             type="button"
             onClick={() => onActivate(statsMode, selectedGameId)}
           >
-            Open {statsMode === "professional" ? "pro" : "youth"} scorer
-            <ChevronRight size={18} />
+            Open {statsMode === "youth" ? "youth" : "pro"}
+            <ChevronRight size={17} />
           </button>
 
-          {/* Custom local match — test with a roster typed in, no Odoo. */}
           {customMatchActive ? (
-            <div className="mt-3 rounded-lg border border-neutral-700 bg-neutral-950 p-3">
-              <div className="text-xs font-semibold text-amber-300">Custom match active</div>
-              <div className="mt-1 truncate text-sm font-semibold text-neutral-100">{currentMatch.matchName}</div>
-              <div className="mt-2 grid grid-cols-2 gap-2">
-                <button
-                  className="flex h-10 items-center justify-center gap-1.5 rounded-lg border border-neutral-200 bg-neutral-100 text-xs font-bold text-neutral-950 transition-colors hover:bg-white focus:outline-none focus:ring-2 focus:ring-neutral-400"
-                  type="button"
-                  onClick={onResumeCustomMatch}
-                >
-                  <Play size={14} />
-                  Resume
-                </button>
-                <button
-                  className="h-10 rounded-lg border border-neutral-700 bg-neutral-900 text-xs font-bold text-neutral-300 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500"
-                  type="button"
-                  onClick={onExitCustomMatch}
-                >
-                  Exit
-                </button>
-              </div>
+            <div className="flex items-center gap-1 rounded-lg border border-neutral-700 bg-neutral-950 p-1">
+              <button
+                className="flex h-9 flex-1 items-center justify-center gap-1.5 rounded-md bg-neutral-100 px-3 text-xs font-bold text-neutral-950 transition-colors hover:bg-white focus:outline-none focus:ring-2 focus:ring-neutral-400"
+                type="button"
+                onClick={onResumeCustomMatch}
+              >
+                <Play size={14} />
+                Resume
+              </button>
+              <button
+                className="h-9 rounded-md px-3 text-xs font-semibold text-neutral-400 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500"
+                type="button"
+                onClick={onExitCustomMatch}
+              >
+                Exit
+              </button>
             </div>
           ) : (
             <button
-              className="mt-3 flex h-11 w-full items-center justify-center gap-2 rounded-lg border border-neutral-700 bg-transparent text-sm font-semibold text-neutral-300 transition-colors hover:border-neutral-600 hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500"
+              className="flex h-11 items-center justify-center gap-2 rounded-lg border border-neutral-700 bg-neutral-950 px-3 text-xs font-semibold text-neutral-300 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500"
               type="button"
               onClick={onOpenCustomMatch}
             >
-              <Users size={17} />
-              Create custom match
+              <Plus size={15} />
+              Custom
             </button>
           )}
-        </aside>
+        </section>
 
         <section
           aria-busy={isRefreshing}
-          className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900 shadow-sm md:h-full"
+          className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900 shadow-sm md:flex-1"
         >
-          <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-neutral-800 px-4 py-4 sm:px-5">
+          <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-neutral-800 px-4 py-3 sm:px-5">
             <div>
-              <h2 className="text-xl font-semibold text-neutral-50 text-balance">Game schedule</h2>
+              <h2 className="text-base font-semibold text-neutral-50 text-balance">Available games</h2>
               <div className="mt-1 text-sm text-neutral-500 tabular-nums">
-                {matchOptions.length} {matchOptions.length === 1 ? "game" : "games"} available
+                {matchOptions.length} {matchOptions.length === 1 ? "game" : "games"} · grouped by date and court
               </div>
             </div>
-            {selectedOption && (
-              <div className="rounded-lg border border-amber-400/30 bg-amber-400/5 px-3 py-2 text-right">
-                <div className="text-xs font-semibold text-amber-300">Selected</div>
-                <div className="max-w-[260px] truncate text-sm font-semibold">{selectedOption.name}</div>
-              </div>
-            )}
           </div>
 
           <div className="grid content-start gap-4 p-4 sm:p-5 md:min-h-0 md:flex-1 md:overflow-y-auto md:scrollbar-slim">
@@ -2863,7 +2856,7 @@ function GameDashboard({
                         · {locationGroup.games.length}
                       </span>
                     </div>
-                    <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 xl:grid-cols-3">
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
                       {locationGroup.games.map((option) => (
                         <GameCard
                           key={option.id}
@@ -3009,6 +3002,7 @@ function ModeButton({
 }) {
   return (
     <button
+      aria-pressed={active}
       className={cn(
         "flex h-11 items-center justify-center gap-2 rounded-lg border text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-amber-400/60",
         active
@@ -3253,16 +3247,16 @@ function GameCard({
         <button
           className="h-9 rounded-lg border border-neutral-200 bg-neutral-100 text-xs font-semibold text-neutral-950 transition-colors hover:bg-white focus:outline-none focus:ring-2 focus:ring-neutral-400"
           type="button"
-          onClick={() => onActivate("professional", option.id)}
+          onClick={() => onActivate("youth", option.id)}
         >
-          Pro stats
+          Youth
         </button>
         <button
           className="h-9 rounded-lg border border-neutral-700 bg-neutral-900 text-xs font-semibold text-neutral-200 transition-colors hover:bg-neutral-800 focus:outline-none focus:ring-2 focus:ring-neutral-500"
           type="button"
-          onClick={() => onActivate("youth", option.id)}
+          onClick={() => onActivate("professional", option.id)}
         >
-          Youth
+          Pro stats
         </button>
       </div>
     </article>
