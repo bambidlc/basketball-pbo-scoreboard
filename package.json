@@ -20,6 +20,7 @@
     "@tailwindcss/vite": "latest",
     "clsx": "latest",
     "lucide-react": "latest",
+    "motion": "^13.0.0",
     "react": "latest",
     "react-dom": "latest",
     "tailwind-merge": "latest",

@@ -37,6 +37,7 @@ import {
   WifiOff,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import { LazyMotion, m, useInView, useReducedMotion } from "motion/react";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent, type ReactNode } from "react";
 import {
   buildEqualizationEvent,
@@ -68,6 +69,8 @@ import { OdooClient, getOdooConfig } from "./api/odooClient";
 import { makeOpId, trimMatchForOutbox, type OutboxOp } from "./api/outbox";
 import { CourtSvg } from "./components/CourtSvg";
 import { cn } from "./lib/cn";
+
+const loadMotionFeatures = () => import("./motionFeatures").then((module) => module.default);
 
 type ConnectionStatus = "connected" | "error" | "local" | "syncing";
 type CourtSide = ShotLocation["side"];
@@ -2247,7 +2250,7 @@ function App() {
 
   if (screenMode === "dashboard") {
     return (
-      <>
+      <LazyMotion features={loadMotionFeatures}>
         <GameDashboard
           apiEnabled={apiConfig.enabled}
           connectionStatus={connectionStatus}
@@ -2271,11 +2274,12 @@ function App() {
         {customMatchOpen && (
           <CustomMatchDialog onClose={() => setCustomMatchOpen(false)} onStart={startCustomMatch} />
         )}
-      </>
+      </LazyMotion>
     );
   }
 
   return (
+    <LazyMotion features={loadMotionFeatures}>
     <main
       className="min-h-dvh bg-neutral-950 p-2 text-neutral-100 [font-family:Inter,ui-sans-serif,system-ui,sans-serif] sm:p-3 2xl:h-dvh 2xl:overflow-hidden"
       style={teamColorVars(match.away, match.home)}
@@ -2516,6 +2520,7 @@ function App() {
         />
       )}
     </main>
+    </LazyMotion>
   );
 }
 
@@ -2676,11 +2681,11 @@ function GameDashboard({
 
   return (
     <main
-      className="min-h-dvh bg-neutral-950 px-3 py-4 text-neutral-100 [font-family:Inter,ui-sans-serif,system-ui,sans-serif] sm:px-5 sm:py-6"
+      className="min-h-dvh bg-neutral-950 px-3 py-4 text-neutral-100 [font-family:Inter,ui-sans-serif,system-ui,sans-serif] sm:px-5 sm:py-6 md:h-dvh md:overflow-hidden"
       style={teamColorVars(currentMatch.away, currentMatch.home)}
     >
-      <section className="mx-auto grid max-w-[1640px] grid-cols-1 gap-4 md:grid-cols-[280px_minmax(0,1fr)] md:items-start lg:grid-cols-[320px_minmax(0,1fr)]">
-        <aside className="rounded-xl border border-neutral-800 bg-neutral-900 p-4 shadow-sm md:sticky md:top-5">
+      <section className="mx-auto grid max-w-[1640px] grid-cols-1 gap-4 md:h-full md:min-h-0 md:grid-cols-[280px_minmax(0,1fr)] md:items-start lg:grid-cols-[320px_minmax(0,1fr)]">
+        <aside className="rounded-xl border border-neutral-800 bg-neutral-900 p-4 shadow-sm md:max-h-full md:overflow-y-auto md:scrollbar-slim">
           <div className="flex items-start justify-between gap-3">
             <div>
               <div className="text-xs font-semibold text-amber-300">Basketball PBO</div>
@@ -2693,7 +2698,7 @@ function GameDashboard({
               type="button"
               onClick={onRefresh}
             >
-              <RefreshCw className={isRefreshing ? "animate-spin" : ""} size={16} />
+              <RefreshCw className={isRefreshing ? "text-amber-300" : ""} size={16} />
             </button>
           </div>
 
@@ -2802,8 +2807,11 @@ function GameDashboard({
           )}
         </aside>
 
-        <section className="rounded-xl border border-neutral-800 bg-neutral-900 p-4 shadow-sm sm:p-5">
-          <div className="flex flex-wrap items-center justify-between gap-3">
+        <section
+          aria-busy={isRefreshing}
+          className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900 shadow-sm md:h-full"
+        >
+          <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-neutral-800 px-4 py-4 sm:px-5">
             <div>
               <h2 className="text-xl font-semibold text-neutral-50 text-balance">Game schedule</h2>
               <div className="mt-1 text-sm text-neutral-500 tabular-nums">
@@ -2818,10 +2826,15 @@ function GameDashboard({
             )}
           </div>
 
-          <div className="mt-5 grid gap-8">
-            {dateGroups.map((group) => (
-              <div key={group.dateKey || "__pending__"} className="grid gap-4">
-                <div className="flex items-center gap-3 border-b border-neutral-800 pb-3">
+          <div className="grid content-start gap-4 p-4 sm:p-5 md:min-h-0 md:flex-1 md:overflow-y-auto md:scrollbar-slim">
+            {isRefreshing && matchOptions.length === 0 ? (
+              <DashboardLoadingState message={syncMessage} />
+            ) : (
+              <>
+                {isRefreshing && <ScheduleRefreshStatus />}
+                {dateGroups.map((group, index) => (
+              <details className="group rounded-xl border border-neutral-800 bg-neutral-950" key={group.dateKey || "__pending__"} open={index === 0}>
+                <summary className="flex cursor-pointer list-none items-center gap-3 px-3 py-3 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-neutral-500">
                   <span className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-neutral-800 bg-neutral-950 text-neutral-300">
                     <CalendarDays size={16} />
                   </span>
@@ -2831,7 +2844,9 @@ function GameDashboard({
                   <span className="ml-auto shrink-0 text-xs font-medium text-neutral-500 tabular-nums">
                     {group.total} {group.total === 1 ? "game" : "games"}
                   </span>
-                </div>
+                  <ChevronDown className="shrink-0 text-neutral-500 transition-transform duration-150 group-open:rotate-180" size={15} />
+                </summary>
+                <div className="grid gap-4 border-t border-neutral-800 p-3">
                 {group.locations.map((locationGroup) => (
                   <div key={locationGroup.key} className="grid gap-3">
                     <div className="flex items-center gap-2">
@@ -2861,12 +2876,12 @@ function GameDashboard({
                     </div>
                   </div>
                 ))}
-              </div>
-            ))}
-          </div>
+                </div>
+              </details>
+                ))}
 
-          {matchOptions.length === 0 && (
-            <div className="mt-5 rounded-xl border border-dashed border-neutral-700 bg-neutral-950 px-5 py-12 text-center">
+                {matchOptions.length === 0 && (
+            <div className="rounded-xl border border-dashed border-neutral-700 bg-neutral-950 px-5 py-12 text-center">
               <CalendarDays className="mx-auto text-neutral-600" size={24} />
               <div className="mt-3 text-sm font-semibold text-neutral-200">No games are available yet</div>
               <div className="mt-1 text-sm text-pretty text-neutral-500">Refresh the schedule, or create a local custom match.</div>
@@ -2878,10 +2893,106 @@ function GameDashboard({
                 Refresh schedule
               </button>
             </div>
-          )}
+                )}
+              </>
+            )}
+          </div>
         </section>
       </section>
     </main>
+  );
+}
+
+function DashboardLoadingState({ message }: { message: string }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const inView = useInView(containerRef, { amount: 0.2 });
+  const reduceMotion = useReducedMotion();
+  const animate = inView && !reduceMotion;
+
+  return (
+    <div
+      aria-live="polite"
+      className="flex min-h-[440px] flex-col justify-center rounded-xl border border-neutral-800 bg-neutral-950 p-5"
+      ref={containerRef}
+      role="status"
+    >
+      <div className="mx-auto flex max-w-md flex-col items-center text-center">
+        <div className="relative flex size-16 items-center justify-center rounded-full border border-neutral-700 bg-neutral-900">
+          <m.div
+            aria-hidden="true"
+            className="absolute inset-1 rounded-full border border-neutral-700"
+            animate={animate ? { rotate: 360 } : { rotate: 0 }}
+            transition={animate ? { duration: 1.4, ease: "linear", repeat: Infinity } : { duration: 0 }}
+          >
+            <span className="absolute -top-0.5 left-1/2 size-2 -translate-x-1/2 rounded-full bg-amber-300" />
+          </m.div>
+          <m.div
+            aria-hidden="true"
+            animate={animate ? { opacity: [0.55, 1, 0.55], scale: [0.94, 1, 0.94] } : { opacity: 1, scale: 1 }}
+            transition={animate ? { duration: 1.6, ease: "easeInOut", repeat: Infinity } : { duration: 0.15 }}
+          >
+            <Gauge className="text-amber-300" size={24} />
+          </m.div>
+        </div>
+        <h3 className="mt-4 text-lg font-semibold text-balance text-neutral-50">Syncing game operations</h3>
+        <p className="mt-1 text-sm text-pretty text-neutral-500">
+          Loading the schedule, rosters, and latest match status.
+        </p>
+        <div className="mt-3 max-w-sm truncate text-xs text-neutral-600" title={message}>{message}</div>
+      </div>
+
+      <div aria-hidden="true" className="mx-auto mt-7 grid w-full max-w-2xl gap-3 lg:grid-cols-2">
+        {[0, 1].map((index) => (
+          <m.div
+            className="rounded-xl border border-neutral-800 bg-neutral-900 p-4"
+            animate={animate ? { opacity: [0.42, 0.8, 0.42] } : { opacity: 0.6 }}
+            key={index}
+            transition={animate
+              ? { delay: index * 0.14, duration: 1.6, ease: "easeInOut", repeat: Infinity }
+              : { duration: 0.15 }}
+          >
+            <div className="flex items-center justify-between gap-3">
+              <span className="h-3 w-20 rounded-full bg-neutral-800" />
+              <span className="h-3 w-10 rounded-full bg-neutral-800" />
+            </div>
+            <div className="mt-4 h-4 w-2/3 rounded-full bg-neutral-800" />
+            <div className="mt-4 space-y-2">
+              <div className="h-9 rounded-lg border border-neutral-800 bg-neutral-950" />
+              <div className="h-9 rounded-lg border border-neutral-800 bg-neutral-950" />
+            </div>
+          </m.div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ScheduleRefreshStatus() {
+  const statusRef = useRef<HTMLDivElement>(null);
+  const inView = useInView(statusRef, { amount: 0.5 });
+  const reduceMotion = useReducedMotion();
+  const animate = inView && !reduceMotion;
+
+  return (
+    <m.div
+      className="flex items-center gap-3 rounded-lg border border-amber-400/30 bg-amber-400/5 px-3 py-2.5"
+      initial={reduceMotion ? false : { opacity: 0, y: -6 }}
+      animate={{ opacity: 1, y: 0 }}
+      ref={statusRef}
+      role="status"
+      transition={{ duration: 0.18, ease: "easeOut" }}
+    >
+      <m.span
+        aria-hidden="true"
+        className="size-2 rounded-full bg-amber-300"
+        animate={animate ? { opacity: [0.4, 1, 0.4], scale: [0.82, 1, 0.82] } : { opacity: 1, scale: 1 }}
+        transition={animate ? { duration: 1.2, ease: "easeInOut", repeat: Infinity } : { duration: 0.15 }}
+      />
+      <div className="min-w-0">
+        <div className="text-xs font-semibold text-amber-200">Updating schedule</div>
+        <div className="truncate text-xs text-neutral-500">Current games stay available while fresh data loads.</div>
+      </div>
+    </m.div>
   );
 }
 
@@ -3113,23 +3224,23 @@ function GameCard({
   return (
     <article
       className={cn(
-        "rounded-xl border bg-neutral-950 p-4 transition-colors",
+        "rounded-xl border bg-neutral-950 p-3 transition-colors",
         selected ? "border-amber-400/70 ring-1 ring-inset ring-amber-400/20" : "border-neutral-800 hover:border-neutral-700",
       )}
     >
       <button className="block w-full rounded-lg text-left focus:outline-none focus:ring-2 focus:ring-amber-400/50" type="button" onClick={onSelect}>
         <div className="flex items-center justify-between gap-3">
-          <span className="rounded-full border border-neutral-700 bg-neutral-900 px-2.5 py-1 text-xs font-semibold text-neutral-400">
+          <span className="rounded-full border border-neutral-700 bg-neutral-900 px-2 py-0.5 text-[11px] font-semibold text-neutral-400">
             {option.status}
           </span>
           <span className="font-mono text-xs text-neutral-500 tabular-nums">{option.week || `#${option.id}`}</span>
         </div>
-        <h3 className="mt-3 truncate text-base font-semibold text-neutral-50">{option.name}</h3>
-        <div className="mt-3 grid gap-1.5">
+        <h3 className="mt-2 truncate text-sm font-semibold text-neutral-50">{option.name}</h3>
+        <div className="mt-2 grid gap-1.5">
           <GameTeamLine label="Visitor" name={option.awayName} score={option.awayScore} team="away" />
           <GameTeamLine label="Home" name={option.homeName} score={option.homeScore} team="home" />
         </div>
-        <div className="mt-3 flex items-center gap-1.5 text-xs text-neutral-500">
+        <div className="mt-2 flex items-center gap-1.5 text-xs text-neutral-500">
           <Clock3 size={12} />
           <span className="truncate">
             {formatGameTime(option.datetime)
@@ -3138,16 +3249,16 @@ function GameCard({
           </span>
         </div>
       </button>
-      <div className="mt-4 grid grid-cols-2 gap-2 border-t border-neutral-800 pt-3">
+      <div className="mt-3 grid grid-cols-2 gap-2 border-t border-neutral-800 pt-2.5">
         <button
-          className="h-10 rounded-lg border border-neutral-200 bg-neutral-100 text-xs font-semibold text-neutral-950 transition-colors hover:bg-white focus:outline-none focus:ring-2 focus:ring-neutral-400"
+          className="h-9 rounded-lg border border-neutral-200 bg-neutral-100 text-xs font-semibold text-neutral-950 transition-colors hover:bg-white focus:outline-none focus:ring-2 focus:ring-neutral-400"
           type="button"
           onClick={() => onActivate("professional", option.id)}
         >
           Pro stats
         </button>
         <button
-          className="h-10 rounded-lg border border-neutral-700 bg-neutral-900 text-xs font-semibold text-neutral-200 transition-colors hover:bg-neutral-800 focus:outline-none focus:ring-2 focus:ring-neutral-500"
+          className="h-9 rounded-lg border border-neutral-700 bg-neutral-900 text-xs font-semibold text-neutral-200 transition-colors hover:bg-neutral-800 focus:outline-none focus:ring-2 focus:ring-neutral-500"
           type="button"
           onClick={() => onActivate("youth", option.id)}
         >
@@ -3170,12 +3281,12 @@ function GameTeamLine({
   team: TeamId;
 }) {
   return (
-    <div className="grid grid-cols-[44px_minmax(0,1fr)_36px] items-center gap-2 rounded-lg border border-neutral-800 bg-neutral-900 px-3 py-2">
+    <div className="grid grid-cols-[44px_minmax(0,1fr)_36px] items-center gap-2 rounded-lg border border-neutral-800 bg-neutral-900 px-2.5 py-1.5">
       <span className="text-xs font-semibold" style={{ color: `var(--c-${team}-soft)` }}>
         {label}
       </span>
       <span className="truncate text-sm font-semibold text-neutral-200">{name}</span>
-      <span className="text-right font-mono text-lg font-bold tabular-nums text-neutral-50">{score}</span>
+      <span className="text-right font-mono text-base font-bold tabular-nums text-neutral-50">{score}</span>
     </div>
   );
 }
