@@ -46,7 +46,7 @@ import {
   getPeriodLabel,
   loadLiveMatch,
   loadMatchOptions,
-  saveGameAttendance,
+  saveGameDayRoster,
   saveMatchCorrection,
   saveMatchAction,
   saveMatchStatus,
@@ -81,6 +81,11 @@ type StarterSelection = Partial<Record<TeamId, string[]>>;
 type StarterSelectionStore = Record<string, StarterSelection>;
 type AttendanceSelection = Partial<Record<TeamId, Record<string, boolean>>>;
 type AttendanceSelectionStore = Record<string, AttendanceSelection>;
+type StoredGameDayRoster = {
+  savedAt: number;
+  teams: Record<TeamId, { coach?: string; players: Player[]; starterKeys: string[] }>;
+};
+type GameDayRosterStore = Record<string, StoredGameDayRoster>;
 type OfficialKey = "referee" | "refereeAssistant" | "referee3" | "scorekeeper" | "scorekeeper2";
 type OfficialsSelection = Partial<Record<OfficialKey, string>>;
 type OfficialsSelectionStore = Record<string, OfficialsSelection>;
@@ -224,8 +229,10 @@ const WARNING_PLACEHOLDER_PLAYER: Player = {
 // --- Custom (local) match: a roster typed straight into the app, no Odoo behind it. ---
 type CustomPlayerInput = { number: string; name: string };
 type CustomMatchSetup = {
+  awayCoach: string;
   awayName: string;
   homeName: string;
+  homeCoach: string;
   awayPlayers: CustomPlayerInput[];
   homePlayers: CustomPlayerInput[];
 };
@@ -233,6 +240,7 @@ type CustomMatchSetup = {
 function buildCustomTeam(
   label: "Visitor" | "Home",
   name: string,
+  coach: string,
   inputs: CustomPlayerInput[],
   idBase: number,
 ): Team {
@@ -241,6 +249,7 @@ function buildCustomTeam(
     .map((input, index): Player => ({
       ...WARNING_PLACEHOLDER_PLAYER,
       id: idBase - index, // synthetic negative ids keep player keys unique and off Odoo's range
+      localId: makeLocalPlayerId(label === "Visitor" ? "away" : "home"),
       name: input.name.trim() || `#${input.number.trim()}`,
       number: input.number.trim(),
       present: true,
@@ -248,6 +257,7 @@ function buildCustomTeam(
 
   return {
     bench: players.slice(5).map((player) => ({ ...player, active: false })),
+    coach: coach.trim() || undefined,
     fouls: 0,
     label,
     name: name.trim() || label,
@@ -262,8 +272,8 @@ function buildCustomMatch(
   periodSeconds: number,
   periodCount: number,
 ): LiveMatch {
-  const away = buildCustomTeam("Visitor", setup.awayName, setup.awayPlayers, -1000);
-  const home = buildCustomTeam("Home", setup.homeName, setup.homePlayers, -2000);
+  const away = buildCustomTeam("Visitor", setup.awayName, setup.awayCoach, setup.awayPlayers, -1000);
+  const home = buildCustomTeam("Home", setup.homeName, setup.homeCoach, setup.homePlayers, -2000);
   return {
     away,
     awayScore: 0,
@@ -303,6 +313,9 @@ const STORAGE_KEYS = {
   customMatch: "pbo:customMatch",
   customMode: "pbo:customMode",
   liveMatch: "pbo:liveMatch",
+  liveMatches: "pbo:liveMatches:v2",
+  matchOptions: "pbo:matchOptions:v1",
+  gameDayRosters: "pbo:gameDayRosters:v1",
   outbox: "pbo:outbox",
   courtSides: "pbo:courtSides",
   openingJumpWinner: "pbo:openingJumpWinner",
@@ -355,10 +368,14 @@ function App() {
     [initialCustomMode, initialSelectedGameId],
   );
   const seededMatch = initialCustomMode && initialCustomMatch ? initialCustomMatch : initialLiveMatch;
+  const initialMatchOptions = useMemo(
+    () => readStoredJson<MatchOption[]>(STORAGE_KEYS.matchOptions) ?? [],
+    [],
+  );
   const [customMode, setCustomMode] = useState(() => initialCustomMode && Boolean(initialCustomMatch));
   const [customMatchOpen, setCustomMatchOpen] = useState(false);
   const [match, setMatch] = useState<LiveMatch>(() => seededMatch ?? fallbackMatch);
-  const [matchOptions, setMatchOptions] = useState<MatchOption[]>([]);
+  const [matchOptions, setMatchOptions] = useState<MatchOption[]>(initialMatchOptions);
   const [selectedGameId, setSelectedGameId] = useState<number | undefined>(initialSelectedGameId);
   const [screenMode, setScreenMode] = useState<ScreenMode>(() =>
     // Resume straight into the live view when the seeded game is still in progress.
@@ -404,6 +421,7 @@ function App() {
   // When a player reaches 5 fouls they must come off — prompt for the replacement.
   const [foulOutPrompt, setFoulOutPrompt] = useState<{ player: Player; team: TeamId } | undefined>(undefined);
   const [preGameOpen, setPreGameOpen] = useState(false);
+  const [isRosterSaving, setIsRosterSaving] = useState(false);
   const [undoStack, setUndoStack] = useState<UndoItem[]>([]);
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>(
     apiConfig.enabled ? "syncing" : "local",
@@ -473,13 +491,28 @@ function App() {
   // available offline. Keyed by gameId; the loader only restores it for the same game.
   useEffect(() => {
     if (!customMode && match.gameId) {
-      writeStoredJson(STORAGE_KEYS.liveMatch, {
+      const snapshot = {
         gameId: match.gameId,
         savedAt: Date.now(),
         match,
-      } satisfies StoredLiveMatch);
+      } satisfies StoredLiveMatch;
+      writeStoredJson(STORAGE_KEYS.liveMatch, snapshot);
+      const storedMatches = readStoredJson<Record<string, StoredLiveMatch>>(STORAGE_KEYS.liveMatches) ?? {};
+      const nextMatches = { ...storedMatches, [String(match.gameId)]: snapshot };
+      const newest = Object.fromEntries(
+        Object.entries(nextMatches)
+          .sort(([, first], [, second]) => second.savedAt - first.savedAt)
+          .slice(0, 12),
+      );
+      writeStoredJson(STORAGE_KEYS.liveMatches, newest);
     }
   }, [customMode, match]);
+
+  useEffect(() => {
+    if (matchOptions.length > 0) {
+      writeStoredJson(STORAGE_KEYS.matchOptions, matchOptions);
+    }
+  }, [matchOptions]);
 
   // Keep the outbox mirror ref + its persisted copy in lockstep with the queue state.
   useEffect(() => {
@@ -541,7 +574,12 @@ function App() {
             loadedGameIdRef.current = result.match.gameId;
           }
 
-          if (apiConfig.enabled && result.source === "local" && current.gameId) {
+          if (
+            apiConfig.enabled &&
+            result.source === "local" &&
+            current.gameId &&
+            current.gameId === requestedGameId
+          ) {
             return {
               ...current,
               syncMessage: rateLimited
@@ -550,7 +588,11 @@ function App() {
             };
           }
 
-          const loadedMatch = applyStoredOfficials(applyStoredAttendance(applyStoredStarters(result.match)));
+          const cachedMatch = readStoredLiveMatch(requestedGameId);
+          const sourceMatch = result.source === "api" ? result.match : cachedMatch ?? result.match;
+          const loadedMatch = applyStoredGameDayRoster(
+            applyStoredOfficials(applyStoredAttendance(applyStoredStarters(sourceMatch))),
+          );
 
           return {
             ...loadedMatch,
@@ -563,7 +605,7 @@ function App() {
           };
         });
 
-        if (shouldLoadOptions && !rateLimited) {
+        if (shouldLoadOptions && !rateLimited && optionsResult.length > 0) {
           matchOptionsLoadedRef.current = true;
           setMatchOptions(optionsResult);
         }
@@ -626,6 +668,19 @@ function App() {
     });
   }, []);
 
+  const reconcileRosterSync = useCallback((resolvedMatch: LiveMatch) => {
+    setMatch((current) => {
+      if (current.gameId !== resolvedMatch.gameId) {
+        return current;
+      }
+      const next = mergeResolvedRosterIds(current, resolvedMatch);
+      matchRef.current = next;
+      writeStoredGameDayRoster(next);
+      return next;
+    });
+    setPendingOps((current) => current.map((op) => rewriteOutboxRoster(op, resolvedMatch)));
+  }, []);
+
   // Replay parked writes in FIFO order once back online. Stops at the first failure to keep
   // ordering, skips ops the inline path is still sending, and drops each op only after Odoo
   // confirms it (the write path is idempotent, so a retried op never duplicates data).
@@ -639,10 +694,11 @@ function App() {
 
     flushingRef.current = true;
     try {
-      const queue = pendingOpsRef.current.filter((op) => !inFlightOpIdsRef.current.has(op.id));
+      let queue = pendingOpsRef.current.filter((op) => !inFlightOpIdsRef.current.has(op.id));
       let failed = false;
 
-      for (const op of queue) {
+      for (let queueIndex = 0; queueIndex < queue.length; queueIndex += 1) {
+        const op = queue[queueIndex];
         if (typeof navigator !== "undefined" && !navigator.onLine) {
           failed = true;
           break;
@@ -650,16 +706,25 @@ function App() {
 
         let result: SaveMatchActionResult;
         try {
-          result =
-            op.kind === "action"
-              ? await saveMatchAction(apiClient, op.input)
-              : await saveMatchStatus(apiClient, op.match, op.status, op.note);
+          if (op.kind === "action") {
+            result = await saveMatchAction(apiClient, op.input);
+          } else if (op.kind === "status") {
+            result = await saveMatchStatus(apiClient, op.match, op.status, op.note);
+          } else {
+            result = await saveGameDayRoster(apiClient, op.match);
+          }
         } catch {
           result = { saved: false, log: createLog("error", "Sync retry failed", "Network error") };
         }
 
         if (result.saved) {
-          if (result.eventId && op.eventId != null) {
+          if (result.match) {
+            reconcileRosterSync(result.match);
+            // The queue snapshot was captured before this roster received real player ids.
+            // Repair the remaining in-memory ops immediately so this same flush can continue.
+            queue = queue.map((queued) => rewriteOutboxRoster(queued, result.match!));
+          }
+          if (result.eventId && "eventId" in op && op.eventId != null) {
             linkServerEventId(op.eventId, result.eventId);
           }
           setPendingOps((current) => current.filter((item) => item.id !== op.id));
@@ -678,13 +743,16 @@ function App() {
     } finally {
       flushingRef.current = false;
     }
-  }, [apiClient, linkServerEventId]);
+  }, [apiClient, linkServerEventId, reconcileRosterSync]);
 
   // Optimistic, durable send of a scoring action: park it in the outbox, fire the write,
   // and drop it on confirmed success. If offline/failed it stays queued for `flushOutbox`.
   // Returns the live result so each call site's existing reconcile runs unchanged.
   const dispatchSaveAction = useCallback(
     (input: SaveMatchActionInput, eventId?: number): Promise<SaveMatchActionResult> => {
+      if (!apiClient.enabled || !input.match.gameId) {
+        return saveMatchAction(apiClient, input);
+      }
       const op: OutboxOp = {
         id: makeOpId(),
         kind: "action",
@@ -717,6 +785,9 @@ function App() {
   // Same optimistic + durable wrapper for a game-status change (start / suspend / end).
   const dispatchSaveStatus = useCallback(
     (nextMatch: LiveMatch, status: string, note?: string, eventId?: number): Promise<SaveMatchActionResult> => {
+      if (!apiClient.enabled || !nextMatch.gameId) {
+        return saveMatchStatus(apiClient, nextMatch, status, note);
+      }
       const op: OutboxOp = {
         id: makeOpId(),
         kind: "status",
@@ -748,6 +819,51 @@ function App() {
     [apiClient],
   );
 
+  const dispatchSaveRoster = useCallback(
+    (nextMatch: LiveMatch): Promise<SaveMatchActionResult> => {
+      if (!apiClient.enabled || !nextMatch.gameId) {
+        return saveGameDayRoster(apiClient, nextMatch);
+      }
+
+      const op: OutboxOp = {
+        id: makeOpId(),
+        kind: "roster",
+        createdAt: Date.now(),
+        attempts: 0,
+        match: trimMatchForOutbox(nextMatch),
+      };
+      setPendingOps((current) => [...current, op]);
+      inFlightOpIdsRef.current.add(op.id);
+
+      if (typeof navigator !== "undefined" && !navigator.onLine) {
+        inFlightOpIdsRef.current.delete(op.id);
+        return Promise.resolve({
+          saved: false,
+          log: createLog("warning", "Roster saved offline", "It is queued to sync automatically when the connection returns."),
+        });
+      }
+
+      return saveGameDayRoster(apiClient, nextMatch)
+        .then((result) => {
+          if (result.saved) {
+            if (result.match) {
+              reconcileRosterSync(result.match);
+            }
+            setPendingOps((current) => current.filter((item) => item.id !== op.id));
+          }
+          return result;
+        })
+        .catch(
+          () =>
+            ({ saved: false, log: createLog("error", "Roster sync failed", "Network error") }) as SaveMatchActionResult,
+        )
+        .finally(() => {
+          inFlightOpIdsRef.current.delete(op.id);
+        });
+    },
+    [apiClient, reconcileRosterSync],
+  );
+
   // Reconnect handling: track the browser online/offline flag, and whenever connectivity
   // returns, drain the outbox and pull fresh server data. A periodic sweep covers cases
   // where the `online` event never fires (e.g. flaky links that just start working).
@@ -758,8 +874,10 @@ function App() {
 
     const handleOnline = () => {
       setIsOnline(true);
-      void flushOutbox();
-      void refreshMatch(undefined, { force: true });
+      void (async () => {
+        await flushOutbox();
+        await refreshMatch(undefined, { force: true });
+      })();
     };
     const handleOffline = () => {
       setIsOnline(false);
@@ -977,7 +1095,25 @@ function App() {
     }
     selectedGameIdRef.current = gameId;
     setSelectedGameId(gameId);
+    if (gameId) {
+      const cached = readStoredLiveMatch(gameId);
+      const option = matchOptions.find((candidate) => candidate.id === gameId);
+      const localMatch = cached ?? (option ? buildScheduledMatchShell(option, periodSettings) : undefined);
+      if (localMatch) {
+        const prepared = applyStoredGameDayRoster(
+          applyStoredOfficials(applyStoredAttendance(applyStoredStarters(localMatch))),
+        );
+        matchRef.current = prepared;
+        setMatch(prepared);
+      }
+    }
     void refreshMatch(gameId, { force: true });
+  }
+
+  function openGameDayRoster(gameId: number) {
+    handleGameSelect(gameId);
+    preGameOpenRef.current = true;
+    setPreGameOpen(true);
   }
 
   function activateLiveView(mode: StatsMode, gameId: number | undefined = selectedGameIdRef.current) {
@@ -1074,6 +1210,7 @@ function App() {
     matchRef.current = nextMatch;
     setMatch(nextMatch);
     writeStoredStarterKeys(nextMatch, team);
+    writeStoredGameDayRoster(nextMatch);
     appendLog(createLog(
       "info",
       isStarter ? "Starter removed" : "Starter added",
@@ -1109,6 +1246,75 @@ function App() {
     setMatch(nextMatch);
     // Remember attendance locally so it survives polls/reloads and can be changed any time.
     writeStoredAttendance(nextMatch, team);
+    writeStoredGameDayRoster(nextMatch);
+  }
+
+  function setTeamCoach(team: TeamId, value: string) {
+    const nextMatch = {
+      ...matchRef.current,
+      [team]: { ...matchRef.current[team], coach: value },
+    };
+    matchRef.current = nextMatch;
+    setMatch(nextMatch);
+    writeStoredGameDayRoster(nextMatch);
+  }
+
+  function addRosterPlayer(team: TeamId) {
+    const side = matchRef.current[team];
+    if (getRoster(side).length >= 30) {
+      appendLog(createLog("warning", "Roster limit reached", "A game-day roster can contain up to 30 players."));
+      return;
+    }
+
+    const player: Player = {
+      ...WARNING_PLACEHOLDER_PLAYER,
+      active: false,
+      localId: makeLocalPlayerId(team),
+      name: "",
+      number: "",
+      present: true,
+    };
+    const nextMatch = {
+      ...matchRef.current,
+      [team]: {
+        ...side,
+        bench: [...side.bench, player],
+        presentCount: side.presentCount + 1,
+      },
+    };
+    matchRef.current = nextMatch;
+    setMatch(nextMatch);
+    writeStoredGameDayRoster(nextMatch);
+  }
+
+  function updateRosterPlayer(team: TeamId, player: Player, values: Pick<Player, "name" | "number">) {
+    const key = getPlayerKey(player);
+    const side = matchRef.current[team];
+    const update = (candidate: Player): Player =>
+      getPlayerKey(candidate) === key ? { ...candidate, ...values } : candidate;
+    const nextMatch = {
+      ...matchRef.current,
+      [team]: {
+        ...side,
+        bench: side.bench.map(update),
+        players: side.players.map(update),
+      },
+    };
+    matchRef.current = nextMatch;
+    setMatch(nextMatch);
+    writeStoredGameDayRoster(nextMatch);
+  }
+
+  function removeRosterPlayer(team: TeamId, player: Player) {
+    const key = getPlayerKey(player);
+    const side = matchRef.current[team];
+    const players = side.players.filter((candidate) => getPlayerKey(candidate) !== key);
+    const bench = side.bench.filter((candidate) => getPlayerKey(candidate) !== key);
+    const presentCount = [...players, ...bench].filter((candidate) => candidate.present ?? true).length;
+    const nextMatch = { ...matchRef.current, [team]: { ...side, bench, players, presentCount } };
+    matchRef.current = nextMatch;
+    setMatch(nextMatch);
+    writeStoredGameDayRoster(nextMatch);
   }
 
   function setOfficial(field: OfficialKey, value: string) {
@@ -1119,19 +1325,31 @@ function App() {
     writeStoredOfficials(nextMatch);
   }
 
-  function savePreGame() {
+  async function savePreGame() {
+    if (isRosterSaving) {
+      return;
+    }
+    const validation = validateGameDayRoster(matchRef.current);
+    if (validation.length > 0) {
+      appendLog(createLog("warning", "Roster needs attention", validation[0]));
+      return;
+    }
+
     // Keep starters in localStorage too, so they survive an offline reload.
     writeStoredStarterKeys(matchRef.current, "away");
     writeStoredStarterKeys(matchRef.current, "home");
-    appendLog(createLog("info", "Saving roster", "Attendance, starters and officials."));
+    writeStoredGameDayRoster(matchRef.current);
+    appendLog(createLog("info", "Saving game-day roster", "Players, coaches, attendance, starters and officials."));
+    setIsRosterSaving(true);
+    const result = await dispatchSaveRoster(matchRef.current);
+    appendLog(result.log);
+    setConnectionStatus(result.log.level === "error" ? "error" : result.saved ? "connected" : "local");
+    setIsRosterSaving(false);
 
-    void saveGameAttendance(apiClient, matchRef.current).then((result) => {
-      appendLog(result.log);
-      setConnectionStatus(result.log.level === "error" ? "error" : result.saved ? "connected" : "local");
-    });
-
-    preGameOpenRef.current = false;
-    setPreGameOpen(false);
+    if (result.log.level !== "error" || !isOnline) {
+      preGameOpenRef.current = false;
+      setPreGameOpen(false);
+    }
   }
 
   function switchCourtSides() {
@@ -2192,7 +2410,7 @@ function App() {
     // If the undone action is still parked in the outbox and was never sent, cancel it —
     // to Odoo it simply never happened, so no server correction is needed. (An action that
     // is mid-flight falls through; the canceledEventIdsRef path corrects it once it syncs.)
-    const queuedOp = pendingOpsRef.current.find((op) => op.eventId === eventId);
+    const queuedOp = pendingOpsRef.current.find((op) => "eventId" in op && op.eventId === eventId);
     if (queuedOp && !inFlightOpIdsRef.current.has(queuedOp.id)) {
       setPendingOps((current) => current.filter((op) => op.id !== queuedOp.id));
       return;
@@ -2257,6 +2475,7 @@ function App() {
           currentMatch={match}
           customMatchActive={customMode}
           isRefreshing={isRefreshing}
+          isOnline={isOnline}
           matchOptions={matchOptions}
           periodSettings={periodSettings}
           selectedGameId={selectedGameId}
@@ -2265,6 +2484,7 @@ function App() {
           onActivate={activateLiveView}
           onExitCustomMatch={exitCustomMatch}
           onGameSelect={handleGameSelect}
+          onManageRoster={openGameDayRoster}
           onOpenCustomMatch={() => setCustomMatchOpen(true)}
           onPeriodSettingsChange={updatePeriodSettings}
           onRefresh={() => refreshMatch(undefined, { force: true, loadOptions: true })}
@@ -2273,6 +2493,22 @@ function App() {
         />
         {customMatchOpen && (
           <CustomMatchDialog onClose={() => setCustomMatchOpen(false)} onStart={startCustomMatch} />
+        )}
+        {preGameOpen && (
+          <PreGameDialog
+            isOnline={isOnline}
+            isSaving={isRosterSaving}
+            match={match}
+            onAddPlayer={addRosterPlayer}
+            onChangeCoach={setTeamCoach}
+            onChangeOfficial={setOfficial}
+            onClose={closePreGame}
+            onRemovePlayer={removeRosterPlayer}
+            onSave={() => void savePreGame()}
+            onTogglePresent={togglePresent}
+            onToggleStarter={toggleStarter}
+            onUpdatePlayer={updateRosterPlayer}
+          />
         )}
       </LazyMotion>
     );
@@ -2511,12 +2747,18 @@ function App() {
 
       {preGameOpen && (
         <PreGameDialog
+          isOnline={isOnline}
+          isSaving={isRosterSaving}
           match={match}
+          onAddPlayer={addRosterPlayer}
+          onChangeCoach={setTeamCoach}
           onChangeOfficial={setOfficial}
           onClose={closePreGame}
-          onSave={savePreGame}
+          onRemovePlayer={removeRosterPlayer}
+          onSave={() => void savePreGame()}
           onTogglePresent={togglePresent}
           onToggleStarter={toggleStarter}
+          onUpdatePlayer={updateRosterPlayer}
         />
       )}
     </main>
@@ -2635,6 +2877,7 @@ function GameDashboard({
   currentMatch,
   customMatchActive,
   isRefreshing,
+  isOnline,
   matchOptions,
   periodSettings,
   selectedGameId,
@@ -2643,6 +2886,7 @@ function GameDashboard({
   onActivate,
   onExitCustomMatch,
   onGameSelect,
+  onManageRoster,
   onOpenCustomMatch,
   onPeriodSettingsChange,
   onRefresh,
@@ -2654,6 +2898,7 @@ function GameDashboard({
   currentMatch: LiveMatch;
   customMatchActive: boolean;
   isRefreshing: boolean;
+  isOnline: boolean;
   matchOptions: MatchOption[];
   periodSettings: PeriodSettings;
   selectedGameId?: number;
@@ -2662,6 +2907,7 @@ function GameDashboard({
   onActivate: (mode: StatsMode, gameId?: number) => void;
   onExitCustomMatch: () => void;
   onGameSelect: (gameId: number | undefined) => void;
+  onManageRoster: (gameId: number) => void;
   onOpenCustomMatch: () => void;
   onPeriodSettingsChange: (settings: Partial<PeriodSettings>) => void;
   onRefresh: () => void;
@@ -2670,7 +2916,9 @@ function GameDashboard({
 }) {
   const dateGroups = useMemo(() => groupGamesByDateAndLocation(matchOptions), [matchOptions]);
   const statusText =
-    connectionStatus === "connected"
+    !isOnline
+      ? "Offline · ready"
+      : connectionStatus === "connected"
       ? "Live"
       : connectionStatus === "syncing"
         ? "Syncing"
@@ -2700,7 +2948,9 @@ function GameDashboard({
                 <span
                   className={cn(
                     "size-2 rounded-full",
-                    connectionStatus === "connected"
+                    !isOnline
+                      ? "bg-amber-400"
+                      : connectionStatus === "connected"
                       ? "bg-lime-400"
                       : connectionStatus === "syncing"
                         ? "bg-amber-400"
@@ -2725,7 +2975,7 @@ function GameDashboard({
           </div>
         </header>
 
-        <section aria-label="Scorer setup" className="relative z-30 grid shrink-0 grid-cols-2 gap-2 rounded-xl border border-neutral-800 bg-neutral-900 p-2 shadow-sm lg:grid-cols-[190px_minmax(240px,1fr)_auto_auto_auto]">
+        <section aria-label="Scorer setup" className="relative z-30 grid shrink-0 grid-cols-2 gap-2 rounded-xl border border-neutral-800 bg-neutral-900 p-2 shadow-sm lg:grid-cols-[190px_minmax(240px,1fr)_auto_auto_auto_auto]">
           <div className="col-span-2 grid grid-cols-2 gap-1 rounded-lg border border-neutral-800 bg-neutral-950 p-1 sm:col-span-1">
             <ModeButton
               active={statsMode === "youth"}
@@ -2766,6 +3016,16 @@ function GameDashboard({
               <PeriodSettingsControls settings={periodSettings} onChange={onPeriodSettingsChange} />
             </div>
           </details>
+
+          <button
+            className="flex h-11 items-center justify-center gap-2 rounded-lg border border-neutral-700 bg-neutral-950 px-3 text-xs font-semibold text-neutral-300 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500 disabled:cursor-not-allowed disabled:opacity-40"
+            disabled={!selectedGameId}
+            type="button"
+            onClick={() => selectedGameId && onManageRoster(selectedGameId)}
+          >
+            <ClipboardList size={15} />
+            Roster
+          </button>
 
           <button
             className="flex h-11 items-center justify-center gap-2 rounded-lg border border-amber-300 bg-amber-300 px-4 text-sm font-bold text-neutral-950 transition-colors hover:border-amber-200 hover:bg-amber-200 focus:outline-none focus:ring-2 focus:ring-amber-400/60"
@@ -2863,6 +3123,7 @@ function GameDashboard({
                           option={option}
                           selected={option.id === selectedGameId}
                           onActivate={onActivate}
+                          onManageRoster={() => onManageRoster(option.id)}
                           onSelect={() => onGameSelect(option.id)}
                         />
                       ))}
@@ -3031,6 +3292,8 @@ function CustomMatchDialog({
 }) {
   const [awayName, setAwayName] = useState("Visitor");
   const [homeName, setHomeName] = useState("Home");
+  const [awayCoach, setAwayCoach] = useState("");
+  const [homeCoach, setHomeCoach] = useState("");
   const [awayPlayers, setAwayPlayers] = useState<CustomPlayerInput[]>(emptyCustomRoster);
   const [homePlayers, setHomePlayers] = useState<CustomPlayerInput[]>(emptyCustomRoster);
 
@@ -3040,7 +3303,7 @@ function CustomMatchDialog({
 
   function start() {
     if (canStart) {
-      onStart({ awayName, homeName, awayPlayers, homePlayers });
+      onStart({ awayCoach, awayName, homeCoach, homeName, awayPlayers, homePlayers });
     }
   }
 
@@ -3076,20 +3339,24 @@ function CustomMatchDialog({
         <div className="grid min-h-0 flex-1 gap-px overflow-y-auto scrollbar-slim bg-neutral-800 sm:grid-cols-2">
           <CustomTeamColumn
             accent={AWAY_FALLBACK.base}
+            coach={awayCoach}
             label="Visitor"
             name={awayName}
             players={awayPlayers}
             validCount={awayValid}
             onNameChange={setAwayName}
+            onCoachChange={setAwayCoach}
             onPlayersChange={setAwayPlayers}
           />
           <CustomTeamColumn
             accent={HOME_FALLBACK.base}
+            coach={homeCoach}
             label="Home"
             name={homeName}
             players={homePlayers}
             validCount={homeValid}
             onNameChange={setHomeName}
+            onCoachChange={setHomeCoach}
             onPlayersChange={setHomePlayers}
           />
         </div>
@@ -3126,19 +3393,23 @@ function CustomMatchDialog({
 
 function CustomTeamColumn({
   accent,
+  coach,
   label,
   name,
   players,
   validCount,
   onNameChange,
+  onCoachChange,
   onPlayersChange,
 }: {
   accent: string;
+  coach: string;
   label: "Visitor" | "Home";
   name: string;
   players: CustomPlayerInput[];
   validCount: number;
   onNameChange: (name: string) => void;
+  onCoachChange: (name: string) => void;
   onPlayersChange: (players: CustomPlayerInput[]) => void;
 }) {
   function updateRow(index: number, field: keyof CustomPlayerInput, value: string) {
@@ -3160,6 +3431,13 @@ function CustomTeamColumn({
         placeholder={`${label} team name`}
         value={name}
         onChange={(event) => onNameChange(event.currentTarget.value)}
+      />
+      <input
+        aria-label={`${label} coach name`}
+        className="mb-2 h-10 w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3 text-sm font-semibold text-neutral-100 outline-none focus:ring-2 focus:ring-neutral-500"
+        placeholder="Coach name"
+        value={coach}
+        onChange={(event) => onCoachChange(event.currentTarget.value)}
       />
       <div className="space-y-1.5">
         {players.map((player, index) => (
@@ -3208,11 +3486,13 @@ function GameCard({
   option,
   selected,
   onActivate,
+  onManageRoster,
   onSelect,
 }: {
   option: MatchOption;
   selected: boolean;
   onActivate: (mode: StatsMode, gameId?: number) => void;
+  onManageRoster: () => void;
   onSelect: () => void;
 }) {
   return (
@@ -3243,7 +3523,15 @@ function GameCard({
           </span>
         </div>
       </button>
-      <div className="mt-3 grid grid-cols-2 gap-2 border-t border-neutral-800 pt-2.5">
+      <div className="mt-3 grid grid-cols-3 gap-2 border-t border-neutral-800 pt-2.5">
+        <button
+          className="flex h-9 items-center justify-center gap-1.5 rounded-lg border border-amber-500/40 bg-amber-500/10 text-xs font-semibold text-amber-200 transition-colors hover:bg-amber-500/20 focus:outline-none focus:ring-2 focus:ring-amber-500/50"
+          type="button"
+          onClick={onManageRoster}
+        >
+          <ClipboardList size={14} />
+          Roster
+        </button>
         <button
           className="h-9 rounded-lg border border-neutral-200 bg-neutral-100 text-xs font-semibold text-neutral-950 transition-colors hover:bg-white focus:outline-none focus:ring-2 focus:ring-neutral-400"
           type="button"
@@ -4061,7 +4349,7 @@ function RosterPanel({
     >
       <button
         className={cn(
-          "relative flex h-12 items-center gap-3 border-b border-neutral-800 px-3 pl-4 text-left transition-colors hover:bg-neutral-900/70 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-neutral-500 2xl:h-10",
+          "relative flex h-14 items-center gap-3 border-b border-neutral-800 px-3 pl-4 text-left transition-colors hover:bg-neutral-900/70 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-neutral-500 2xl:h-12",
           selectedTeam && "bg-neutral-900",
         )}
         type="button"
@@ -4069,7 +4357,12 @@ function RosterPanel({
       >
         <span aria-hidden className="pointer-events-none absolute inset-y-0 left-0 w-1" style={{ backgroundColor: cBase }} />
         <span className="text-[11px] font-black uppercase tracking-wide" style={{ color: cSoft }}>{team.label}</span>
-        <span className="min-w-0 flex-1 truncate text-sm font-bold text-neutral-200">{team.name}</span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-sm font-bold text-neutral-200">{team.name}</span>
+          <span className="block truncate text-[10px] font-semibold text-neutral-500">
+            {team.coach ? `Coach · ${team.coach}` : "Coach not set"}
+          </span>
+        </span>
         <span className="shrink-0 rounded-full border border-neutral-700 bg-neutral-900 px-2 py-0.5 font-mono text-[11px] font-black tabular-nums text-neutral-400">
           {starterCount}/5
         </span>
@@ -6224,25 +6517,38 @@ function JumpBallDialog({
 }
 
 function PreGameDialog({
+  isOnline,
+  isSaving,
   match,
+  onAddPlayer,
+  onChangeCoach,
   onChangeOfficial,
   onClose,
+  onRemovePlayer,
   onSave,
   onTogglePresent,
   onToggleStarter,
+  onUpdatePlayer,
 }: {
+  isOnline: boolean;
+  isSaving: boolean;
   match: LiveMatch;
+  onAddPlayer: (team: TeamId) => void;
+  onChangeCoach: (team: TeamId, value: string) => void;
   onChangeOfficial: (field: OfficialKey, value: string) => void;
   onClose: () => void;
+  onRemovePlayer: (team: TeamId, player: Player) => void;
   onSave: () => void;
   onTogglePresent: (team: TeamId, player: Player) => void;
   onToggleStarter: (team: TeamId, player: Player) => void;
+  onUpdatePlayer: (team: TeamId, player: Player, values: Pick<Player, "name" | "number">) => void;
 }) {
   const awayPresent = match.away.presentCount;
   const homePresent = match.home.presentCount;
   const diff = Math.abs(awayPresent - homePresent);
   const shortTeam = diff === 0 ? undefined : awayPresent < homePresent ? match.away : match.home;
   const eqPoints = diff * 2;
+  const validationErrors = validateGameDayRoster(match);
 
   return (
     <div
@@ -6260,6 +6566,14 @@ function PreGameDialog({
             <div className="text-[10px] font-black uppercase tracking-widest text-amber-400">Pre-Game Setup</div>
             <h2 className="truncate text-lg font-black text-neutral-50">{match.matchName}</h2>
           </div>
+          <span className={cn(
+            "ml-auto hidden shrink-0 rounded-full border px-2.5 py-1 text-[10px] font-black uppercase sm:inline-flex",
+            isOnline
+              ? "border-lime-500/40 bg-lime-500/10 text-lime-300"
+              : "border-amber-500/40 bg-amber-500/10 text-amber-300",
+          )}>
+            {isOnline ? "Online sync" : "Offline · saved here"}
+          </span>
           <button
             aria-label="Close pre-game"
             className="flex size-9 items-center justify-center rounded-lg border border-neutral-800 bg-neutral-950 text-neutral-400 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500"
@@ -6324,37 +6638,50 @@ function PreGameDialog({
             <PreGameTeamColumn
               side="away"
               team={match.away}
+              onAddPlayer={onAddPlayer}
+              onChangeCoach={onChangeCoach}
+              onRemovePlayer={onRemovePlayer}
               onTogglePresent={onTogglePresent}
               onToggleStarter={onToggleStarter}
+              onUpdatePlayer={onUpdatePlayer}
             />
             <PreGameTeamColumn
               side="home"
               team={match.home}
+              onAddPlayer={onAddPlayer}
+              onChangeCoach={onChangeCoach}
+              onRemovePlayer={onRemovePlayer}
               onTogglePresent={onTogglePresent}
               onToggleStarter={onToggleStarter}
+              onUpdatePlayer={onUpdatePlayer}
             />
           </div>
         </div>
 
         <div className="flex items-center justify-between gap-3 border-t border-neutral-800 px-4 py-3">
-          <div className="min-w-0 truncate text-xs font-semibold text-neutral-400 tabular-nums">
-            {match.away.players.length}/5 · {match.home.players.length}/5 starters set
+          <div className={cn(
+            "min-w-0 truncate text-xs font-semibold tabular-nums",
+            validationErrors.length > 0 ? "text-red-300" : "text-neutral-400",
+          )} title={validationErrors.join(" ")}>
+            {validationErrors[0] ?? `${match.away.players.length}/5 · ${match.home.players.length}/5 starters set`}
           </div>
           <div className="flex shrink-0 items-center gap-2">
             <button
               className="h-10 rounded-lg border border-neutral-800 bg-neutral-950 px-4 text-xs font-black uppercase tracking-wide text-neutral-300 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500"
+              disabled={isSaving}
               type="button"
               onClick={onClose}
             >
               Cancel
             </button>
             <button
-              className="flex h-10 items-center gap-2 rounded-lg border border-amber-500/40 bg-amber-500/15 px-4 text-xs font-black uppercase tracking-wide text-amber-200 transition-colors hover:bg-amber-500/25 focus:outline-none focus:ring-2 focus:ring-amber-500/50"
+              className="flex h-10 items-center gap-2 rounded-lg border border-amber-500/40 bg-amber-500/15 px-4 text-xs font-black uppercase tracking-wide text-amber-200 transition-colors hover:bg-amber-500/25 focus:outline-none focus:ring-2 focus:ring-amber-500/50 disabled:cursor-not-allowed disabled:opacity-40"
+              disabled={isSaving || validationErrors.length > 0}
               type="button"
               onClick={onSave}
             >
-              <ClipboardList size={16} />
-              Save Roster
+              {isSaving ? <RefreshCw size={16} /> : <ClipboardList size={16} />}
+              {isSaving ? "Saving" : isOnline ? "Save & sync" : "Save offline"}
             </button>
           </div>
         </div>
@@ -6389,90 +6716,199 @@ function OfficialField({
 function PreGameTeamColumn({
   side,
   team,
+  onAddPlayer,
+  onChangeCoach,
+  onRemovePlayer,
   onTogglePresent,
   onToggleStarter,
+  onUpdatePlayer,
 }: {
   side: TeamId;
   team: Team;
+  onAddPlayer: (team: TeamId) => void;
+  onChangeCoach: (team: TeamId, value: string) => void;
+  onRemovePlayer: (team: TeamId, player: Player) => void;
   onTogglePresent: (team: TeamId, player: Player) => void;
   onToggleStarter: (team: TeamId, player: Player) => void;
+  onUpdatePlayer: (team: TeamId, player: Player, values: Pick<Player, "name" | "number">) => void;
 }) {
-  const roster = [...team.players, ...team.bench].sort(
-    (a, b) => (Number(a.number) || 0) - (Number(b.number) || 0),
-  );
+  const roster = [...team.players, ...team.bench];
   const starterKeys = new Set(team.players.map(getPlayerKey));
   const starterFull = team.players.length >= 5;
+  const [pendingRemoval, setPendingRemoval] = useState<Player | undefined>(undefined);
   return (
     <div className="bg-neutral-900">
-      <div className="flex items-center justify-between gap-2 px-4 py-2">
-        <span className="min-w-0 truncate text-[11px] font-black uppercase tracking-wide" style={{ color: `var(--c-${side}-soft)` }}>
-          {team.label} · {team.name}
-        </span>
-        <span className="shrink-0 text-[11px] font-black uppercase tracking-wide text-neutral-500 tabular-nums">
-          {team.players.length}/5 · {team.presentCount} present
-        </span>
+      <div className="border-b border-neutral-800 px-3 py-3">
+        <div className="flex items-center justify-between gap-2">
+          <span className="min-w-0 truncate text-[11px] font-black uppercase tracking-wide" style={{ color: `var(--c-${side}-soft)` }}>
+            {team.label} · {team.name}
+          </span>
+          <span className="shrink-0 text-[11px] font-black uppercase text-neutral-500 tabular-nums">
+            {roster.length} rostered · {team.presentCount} here · {team.players.length}/5 starting
+          </span>
+        </div>
+        <label className="mt-2 block">
+          <span className="mb-1 block text-[10px] font-black uppercase text-neutral-500">Coach name</span>
+          <input
+            aria-label={`${team.label} coach name`}
+            className="h-10 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 text-sm font-semibold text-neutral-100 outline-none placeholder:text-neutral-600 focus:ring-2 focus:ring-neutral-500"
+            placeholder="Enter coach name"
+            value={team.coach ?? ""}
+            onChange={(event) => onChangeCoach(side, event.currentTarget.value)}
+          />
+        </label>
       </div>
-      <div className="max-h-[46vh] overflow-y-auto scrollbar-slim px-2 pb-2">
+      <div className="grid grid-cols-[58px_minmax(0,1fr)_auto] gap-2 px-3 pb-1 pt-2 text-[9px] font-black uppercase text-neutral-600">
+        <span>Jersey</span>
+        <span>Player name</span>
+        <span className="pr-2">Here · Start</span>
+      </div>
+      <div className="max-h-[42vh] overflow-y-auto scrollbar-slim px-2 pb-2">
         {roster.length === 0 ? (
-          <div className="px-2 py-6 text-center text-xs font-semibold text-neutral-500">
-            No roster loaded for this team.
+          <div className="rounded-lg border border-dashed border-neutral-800 px-2 py-6 text-center">
+            <Users className="mx-auto text-neutral-600" size={20} />
+            <div className="mt-2 text-xs font-semibold text-neutral-400">No players yet</div>
+            <button
+              className="mt-3 h-9 rounded-lg border border-neutral-700 bg-neutral-950 px-3 text-[11px] font-black uppercase text-neutral-300 focus:outline-none focus:ring-2 focus:ring-neutral-500"
+              type="button"
+              onClick={() => onAddPlayer(side)}
+            >
+              Add first player
+            </button>
           </div>
         ) : (
           roster.map((player) => {
             const key = getPlayerKey(player);
             const isStarter = starterKeys.has(key);
             const present = player.present ?? true;
+            const playerError = getGameDayPlayerError(team, player);
+            const canRemove = !player.id || player.id < 0;
             return (
-              <div
-                className={cn(
-                  "mb-1 grid grid-cols-[40px_minmax(0,1fr)_auto] items-center gap-2 rounded-lg border border-neutral-800 bg-neutral-950 px-2 py-2",
-                  !present && "opacity-50",
-                )}
-                key={key}
-              >
-                <span className="font-mono text-lg font-black tabular-nums text-neutral-100">{player.number}</span>
-                <span className="min-w-0">
-                  <span className="block truncate text-sm font-bold text-neutral-100">{player.name}</span>
-                  <span className="block text-[10px] font-black uppercase tracking-wide text-neutral-500">
-                    {present ? "Present" : "Absent"}
-                    {isStarter ? " · Starter" : ""}
+              <div className="mb-1" key={key}>
+                <div
+                  className={cn(
+                    "grid grid-cols-[58px_minmax(0,1fr)_auto] items-center gap-2 rounded-lg border bg-neutral-950 p-2",
+                    playerError ? "border-red-500/50" : "border-neutral-800",
+                    !present && "opacity-60",
+                  )}
+                >
+                  <input
+                    aria-label={`${team.label} jersey number`}
+                    className="h-9 w-full rounded-md border border-neutral-700 bg-neutral-900 px-2 text-center font-mono text-base font-black tabular-nums text-neutral-100 outline-none focus:ring-2 focus:ring-neutral-500"
+                    inputMode="numeric"
+                    placeholder="#"
+                    value={player.number}
+                    onChange={(event) => onUpdatePlayer(side, player, {
+                      name: player.name,
+                      number: event.currentTarget.value.replace(/[^0-9]/g, "").slice(0, 3),
+                    })}
+                  />
+                  <input
+                    aria-label={`${team.label} player name`}
+                    className="h-9 min-w-0 w-full rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm font-semibold text-neutral-100 outline-none placeholder:text-neutral-600 focus:ring-2 focus:ring-neutral-500"
+                    placeholder="Full name"
+                    value={player.name}
+                    onChange={(event) => onUpdatePlayer(side, player, {
+                      name: event.currentTarget.value,
+                      number: player.number,
+                    })}
+                  />
+                  <span className="flex items-center gap-1">
+                    <button
+                      aria-label={present ? "Mark absent" : "Mark present"}
+                      className={cn(
+                        "flex size-9 items-center justify-center rounded-md border transition-colors focus:outline-none focus:ring-2",
+                        present
+                          ? "border-lime-500/40 bg-lime-500/10 text-lime-300 focus:ring-lime-500/50"
+                          : "border-neutral-700 bg-neutral-900 text-neutral-500 focus:ring-neutral-500",
+                      )}
+                      title={present ? "Present" : "Absent"}
+                      type="button"
+                      onClick={() => onTogglePresent(side, player)}
+                    >
+                      <Check size={14} />
+                    </button>
+                    <button
+                      aria-label={isStarter ? "Remove starter" : "Add starter"}
+                      className={cn(
+                        "flex size-9 items-center justify-center rounded-md border transition-colors focus:outline-none focus:ring-2",
+                        isStarter
+                          ? "border-amber-500/50 bg-amber-500/15 text-amber-300 focus:ring-amber-500/50"
+                          : "border-neutral-700 bg-neutral-900 text-neutral-500 focus:ring-neutral-500",
+                        (!present || (!isStarter && starterFull)) && "cursor-not-allowed opacity-40",
+                      )}
+                      disabled={!present || (!isStarter && starterFull)}
+                      title={isStarter ? "Starter" : "Add to starting five"}
+                      type="button"
+                      onClick={() => onToggleStarter(side, player)}
+                    >
+                      <Star className={isStarter ? "fill-amber-300" : ""} size={15} />
+                    </button>
+                    {canRemove && (
+                      <button
+                        aria-label={`Remove ${player.name || "new player"}`}
+                        className="flex size-9 items-center justify-center rounded-md border border-neutral-700 bg-neutral-900 text-neutral-500 transition-colors hover:text-red-300 focus:outline-none focus:ring-2 focus:ring-red-500/50"
+                        type="button"
+                        onClick={() => setPendingRemoval(player)}
+                      >
+                        <CircleX size={15} />
+                      </button>
+                    )}
                   </span>
-                </span>
-                <span className="flex items-center gap-1.5">
-                  <button
-                    aria-label={present ? "Mark absent" : "Mark present"}
-                    className={cn(
-                      "flex h-8 items-center gap-1 rounded-md border px-2 text-[10px] font-black uppercase tracking-wide transition-colors focus:outline-none focus:ring-2",
-                      present
-                        ? "border-lime-500/40 bg-lime-500/10 text-lime-300 hover:bg-lime-500/20 focus:ring-lime-500/50"
-                        : "border-neutral-700 bg-neutral-900 text-neutral-500 hover:bg-neutral-800 focus:ring-neutral-500",
-                    )}
-                    type="button"
-                    onClick={() => onTogglePresent(side, player)}
-                  >
-                    <Check size={13} />
-                    {present ? "Here" : "Out"}
-                  </button>
-                  <button
-                    aria-label={isStarter ? "Remove starter" : "Add starter"}
-                    className={cn(
-                      "flex size-8 items-center justify-center rounded-md border transition-colors focus:outline-none focus:ring-2",
-                      isStarter
-                        ? "border-amber-500/50 bg-amber-500/15 text-amber-300 focus:ring-amber-500/50"
-                        : "border-neutral-700 bg-neutral-900 text-neutral-500 hover:bg-neutral-800 focus:ring-neutral-500",
-                      !isStarter && starterFull && "cursor-not-allowed opacity-40",
-                    )}
-                    disabled={!isStarter && starterFull}
-                    type="button"
-                    onClick={() => onToggleStarter(side, player)}
-                  >
-                    <Star className={isStarter ? "fill-amber-300" : ""} size={15} />
-                  </button>
-                </span>
+                </div>
+                {playerError && <div className="px-2 pt-1 text-[10px] font-semibold text-red-300">{playerError}</div>}
               </div>
             );
           })
         )}
+        {roster.length > 0 && roster.length < 30 && (
+          <button
+            className="mt-2 flex h-10 w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-neutral-700 bg-neutral-950 text-[11px] font-black uppercase text-neutral-400 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500"
+            type="button"
+            onClick={() => onAddPlayer(side)}
+          >
+            <Plus size={14} />
+            Add player
+          </button>
+        )}
+        <p className="mt-2 px-1 text-[10px] text-pretty text-neutral-600">
+          Existing team players stay in Odoo; mark them out for this game. New game-day players can be removed before sync.
+        </p>
+      </div>
+      {pendingRemoval && (
+        <ConfirmPlayerRemovalDialog
+          player={pendingRemoval}
+          onCancel={() => setPendingRemoval(undefined)}
+          onConfirm={() => {
+            onRemovePlayer(side, pendingRemoval);
+            setPendingRemoval(undefined);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function ConfirmPlayerRemovalDialog({
+  player,
+  onCancel,
+  onConfirm,
+}: {
+  player: Player;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div aria-modal="true" className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4" role="alertdialog">
+      <div className="w-full max-w-sm rounded-xl border border-red-500/50 bg-neutral-900 p-4 shadow-xl">
+        <h3 className="text-base font-black text-balance text-neutral-50">Remove this new player?</h3>
+        <p className="mt-1 text-sm text-pretty text-neutral-400">
+          #{player.number || "—"} {player.name || "Unnamed player"} has not synced yet and will be removed from this game-day roster.
+        </p>
+        <div className="mt-4 flex justify-end gap-2">
+          <button autoFocus className="h-10 rounded-lg border border-neutral-700 bg-neutral-950 px-4 text-xs font-bold text-neutral-200 focus:outline-none focus:ring-2 focus:ring-neutral-500" type="button" onClick={onCancel}>Cancel</button>
+          <button className="h-10 rounded-lg border border-red-500/50 bg-red-500/15 px-4 text-xs font-bold text-red-200 focus:outline-none focus:ring-2 focus:ring-red-500/50" type="button" onClick={onConfirm}>Remove player</button>
+        </div>
       </div>
     </div>
   );
@@ -7283,8 +7719,15 @@ function readStoredLiveMatch(gameId: number | undefined): LiveMatch | undefined 
     return undefined;
   }
 
-  const stored = readStoredJson<StoredLiveMatch>(STORAGE_KEYS.liveMatch);
-  return stored && stored.gameId === gameId && stored.match ? stored.match : undefined;
+  const storedMatches = readStoredJson<Record<string, StoredLiveMatch>>(STORAGE_KEYS.liveMatches);
+  const storedForGame = storedMatches?.[String(gameId)];
+  if (storedForGame?.match) {
+    return storedForGame.match;
+  }
+
+  // Backward compatibility with the original single-game offline snapshot.
+  const legacy = readStoredJson<StoredLiveMatch>(STORAGE_KEYS.liveMatch);
+  return legacy && legacy.gameId === gameId && legacy.match ? legacy.match : undefined;
 }
 
 function readStoredSyncLog(apiEnabled: boolean) {
@@ -7429,6 +7872,89 @@ function getDefaultClockSeconds(period: LiveMatch["period"], settings: PeriodSet
   return period > settings.periodCount ? settings.overtimeSeconds : settings.periodSeconds;
 }
 
+let localPlayerCounter = 0;
+
+function makeLocalPlayerId(team: TeamId | "away" | "home") {
+  localPlayerCounter += 1;
+  const random = typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? crypto.randomUUID()
+    : `${Date.now().toString(36)}-${localPlayerCounter.toString(36)}`;
+  return `${team}:${random}`;
+}
+
+function buildScheduledMatchShell(option: MatchOption, settings: PeriodSettings): LiveMatch {
+  const makeTeam = (
+    label: "Visitor" | "Home",
+    name: string,
+    id?: number,
+  ): Team => ({
+    bench: [],
+    fouls: 0,
+    id,
+    label,
+    name,
+    players: [],
+    presentCount: 0,
+    timeouts: 0,
+  });
+
+  return {
+    away: makeTeam("Visitor", option.awayName, option.awayTeamId),
+    awayScore: option.awayScore,
+    clock: secondsToClock(settings.periodSeconds),
+    events: [],
+    gameId: option.id,
+    home: makeTeam("Home", option.homeName, option.homeTeamId),
+    homeScore: option.homeScore,
+    matchName: option.name,
+    period: 1,
+    periodLabel: getPeriodLabel(1, settings.periodCount),
+    possession: "home",
+    shotClock: FULL_SHOT_CLOCK,
+    status: option.status,
+    syncMessage: "Offline schedule copy — changes are saved on this device.",
+  };
+}
+
+function validateGameDayRoster(match: LiveMatch): string[] {
+  const errors: string[] = [];
+  for (const side of ["away", "home"] as TeamId[]) {
+    const team = match[side];
+    const roster = getRoster(team);
+    if (roster.length === 0) {
+      errors.push(`${team.name}: add at least one player.`);
+      continue;
+    }
+    for (const player of roster) {
+      const error = getGameDayPlayerError(team, player);
+      if (error) {
+        errors.push(`${team.name}: ${error}`);
+      }
+    }
+  }
+  return [...new Set(errors)];
+}
+
+function getGameDayPlayerError(team: Team, player: Player): string | undefined {
+  const number = player.number.trim();
+  if (!number) {
+    return "Jersey number is required.";
+  }
+  if (!/^\d{1,3}$/.test(number)) {
+    return "Use a jersey number from 0 to 999.";
+  }
+  if (!player.name.trim()) {
+    return `Player #${number} needs a name.`;
+  }
+  const duplicateCount = getRoster(team).filter(
+    (candidate) => candidate.number.trim() === number,
+  ).length;
+  if (duplicateCount > 1) {
+    return `Jersey #${number} is already used on this team.`;
+  }
+  return undefined;
+}
+
 function getRoster(team: Team) {
   return [...team.players, ...team.bench];
 }
@@ -7519,7 +8045,7 @@ function resolveSelectedPlayer(roster: Player[], selectedKey?: string) {
 }
 
 function getPlayerKey(player: Player) {
-  return player.id ? `id:${player.id}` : `local:${player.number}:${player.name}`;
+  return player.localId ? `local:${player.localId}` : player.id ? `id:${player.id}` : `local:${player.number}:${player.name}`;
 }
 
 function formatPlayer(player: Player) {
@@ -7547,6 +8073,155 @@ function getEventPlayerNumber(event: GameEvent, teams: Record<TeamId, Team>): st
 
   const byName = roster.find((player) => player.name === event.player);
   return byName ? `#${byName.number}` : "—";
+}
+
+function writeStoredGameDayRoster(match: LiveMatch) {
+  if (!match.gameId) {
+    return;
+  }
+  const store = readStoredJson<GameDayRosterStore>(STORAGE_KEYS.gameDayRosters) ?? {};
+  const teams = Object.fromEntries(
+    (["away", "home"] as TeamId[]).map((side) => [
+      side,
+      {
+        coach: match[side].coach,
+        players: getRoster(match[side]),
+        starterKeys: match[side].players.map(getPlayerKey),
+      },
+    ]),
+  ) as StoredGameDayRoster["teams"];
+  writeStoredJson(STORAGE_KEYS.gameDayRosters, {
+    ...store,
+    [String(match.gameId)]: { savedAt: Date.now(), teams },
+  } satisfies GameDayRosterStore);
+}
+
+function applyStoredGameDayRoster(match: LiveMatch): LiveMatch {
+  if (!match.gameId) {
+    return match;
+  }
+  const store = readStoredJson<GameDayRosterStore>(STORAGE_KEYS.gameDayRosters);
+  const stored = store?.[String(match.gameId)];
+  if (!stored) {
+    return match;
+  }
+
+  return (["away", "home"] as TeamId[]).reduce((nextMatch, side) => {
+    const team = nextMatch[side];
+    const storedTeam = stored.teams[side];
+    if (!storedTeam) {
+      return nextMatch;
+    }
+    const loadedRoster = getRoster(team);
+    const resolvedRoster = storedTeam.players.map((storedPlayer) => {
+      const loaded = loadedRoster.find((player) =>
+        (storedPlayer.id && storedPlayer.id > 0 && player.id === storedPlayer.id) ||
+        (storedPlayer.localId && player.localId === storedPlayer.localId) ||
+        (player.number === storedPlayer.number && player.name === storedPlayer.name),
+      );
+      return loaded
+        ? {
+            ...storedPlayer,
+            ...loaded,
+            localId: storedPlayer.localId ?? loaded.localId,
+            name: storedPlayer.name,
+            number: storedPlayer.number,
+            present: storedPlayer.present,
+          }
+        : storedPlayer;
+    });
+    const starterSet = new Set(storedTeam.starterKeys);
+    const players = resolvedRoster
+      .filter((player) => starterSet.has(getPlayerKey(player)))
+      .slice(0, 5)
+      .map((player) => ({ ...player, active: true }));
+    const activeSet = new Set(players.map(getPlayerKey));
+    const bench = resolvedRoster
+      .filter((player) => !activeSet.has(getPlayerKey(player)))
+      .map((player) => ({ ...player, active: false }));
+    const presentCount = resolvedRoster.filter((player) => player.present ?? true).length;
+    return {
+      ...nextMatch,
+      [side]: {
+        ...team,
+        bench,
+        coach: storedTeam.coach,
+        players,
+        presentCount,
+      },
+    };
+  }, match);
+}
+
+function mergeResolvedRosterIds(current: LiveMatch, resolved: LiveMatch): LiveMatch {
+  if (current.gameId !== resolved.gameId) {
+    return current;
+  }
+  const next = (["away", "home"] as TeamId[]).reduce((nextMatch, side) => {
+    const resolvedRoster = getRoster(resolved[side]);
+    const update = (player: Player): Player => {
+      const synced = resolvedRoster.find((candidate) =>
+        (player.localId && candidate.localId === player.localId) ||
+        (player.id && player.id > 0 && candidate.id === player.id) ||
+        (candidate.number === player.number && candidate.name === player.name),
+      );
+      return synced?.id ? { ...player, id: synced.id, localId: player.localId ?? synced.localId } : player;
+    };
+    return {
+      ...nextMatch,
+      [side]: {
+        ...nextMatch[side],
+        bench: nextMatch[side].bench.map(update),
+        id: resolved[side].id ?? nextMatch[side].id,
+        players: nextMatch[side].players.map(update),
+      },
+    };
+  }, current);
+
+  return {
+    ...next,
+    events: next.events.map((event) => {
+      if (event.playerId && event.playerId > 0) {
+        return event;
+      }
+      const jersey = event.player.match(/^#(\d+)/)?.[1];
+      const player = jersey
+        ? getRoster(next[event.team]).find((candidate) => candidate.number === jersey)
+        : undefined;
+      return player?.id ? { ...event, playerId: player.id } : event;
+    }),
+  };
+}
+
+function rewriteOutboxRoster(op: OutboxOp, resolved: LiveMatch): OutboxOp {
+  const replacePlayer = (player: Player | undefined, side: TeamId): Player | undefined => {
+    if (!player) {
+      return undefined;
+    }
+    const synced = getRoster(resolved[side]).find((candidate) =>
+      (player.localId && candidate.localId === player.localId) ||
+      (player.id && player.id > 0 && candidate.id === player.id) ||
+      (candidate.number === player.number && candidate.name === player.name),
+    );
+    return synced?.id ? { ...player, id: synced.id, localId: player.localId ?? synced.localId } : player;
+  };
+
+  if (op.kind === "action") {
+    const input = op.input;
+    return {
+      ...op,
+      input: {
+        ...input,
+        match: mergeResolvedRosterIds(input.match, resolved),
+        opponentTurnoverPlayer: input.opponentTurnoverTeam
+          ? replacePlayer(input.opponentTurnoverPlayer, input.opponentTurnoverTeam)
+          : input.opponentTurnoverPlayer,
+        player: replacePlayer(input.player, input.selectedTeam) ?? input.player,
+      },
+    };
+  }
+
+  return { ...op, match: mergeResolvedRosterIds(op.match, resolved) };
 }
 
 function applyStoredStarters(match: LiveMatch): LiveMatch {
@@ -8042,6 +8717,9 @@ function isActionAllowedForMode(action: ActionKey, mode: StatsMode) {
 }
 
 function isSamePlayer(player: Player, currentPlayer: Player) {
+  if (player.localId && currentPlayer.localId) {
+    return player.localId === currentPlayer.localId;
+  }
   if (player.id && currentPlayer.id) {
     return player.id === currentPlayer.id;
   }

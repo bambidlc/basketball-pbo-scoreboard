@@ -16,6 +16,8 @@ import {
   PLAYER_STAT_OPTIONAL_FIELDS,
   TEAM,
   TEAM_FIELDS,
+  TEAM_STAFF,
+  TEAM_STAFF_FIELDS,
 } from "./schema";
 import { OdooClient, type OdooRecord } from "./odooClient";
 import { resolveClubColor } from "./colorPalette";
@@ -65,6 +67,9 @@ export type Player = {
   freeThrowsAttempted: number;
   freeThrowsMade: number;
   id?: number;
+  // Stable device identity for players entered at game time. It survives the transition
+  // from an offline-only player to a real Odoo player id, keeping selections/outbox ops valid.
+  localId?: string;
   name: string;
   number: string;
   offensiveRebounds: number;
@@ -94,6 +99,7 @@ export type Team = {
   // color used as the team accent; `textColor` is the club's letter color for text that
   // sits on top of `color`. Both are undefined when the club has no color set.
   color?: string;
+  coach?: string;
   fouls: number;
   id?: number;
   label: "Visitor" | "Home";
@@ -168,9 +174,11 @@ export type LoadMatchResult = {
 export type MatchOption = {
   awayName: string;
   awayScore: number;
+  awayTeamId?: number;
   datetime?: string;
   homeName: string;
   homeScore: number;
+  homeTeamId?: number;
   id: number;
   location?: string;
   name: string;
@@ -203,6 +211,7 @@ export type SaveMatchActionInput = {
 export type SaveMatchActionResult = {
   eventId?: number;
   log: SyncLogEntry;
+  match?: LiveMatch;
   opponentTurnoverStatId?: number;
   playerStatId?: number;
   saved: boolean;
@@ -219,6 +228,7 @@ export type SaveMatchCorrectionInput = {
 type TeamSide = {
   accentColor?: string;
   color?: string;
+  coach?: string;
   fallback: Team;
   fouls?: number;
   label: "Visitor" | "Home";
@@ -343,9 +353,11 @@ export async function loadMatchOptions(client: OdooClient): Promise<MatchOption[
       return {
         awayName: relationName(game[GAME.awayTeam]) || "Visitor",
         awayScore: numberValue(game[GAME.awayScore]),
+        awayTeamId: relationId(game[GAME.awayTeam]),
         datetime: stringValue(game[GAME.datetime]),
         homeName: relationName(game[GAME.homeTeam]) || "Home",
         homeScore: numberValue(game[GAME.homeScore]),
+        homeTeamId: relationId(game[GAME.homeTeam]),
         id,
         location: stringValue(game[GAME.location]),
         name:
@@ -561,6 +573,178 @@ export async function saveGameAttendance(
       log: createLog("error", "Roster sync failed", getErrorMessage(error)),
       saved: false,
     };
+  }
+}
+
+/**
+ * Syncs the editable game-day roster before attendance/stat writes. New offline players
+ * are matched by team + jersey before creation, making retries safe after a dropped
+ * response. The returned match contains the real ids and is used to repair queued stats.
+ */
+export async function saveGameDayRoster(
+  client: OdooClient,
+  match: LiveMatch,
+): Promise<SaveMatchActionResult> {
+  if (!client.enabled || !match.gameId) {
+    return {
+      log: createLog("warning", "Roster kept offline", "It will sync when a live connection is available."),
+      match,
+      saved: false,
+    };
+  }
+
+  try {
+    let resolvedMatch = match;
+    if (!match.away.id || !match.home.id) {
+      const [game] = await client.read<OdooRecord>(
+        MODELS.game,
+        [match.gameId],
+        ["id", GAME.awayTeam, GAME.homeTeam],
+      );
+      resolvedMatch = {
+        ...match,
+        away: { ...match.away, id: match.away.id ?? relationId(game?.[GAME.awayTeam]) },
+        home: { ...match.home, id: match.home.id ?? relationId(game?.[GAME.homeTeam]) },
+      };
+    }
+    if (!resolvedMatch.away.id || !resolvedMatch.home.id) {
+      throw new Error("The scheduled game's team links are not available yet.");
+    }
+    let syncedPlayers = 0;
+    let syncedCoaches = 0;
+
+    for (const side of ["away", "home"] as TeamId[]) {
+      const team = resolvedMatch[side];
+      if (!team.id) {
+        continue;
+      }
+
+      const originalStarters = new Set(team.players.map(getSyncPlayerKey));
+      const resolvedRoster: Player[] = [];
+      for (const player of [...team.players, ...team.bench]) {
+        const number = player.number.trim();
+        const name = player.name.trim();
+        if (!number || !name) {
+          continue;
+        }
+
+        const jersey = Number(number);
+        if (!Number.isInteger(jersey) || jersey < 0 || jersey > 999) {
+          continue;
+        }
+
+        const values = {
+          [PLAYER.active]: true,
+          [PLAYER.jerseyNumber]: jersey,
+          [PLAYER.name]: name,
+          [PLAYER.team]: team.id,
+        };
+        let playerId = player.id && player.id > 0 ? player.id : undefined;
+
+        if (!playerId) {
+          const existing = await client.searchRead<OdooRecord>(
+            MODELS.player,
+            [
+              [PLAYER.team, "=", team.id],
+              [PLAYER.jerseyNumber, "=", jersey],
+            ],
+            ["id"],
+            { limit: 1 },
+          );
+          playerId = numberValue(existing[0]?.id) || undefined;
+        }
+
+        if (playerId) {
+          await client.write(MODELS.player, [playerId], values);
+        } else {
+          playerId = await client.create(MODELS.player, values);
+        }
+
+        if (!playerId) {
+          throw new Error(`Could not sync #${number} ${name}.`);
+        }
+
+        resolvedRoster.push({ ...player, id: playerId, name, number });
+        syncedPlayers += 1;
+      }
+
+      const starters = resolvedRoster
+        .filter((player) => originalStarters.has(getSyncPlayerKey(player)))
+        .slice(0, 5)
+        .map((player) => ({ ...player, active: true }));
+      const starterKeys = new Set(starters.map(getSyncPlayerKey));
+      const bench = resolvedRoster
+        .filter((player) => !starterKeys.has(getSyncPlayerKey(player)))
+        .map((player) => ({ ...player, active: false }));
+      const presentCount = resolvedRoster.filter((player) => player.present ?? true).length;
+      const resolvedTeam = { ...team, bench, players: starters, presentCount };
+
+      if (team.coach?.trim()) {
+        const coachSaved = await upsertTeamCoach(client, team.id, team.coach.trim());
+        syncedCoaches += coachSaved ? 1 : 0;
+      }
+
+      resolvedMatch = { ...resolvedMatch, [side]: resolvedTeam };
+    }
+
+    const attendanceResult = await saveGameAttendance(client, resolvedMatch);
+    const detail = compactMessages([
+      `${syncedPlayers} players and ${syncedCoaches} coach names synced.`,
+      attendanceResult.saved
+        ? attendanceResult.log.detail ?? "Attendance synced."
+        : "Attendance remains safely stored on this device.",
+    ]);
+
+    return {
+      log: createLog(
+        attendanceResult.saved ? "success" : "warning",
+        attendanceResult.saved ? "Game-day roster synced" : "Roster players synced",
+        detail,
+      ),
+      match: resolvedMatch,
+      saved: true,
+    };
+  } catch (error) {
+    return {
+      log: createLog("error", "Roster sync failed", getErrorMessage(error)),
+      match,
+      saved: false,
+    };
+  }
+}
+
+function getSyncPlayerKey(player: Player) {
+  return player.localId ?? (player.id ? `id:${player.id}` : `local:${player.number}:${player.name}`);
+}
+
+async function upsertTeamCoach(client: OdooClient, teamId: number, name: string) {
+  try {
+    const existing = await client.searchRead<OdooRecord>(
+      MODELS.teamStaff,
+      [
+        [TEAM_STAFF.team, "=", teamId],
+        [TEAM_STAFF.role, "=", "Coach"],
+      ],
+      ["id"],
+      { limit: 1 },
+    );
+    const values = {
+      [TEAM_STAFF.name]: name,
+      [TEAM_STAFF.role]: "Coach",
+      [TEAM_STAFF.team]: teamId,
+    };
+    const staffId = numberValue(existing[0]?.id) || undefined;
+
+    if (staffId) {
+      await client.write(MODELS.teamStaff, [staffId], values);
+    } else {
+      await client.create(MODELS.teamStaff, values);
+    }
+    return true;
+  } catch {
+    // Coach names still live in the device's per-game roster when the optional staff model
+    // is unavailable. Player/attendance syncing must not be held hostage by that add-on.
+    return false;
   }
 }
 
@@ -851,6 +1035,27 @@ async function loadAttendanceForGame(
   }
 }
 
+async function loadTeamStaff(
+  client: OdooClient,
+  teamIds: number[],
+): Promise<OdooRecord[]> {
+  if (teamIds.length === 0) {
+    return [];
+  }
+
+  try {
+    return await client.searchRead<OdooRecord>(
+      MODELS.teamStaff,
+      [[TEAM_STAFF.team, "in", teamIds]],
+      TEAM_STAFF_FIELDS,
+      { order: "id asc" },
+    );
+  } catch {
+    // Staff is an optional enhancement. Older Odoo databases can still score normally.
+    return [];
+  }
+}
+
 async function loadGameEvents(
   client: OdooClient,
   gameId?: number,
@@ -892,7 +1097,7 @@ async function normalizeGameRecord(
   const awayTeamId = relationId(game[GAME.awayTeam]);
   const homeTeamId = relationId(game[GAME.homeTeam]);
   const teamIds = [awayTeamId, homeTeamId].filter((id): id is number => Boolean(id));
-  const [teams, players, stats, events, attendance] = await Promise.all([
+  const [teams, players, stats, events, attendance, teamStaff] = await Promise.all([
     teamIds.length > 0 ? client.read<OdooRecord>(MODELS.team, teamIds, TEAM_FIELDS) : [],
     teamIds.length > 0
       ? client.searchRead<OdooRecord>(
@@ -905,6 +1110,7 @@ async function normalizeGameRecord(
     loadStatsForGame(client, gameId, capabilities),
     loadGameEvents(client, gameId, awayTeamId, homeTeamId, capabilities),
     loadAttendanceForGame(client, gameId, capabilities),
+    loadTeamStaff(client, teamIds),
   ]);
 
   const teamsById = new Map(teams.map((team) => [numberValue(team.id), team]));
@@ -922,10 +1128,27 @@ async function normalizeGameRecord(
 
   const awayColors = awayTeamId ? clubColorsByTeamId.get(awayTeamId) : undefined;
   const homeColors = homeTeamId ? clubColorsByTeamId.get(homeTeamId) : undefined;
+  const coachByTeamId = new Map<number, string>();
+  for (const staff of teamStaff) {
+    const teamId = relationId(staff[TEAM_STAFF.team]);
+    const role = stringValue(staff[TEAM_STAFF.role]).toLowerCase();
+    const name = stringValue(staff[TEAM_STAFF.name]) || stringValue(staff.display_name);
+    if (
+      teamId &&
+      name &&
+      !coachByTeamId.has(teamId) &&
+      (role.includes("coach") || role.includes("dirigente") || role.includes("entrenador"))
+    ) {
+      coachByTeamId.set(teamId, name);
+    }
+  }
 
   const away = normalizeTeam({
     accentColor: awayColors?.accentColor,
     color: awayColors?.color,
+    coach:
+      (awayTeamId ? coachByTeamId.get(awayTeamId) : undefined) ||
+      relationName(awayTeamId ? teamsById.get(awayTeamId)?.[TEAM.coach] : undefined),
     fallback: fallbackMatch.away,
     fouls: optionalNumberValue(game[GAME.awayTeamFouls]),
     label: "Visitor",
@@ -940,6 +1163,9 @@ async function normalizeGameRecord(
   const home = normalizeTeam({
     accentColor: homeColors?.accentColor,
     color: homeColors?.color,
+    coach:
+      (homeTeamId ? coachByTeamId.get(homeTeamId) : undefined) ||
+      relationName(homeTeamId ? teamsById.get(homeTeamId)?.[TEAM.coach] : undefined),
     fallback: fallbackMatch.home,
     fouls: optionalNumberValue(game[GAME.homeTeamFouls]),
     label: "Home",
@@ -1065,6 +1291,7 @@ function normalizeTeam(
     bench,
     category: stringValue(side.team?.[TEAM.category]),
     color: side.color,
+    coach: side.coach,
     fouls: side.fouls ?? playerFouls,
     id: side.teamId,
     label: side.label,

@@ -30,6 +30,13 @@ export type OutboxOp =
       match: LiveMatch;
       status: string;
       note?: string;
+    }
+  | {
+      id: string;
+      kind: "roster";
+      createdAt: number;
+      attempts: number;
+      match: LiveMatch;
     };
 
 let opCounter = 0;

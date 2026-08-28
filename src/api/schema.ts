@@ -4,6 +4,7 @@ export const MODELS = {
   gameAttendance: "x_game_attendance",
   gameEvent: "x_game_event",
   team: "x_team",
+  teamStaff: "x_team_staff",
   tournament: "x_tournament",
   player: "x_player",
   playerGameStat: "x_player_game_stat",
@@ -65,6 +66,12 @@ export const TEAM = {
   tournament: "x_studio_tournament",
   winPct: "x_win_pct",
   wins: "x_wins",
+} as const;
+
+export const TEAM_STAFF = {
+  name: "x_name",
+  role: "x_studio_role",
+  team: "x_studio_team_id",
 } as const;
 
 // Team colors are defined on the Club (x_club), shared by every team in that club,
@@ -196,11 +203,20 @@ export const TEAM_FIELDS = [
   TEAM.gamesPlayed,
   TEAM.losses,
   TEAM.category,
+  TEAM.coach,
   TEAM.gender,
   TEAM.image,
   TEAM.sequence,
   TEAM.winPct,
   TEAM.wins,
+] as const;
+
+export const TEAM_STAFF_FIELDS = [
+  "id",
+  "display_name",
+  TEAM_STAFF.name,
+  TEAM_STAFF.role,
+  TEAM_STAFF.team,
 ] as const;
 
 export const CLUB_FIELDS = [
