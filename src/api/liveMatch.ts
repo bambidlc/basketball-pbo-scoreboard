@@ -95,6 +95,7 @@ export type Team = {
   accentColor?: string;
   bench: Player[];
   category?: string;
+  clubName?: string;
   // Team identity colors sourced from the team's club (x_club). `color` is the shirt
   // color used as the team accent; `textColor` is the club's letter color for text that
   // sits on top of `color`. Both are undefined when the club has no color set.
@@ -103,6 +104,7 @@ export type Team = {
   fouls: number;
   id?: number;
   label: "Visitor" | "Home";
+  logoUrl?: string;
   name: string;
   players: Player[];
   presentCount: number;
@@ -172,13 +174,21 @@ export type LoadMatchResult = {
 };
 
 export type MatchOption = {
+  awayAccentColor?: string;
+  awayColor?: string;
+  awayLogoUrl?: string;
   awayName: string;
   awayScore: number;
   awayTeamId?: number;
+  awayTextColor?: string;
   datetime?: string;
+  homeAccentColor?: string;
+  homeColor?: string;
+  homeLogoUrl?: string;
   homeName: string;
   homeScore: number;
   homeTeamId?: number;
+  homeTextColor?: string;
   id: number;
   location?: string;
   name: string;
@@ -227,11 +237,13 @@ export type SaveMatchCorrectionInput = {
 
 type TeamSide = {
   accentColor?: string;
+  clubName?: string;
   color?: string;
   coach?: string;
   fallback: Team;
   fouls?: number;
   label: "Visitor" | "Home";
+  logoUrl?: string;
   relationName?: string;
   side: TeamId;
   team?: OdooRecord;
@@ -343,6 +355,17 @@ export async function loadMatchOptions(client: OdooClient): Promise<MatchOption[
     { limit: 40, order: `${GAME.datetime} desc` },
   );
 
+  const teamIds = uniqueNumbers(
+    games.flatMap((game) => [
+      relationId(game[GAME.awayTeam]),
+      relationId(game[GAME.homeTeam]),
+    ]).filter((id): id is number => Boolean(id)),
+  );
+  const teams = teamIds.length > 0
+    ? await client.read<OdooRecord>(MODELS.team, teamIds, TEAM_FIELDS)
+    : [];
+  const clubIdentityByTeamId = await loadTeamClubIdentity(client, teams);
+
   return games
     .map((game): MatchOption | undefined => {
       const id = numberValue(game.id);
@@ -350,16 +373,31 @@ export async function loadMatchOptions(client: OdooClient): Promise<MatchOption[
         return undefined;
       }
 
+      const awayTeamId = relationId(game[GAME.awayTeam]);
+      const homeTeamId = relationId(game[GAME.homeTeam]);
+      const awayIdentity = awayTeamId ? clubIdentityByTeamId.get(awayTeamId) : undefined;
+      const homeIdentity = homeTeamId ? clubIdentityByTeamId.get(homeTeamId) : undefined;
+
       return {
+        awayAccentColor: awayIdentity?.accentColor,
+        awayColor: awayIdentity?.color,
+        awayLogoUrl: awayIdentity?.logoUrl,
         awayName: relationName(game[GAME.awayTeam]) || "Visitor",
         awayScore: numberValue(game[GAME.awayScore]),
-        awayTeamId: relationId(game[GAME.awayTeam]),
+        awayTeamId,
+        awayTextColor: awayIdentity?.textColor,
         datetime: stringValue(game[GAME.datetime]),
+        homeAccentColor: homeIdentity?.accentColor,
+        homeColor: homeIdentity?.color,
+        homeLogoUrl: homeIdentity?.logoUrl,
         homeName: relationName(game[GAME.homeTeam]) || "Home",
         homeScore: numberValue(game[GAME.homeScore]),
-        homeTeamId: relationId(game[GAME.homeTeam]),
+        homeTeamId,
+        homeTextColor: homeIdentity?.textColor,
         id,
-        location: stringValue(game[GAME.location]),
+        // Odoo exposes the configured court as a many2one tuple: [id, display_name].
+        // Keep the string fallback for older databases where this field was plain text.
+        location: relationName(game[GAME.location]) || stringValue(game[GAME.location]),
         name:
           stringValue(game[GAME.matchName]) ||
           stringValue(game[GAME.name]) ||
@@ -1114,7 +1152,7 @@ async function normalizeGameRecord(
   ]);
 
   const teamsById = new Map(teams.map((team) => [numberValue(team.id), team]));
-  const clubColorsByTeamId = await loadTeamClubColors(client, teams);
+  const clubIdentityByTeamId = await loadTeamClubIdentity(client, teams);
   const statsByPlayerId = new Map(
     stats
       .map((stat) => [relationId(stat[PLAYER_STAT.player]), stat] as const)
@@ -1126,8 +1164,8 @@ async function normalizeGameRecord(
       .filter(([playerId]) => Boolean(playerId)),
   );
 
-  const awayColors = awayTeamId ? clubColorsByTeamId.get(awayTeamId) : undefined;
-  const homeColors = homeTeamId ? clubColorsByTeamId.get(homeTeamId) : undefined;
+  const awayIdentity = awayTeamId ? clubIdentityByTeamId.get(awayTeamId) : undefined;
+  const homeIdentity = homeTeamId ? clubIdentityByTeamId.get(homeTeamId) : undefined;
   const coachByTeamId = new Map<number, string>();
   for (const staff of teamStaff) {
     const teamId = relationId(staff[TEAM_STAFF.team]);
@@ -1144,36 +1182,40 @@ async function normalizeGameRecord(
   }
 
   const away = normalizeTeam({
-    accentColor: awayColors?.accentColor,
-    color: awayColors?.color,
+    accentColor: awayIdentity?.accentColor,
+    clubName: awayIdentity?.clubName,
+    color: awayIdentity?.color,
     coach:
       (awayTeamId ? coachByTeamId.get(awayTeamId) : undefined) ||
       relationName(awayTeamId ? teamsById.get(awayTeamId)?.[TEAM.coach] : undefined),
     fallback: fallbackMatch.away,
     fouls: optionalNumberValue(game[GAME.awayTeamFouls]),
     label: "Visitor",
+    logoUrl: awayIdentity?.logoUrl,
     relationName: relationName(game[GAME.awayTeam]),
     side: "away",
     team: awayTeamId ? teamsById.get(awayTeamId) : undefined,
     teamId: awayTeamId,
-    textColor: awayColors?.textColor,
+    textColor: awayIdentity?.textColor,
     timeouts: numberValue(game[GAME.awayTimeouts]),
   }, players, statsByPlayerId, attendanceByPlayerId);
 
   const home = normalizeTeam({
-    accentColor: homeColors?.accentColor,
-    color: homeColors?.color,
+    accentColor: homeIdentity?.accentColor,
+    clubName: homeIdentity?.clubName,
+    color: homeIdentity?.color,
     coach:
       (homeTeamId ? coachByTeamId.get(homeTeamId) : undefined) ||
       relationName(homeTeamId ? teamsById.get(homeTeamId)?.[TEAM.coach] : undefined),
     fallback: fallbackMatch.home,
     fouls: optionalNumberValue(game[GAME.homeTeamFouls]),
     label: "Home",
+    logoUrl: homeIdentity?.logoUrl,
     relationName: relationName(game[GAME.homeTeam]),
     side: "home",
     team: homeTeamId ? teamsById.get(homeTeamId) : undefined,
     teamId: homeTeamId,
-    textColor: homeColors?.textColor,
+    textColor: homeIdentity?.textColor,
     timeouts: numberValue(game[GAME.homeTimeouts]),
   }, players, statsByPlayerId, attendanceByPlayerId);
 
@@ -1290,11 +1332,13 @@ function normalizeTeam(
     accentColor: side.accentColor,
     bench,
     category: stringValue(side.team?.[TEAM.category]),
+    clubName: side.clubName,
     color: side.color,
     coach: side.coach,
     fouls: side.fouls ?? playerFouls,
     id: side.teamId,
     label: side.label,
+    logoUrl: side.logoUrl,
     name:
       stringValue(side.team?.[TEAM.name]) ||
       stringValue(side.team?.display_name) ||
@@ -1308,20 +1352,21 @@ function normalizeTeam(
   };
 }
 
-type TeamClubColors = {
+type TeamClubIdentity = {
   accentColor?: string;
+  clubName?: string;
   color?: string;
+  logoUrl?: string;
   textColor?: string;
 };
 
-// Team colors live on the club (x_club), so resolve each team's club, read the club
-// color fields once, and map them back to the owning team id. Best-effort: any failure
-// (missing club link, model not present, read error) simply yields no colors.
-async function loadTeamClubColors(
+// Identity lives on the club (x_club), so resolve each team's club, read its logo and
+// shirt/lettering/pants colors once, then map them back to every owning team.
+async function loadTeamClubIdentity(
   client: OdooClient,
   teams: OdooRecord[],
-): Promise<Map<number, TeamClubColors>> {
-  const byTeamId = new Map<number, TeamClubColors>();
+): Promise<Map<number, TeamClubIdentity>> {
+  const byTeamId = new Map<number, TeamClubIdentity>();
   const clubIdByTeamId = new Map<number, number>();
 
   for (const team of teams) {
@@ -1339,7 +1384,7 @@ async function loadTeamClubColors(
 
   try {
     const clubs = await client.read<OdooRecord>(MODELS.club, clubIds, CLUB_FIELDS);
-    const colorsByClubId = new Map<number, TeamClubColors>();
+    const identityByClubId = new Map<number, TeamClubIdentity>();
 
     for (const club of clubs) {
       const clubId = numberValue(club.id);
@@ -1350,15 +1395,15 @@ async function loadTeamClubColors(
       const color = resolveClubColor(club[CLUB.primaryColor]);
       const textColor = resolveClubColor(club[CLUB.secondaryColor]);
       const accentColor = resolveClubColor(club[CLUB.accentColor]);
-      if (color || textColor || accentColor) {
-        colorsByClubId.set(clubId, { accentColor, color, textColor });
-      }
+      const clubName = stringValue(club[CLUB.name]) || stringValue(club.display_name) || undefined;
+      const logoUrl = binaryImageDataUrl(club[CLUB.image], club[CLUB.logoFilename]);
+      identityByClubId.set(clubId, { accentColor, clubName, color, logoUrl, textColor });
     }
 
     for (const [teamId, clubId] of clubIdByTeamId) {
-      const colors = colorsByClubId.get(clubId);
-      if (colors) {
-        byTeamId.set(teamId, colors);
+      const identity = identityByClubId.get(clubId);
+      if (identity) {
+        byTeamId.set(teamId, identity);
       }
     }
   } catch {
@@ -1366,6 +1411,38 @@ async function loadTeamClubColors(
   }
 
   return byTeamId;
+}
+
+function binaryImageDataUrl(value: unknown, filenameValue?: unknown): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+
+  const raw = value.trim();
+  if (!raw) {
+    return undefined;
+  }
+  if (raw.startsWith("data:image/")) {
+    return raw;
+  }
+
+  // A bin_size context can return labels such as "18.2 KB" instead of image bytes.
+  // Those are deliberately ignored so the initials fallback remains usable.
+  if (raw.length < 16 || !/^[A-Za-z0-9+/=\r\n]+$/.test(raw)) {
+    return undefined;
+  }
+
+  const filename = stringValue(filenameValue).toLowerCase();
+  const mime = raw.startsWith("/9j/") || /\.jpe?g$/.test(filename)
+    ? "image/jpeg"
+    : raw.startsWith("R0lGOD") || filename.endsWith(".gif")
+      ? "image/gif"
+      : raw.startsWith("UklGR") || filename.endsWith(".webp")
+        ? "image/webp"
+        : raw.startsWith("PHN2Zy") || filename.endsWith(".svg")
+          ? "image/svg+xml"
+          : "image/png";
+  return `data:${mime};base64,${raw.replace(/\s/g, "")}`;
 }
 
 function normalizePlayer(

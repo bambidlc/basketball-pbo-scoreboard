@@ -78,6 +78,8 @@ export const TEAM_STAFF = {
 // and reached from a team via TEAM.club. Stored as hex char fields.
 export const CLUB = {
   name: "x_name",
+  image: "x_studio_image",
+  logoFilename: "x_studio_logo_filename",
   primaryColor: "x_studio_primary_color", // "Color de Camisa" (shirt) — main identity color
   secondaryColor: "x_studio_secondary_color", // "Color de Letra" (text on shirt)
   accentColor: "x_studio_accent_color", // "Color de Pantalon" (pants)
@@ -222,6 +224,9 @@ export const TEAM_STAFF_FIELDS = [
 export const CLUB_FIELDS = [
   "id",
   "display_name",
+  CLUB.name,
+  CLUB.image,
+  CLUB.logoFilename,
   CLUB.primaryColor,
   CLUB.secondaryColor,
   CLUB.accentColor,

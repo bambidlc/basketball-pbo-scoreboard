@@ -3501,6 +3501,7 @@ function GameCard({
         "rounded-xl border bg-neutral-950 p-3 transition-colors",
         selected ? "border-amber-400/70 ring-1 ring-inset ring-amber-400/20" : "border-neutral-800 hover:border-neutral-700",
       )}
+      style={matchOptionColorVars(option)}
     >
       <button className="block w-full rounded-lg text-left focus:outline-none focus:ring-2 focus:ring-amber-400/50" type="button" onClick={onSelect}>
         <div className="flex items-center justify-between gap-3">
@@ -3511,15 +3512,39 @@ function GameCard({
         </div>
         <h3 className="mt-2 truncate text-sm font-semibold text-neutral-50">{option.name}</h3>
         <div className="mt-2 grid gap-1.5">
-          <GameTeamLine label="Visitor" name={option.awayName} score={option.awayScore} team="away" />
-          <GameTeamLine label="Home" name={option.homeName} score={option.homeScore} team="home" />
+          <GameTeamLine
+            accentColor={option.awayAccentColor}
+            color={option.awayColor}
+            label="Visitor"
+            logoUrl={option.awayLogoUrl}
+            name={option.awayName}
+            score={option.awayScore}
+            team="away"
+            textColor={option.awayTextColor}
+          />
+          <GameTeamLine
+            accentColor={option.homeAccentColor}
+            color={option.homeColor}
+            label="Home"
+            logoUrl={option.homeLogoUrl}
+            name={option.homeName}
+            score={option.homeScore}
+            team="home"
+            textColor={option.homeTextColor}
+          />
         </div>
-        <div className="mt-2 flex items-center gap-1.5 text-xs text-neutral-500">
-          <Clock3 size={12} />
-          <span className="truncate">
-            {formatGameTime(option.datetime)
-              ? `Tip-off ${formatGameTime(option.datetime)}`
-              : option.datetime || "Time pending"}
+        <div className="mt-2 grid gap-1 text-xs text-neutral-500 sm:grid-cols-2">
+          <span className="flex min-w-0 items-center gap-1.5">
+            <Clock3 className="shrink-0" size={12} />
+            <span className="truncate">
+              {formatGameTime(option.datetime)
+                ? `Tip-off ${formatGameTime(option.datetime)}`
+                : option.datetime || "Time pending"}
+            </span>
+          </span>
+          <span className="flex min-w-0 items-center gap-1.5 sm:justify-end">
+            <MapPin className="shrink-0" size={12} />
+            <span className="truncate">{option.location || "Location pending"}</span>
           </span>
         </div>
       </button>
@@ -3552,18 +3577,34 @@ function GameCard({
 }
 
 function GameTeamLine({
+  accentColor,
+  color,
   label,
+  logoUrl,
   name,
   score,
   team,
+  textColor,
 }: {
+  accentColor?: string;
+  color?: string;
   label: string;
+  logoUrl?: string;
   name: string;
   score: number;
   team: TeamId;
+  textColor?: string;
 }) {
+  const identity = { accentColor, color, logoUrl, name, textColor };
   return (
-    <div className="grid grid-cols-[44px_minmax(0,1fr)_36px] items-center gap-2 rounded-lg border border-neutral-800 bg-neutral-900 px-2.5 py-1.5">
+    <div
+      className="grid grid-cols-[32px_44px_minmax(0,1fr)_36px] items-center gap-2 rounded-lg border border-neutral-800 px-2 py-1.5"
+      style={{
+        backgroundColor: `var(--c-${team}-tint)`,
+        borderColor: `var(--c-${team}-ring)`,
+      }}
+    >
+      <ClubLogo compact side={team} team={identity} />
       <span className="text-xs font-semibold" style={{ color: `var(--c-${team}-soft)` }}>
         {label}
       </span>
@@ -3699,11 +3740,80 @@ function teamColorVars(away: Team, home: Team): CSSProperties {
     "--c-away-soft": a.soft,
     "--c-away-tint": a.tint,
     "--c-away-ring": a.ring,
+    "--c-away-accent": away.accentColor ?? a.base,
+    "--c-away-letter": away.textColor ?? "#ffffff",
     "--c-home": h.base,
     "--c-home-soft": h.soft,
     "--c-home-tint": h.tint,
     "--c-home-ring": h.ring,
+    "--c-home-accent": home.accentColor ?? h.base,
+    "--c-home-letter": home.textColor ?? "#ffffff",
   } as CSSProperties;
+}
+
+function matchOptionColorVars(option: MatchOption): CSSProperties {
+  return teamColorVars(
+    {
+      ...fallbackMatch.away,
+      accentColor: option.awayAccentColor,
+      color: option.awayColor,
+      logoUrl: option.awayLogoUrl,
+      name: option.awayName,
+      textColor: option.awayTextColor,
+    },
+    {
+      ...fallbackMatch.home,
+      accentColor: option.homeAccentColor,
+      color: option.homeColor,
+      logoUrl: option.homeLogoUrl,
+      name: option.homeName,
+      textColor: option.homeTextColor,
+    },
+  );
+}
+
+type ClubIdentityVisual = Pick<Team, "accentColor" | "color" | "logoUrl" | "name" | "textColor">;
+
+function ClubLogo({
+  compact = false,
+  side,
+  team,
+}: {
+  compact?: boolean;
+  side: TeamId;
+  team: ClubIdentityVisual;
+}) {
+  const initial = team.name.trim().charAt(0).toUpperCase() || "?";
+  return (
+    <span
+      className={cn(
+        "relative flex shrink-0 items-center justify-center overflow-hidden rounded-lg border font-black shadow-sm",
+        compact ? "size-8 text-xs" : "size-12 text-lg 2xl:size-10 2xl:text-base",
+      )}
+      style={{
+        backgroundColor: team.logoUrl ? "#fafafa" : `var(--c-${side})`,
+        borderColor: `var(--c-${side}-ring)`,
+        color: `var(--c-${side}-letter)`,
+      }}
+      title={`${team.name} club`}
+    >
+      {team.logoUrl ? (
+        <img
+          alt={`${team.name} club logo`}
+          className="size-full object-contain p-0.5"
+          decoding="async"
+          src={team.logoUrl}
+        />
+      ) : (
+        <span aria-hidden>{initial}</span>
+      )}
+      <span
+        aria-hidden
+        className="pointer-events-none absolute inset-x-0 bottom-0 h-1"
+        style={{ backgroundColor: team.accentColor ?? `var(--c-${side}-accent)` }}
+      />
+    </span>
+  );
 }
 
 function ScoreHeader({
@@ -3755,14 +3865,9 @@ function ScoreHeader({
     <header className="order-1 grid items-stretch bg-neutral-950 md:col-span-2 md:grid-cols-[minmax(0,1fr)_minmax(224px,260px)_minmax(0,1fr)] lg:col-span-3 lg:col-start-1 lg:row-start-1 2xl:items-center 2xl:grid-cols-[minmax(0,1fr)_290px_minmax(0,1fr)]">
       <TeamHeaderBlock
         align="right"
-        color="red"
-        fouls={away.fouls}
-        label={away.label}
-        name={away.name}
-        record={away.record}
         score={awayScore}
         selected={selectedTeam === "away"}
-        timeouts={away.timeouts}
+        team={away}
         onClick={() => onSelectTeam("away")}
       />
 
@@ -3841,14 +3946,9 @@ function ScoreHeader({
 
       <TeamHeaderBlock
         align="left"
-        color="blue"
-        fouls={home.fouls}
-        label={home.label}
-        name={home.name}
-        record={home.record}
         score={homeScore}
         selected={selectedTeam === "home"}
-        timeouts={home.timeouts}
+        team={home}
         onClick={() => onSelectTeam("home")}
       />
     </header>
@@ -3857,28 +3957,18 @@ function ScoreHeader({
 
 function TeamHeaderBlock({
   align,
-  color,
-  fouls,
-  label,
-  name,
-  record,
   score,
   selected,
-  timeouts,
+  team,
   onClick,
 }: {
   align: "left" | "right";
-  color: "red" | "blue";
-  fouls: number;
-  label: string;
-  name: string;
-  record?: string;
   score: number;
   selected: boolean;
-  timeouts: number;
+  team: Team;
   onClick: () => void;
 }) {
-  const side: TeamId = color === "red" ? "away" : "home";
+  const side: TeamId = align === "right" ? "away" : "home";
   const cBase = `var(--c-${side})`;
   const cSoft = `var(--c-${side}-soft)`;
   const cTint = `var(--c-${side}-tint)`;
@@ -3900,10 +3990,16 @@ function TeamHeaderBlock({
           <ScoreNumber value={score} />
         </div>
       )}
+      <ClubLogo side={side} team={team} />
       <div className={cn("min-w-0 max-w-52", align === "right" && "sm:flex sm:flex-col sm:items-end")}>
-        <div className="text-[11px] font-black uppercase tracking-wide" style={{ color: cSoft }}>{label}</div>
-        <div className="mt-0.5 max-w-full truncate text-xl font-bold text-neutral-50 sm:text-2xl lg:text-xl">{name}</div>
-        {record && <div className="mt-0.5 text-xs font-semibold text-neutral-500 tabular-nums lg:hidden">{record}</div>}
+        <div className="text-[11px] font-black uppercase tracking-wide" style={{ color: cSoft }}>{team.label}</div>
+        <div className="mt-0.5 max-w-full truncate text-xl font-bold text-neutral-50 sm:text-2xl lg:text-xl">{team.name}</div>
+        {team.clubName && team.clubName !== team.name && (
+          <div className="mt-0.5 max-w-full truncate text-[10px] font-semibold uppercase tracking-wide text-neutral-500">
+            {team.clubName}
+          </div>
+        )}
+        {team.record && <div className="mt-0.5 text-xs font-semibold text-neutral-500 tabular-nums lg:hidden">{team.record}</div>}
         {/* Fouls and time-outs are kept as two clearly-labelled, separated groups so the numbers
             can't be mis-read as a single "3 to 2". The 7th team foul triggers the bonus (6 balls). */}
         <div className={cn("mt-2 flex flex-col gap-1 lg:mt-1", align === "right" && "sm:items-end")}>
@@ -3912,14 +4008,14 @@ function TeamHeaderBlock({
             <span className="flex gap-0.5">
               {[0, 1, 2, 3, 4, 5].map((dot) => (
                 <span
-                  className={cn("size-1.5 rounded-full transition-colors", dot < fouls ? "" : "bg-neutral-700")}
-                  style={dot < fouls ? { backgroundColor: cBase } : undefined}
+                  className={cn("size-1.5 rounded-full transition-colors", dot < team.fouls ? "" : "bg-neutral-700")}
+                  style={dot < team.fouls ? { backgroundColor: cBase } : undefined}
                   key={dot}
                 />
               ))}
             </span>
-            <span className="font-mono text-sm font-black tabular-nums text-neutral-100 2xl:text-base">{fouls}</span>
-            {fouls >= 7 && (
+            <span className="font-mono text-sm font-black tabular-nums text-neutral-100 2xl:text-base">{team.fouls}</span>
+            {team.fouls >= 7 && (
               <span className="rounded-full border border-amber-500/60 bg-amber-500/15 px-1.5 py-px text-[9px] font-black uppercase tracking-wide text-amber-300">
                 Bonus
               </span>
@@ -3927,7 +4023,7 @@ function TeamHeaderBlock({
           </span>
           <span className="flex items-center gap-1.5">
             <span className="text-[10px] font-black uppercase tracking-wide text-neutral-500">Timeouts</span>
-            <span className="font-mono text-sm font-black tabular-nums text-neutral-100 2xl:text-base">{timeouts}</span>
+            <span className="font-mono text-sm font-black tabular-nums text-neutral-100 2xl:text-base">{team.timeouts}</span>
           </span>
         </div>
       </div>
@@ -4356,6 +4452,7 @@ function RosterPanel({
         onClick={onSelectTeam}
       >
         <span aria-hidden className="pointer-events-none absolute inset-y-0 left-0 w-1" style={{ backgroundColor: cBase }} />
+        <ClubLogo compact side={side} team={team} />
         <span className="text-[11px] font-black uppercase tracking-wide" style={{ color: cSoft }}>{team.label}</span>
         <span className="min-w-0 flex-1">
           <span className="block truncate text-sm font-bold text-neutral-200">{team.name}</span>
@@ -7884,27 +7981,32 @@ function makeLocalPlayerId(team: TeamId | "away" | "home") {
 
 function buildScheduledMatchShell(option: MatchOption, settings: PeriodSettings): LiveMatch {
   const makeTeam = (
+    side: TeamId,
     label: "Visitor" | "Home",
     name: string,
     id?: number,
   ): Team => ({
+    accentColor: side === "away" ? option.awayAccentColor : option.homeAccentColor,
     bench: [],
+    color: side === "away" ? option.awayColor : option.homeColor,
     fouls: 0,
     id,
     label,
+    logoUrl: side === "away" ? option.awayLogoUrl : option.homeLogoUrl,
     name,
     players: [],
     presentCount: 0,
+    textColor: side === "away" ? option.awayTextColor : option.homeTextColor,
     timeouts: 0,
   });
 
   return {
-    away: makeTeam("Visitor", option.awayName, option.awayTeamId),
+    away: makeTeam("away", "Visitor", option.awayName, option.awayTeamId),
     awayScore: option.awayScore,
     clock: secondsToClock(settings.periodSeconds),
     events: [],
     gameId: option.id,
-    home: makeTeam("Home", option.homeName, option.homeTeamId),
+    home: makeTeam("home", "Home", option.homeName, option.homeTeamId),
     homeScore: option.homeScore,
     matchName: option.name,
     period: 1,
