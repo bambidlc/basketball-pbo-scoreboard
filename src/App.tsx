@@ -717,13 +717,13 @@ function App() {
           result = { saved: false, log: createLog("error", "Sync retry failed", "Network error") };
         }
 
+        if (result.match) {
+          reconcileRosterSync(result.match);
+          // A player create can succeed before a later attendance request fails. Repair ids
+          // immediately even while the roster op remains queued for that final retry.
+          queue = queue.map((queued) => rewriteOutboxRoster(queued, result.match!));
+        }
         if (result.saved) {
-          if (result.match) {
-            reconcileRosterSync(result.match);
-            // The queue snapshot was captured before this roster received real player ids.
-            // Repair the remaining in-memory ops immediately so this same flush can continue.
-            queue = queue.map((queued) => rewriteOutboxRoster(queued, result.match!));
-          }
           if (result.eventId && "eventId" in op && op.eventId != null) {
             linkServerEventId(op.eventId, result.eventId);
           }
@@ -845,10 +845,10 @@ function App() {
 
       return saveGameDayRoster(apiClient, nextMatch)
         .then((result) => {
+          if (result.match) {
+            reconcileRosterSync(result.match);
+          }
           if (result.saved) {
-            if (result.match) {
-              reconcileRosterSync(result.match);
-            }
             setPendingOps((current) => current.filter((item) => item.id !== op.id));
           }
           return result;
@@ -8049,7 +8049,11 @@ function getGameDayPlayerError(team: Team, player: Player): string | undefined {
     return `Player #${number} needs a name.`;
   }
   const duplicateCount = getRoster(team).filter(
-    (candidate) => candidate.number.trim() === number,
+    (candidate) =>
+      (player.present ?? true) &&
+      (candidate.present ?? true) &&
+      /^\d{1,3}$/.test(candidate.number.trim()) &&
+      Number(candidate.number) === Number(number),
   ).length;
   if (duplicateCount > 1) {
     return `Jersey #${number} is already used on this team.`;
