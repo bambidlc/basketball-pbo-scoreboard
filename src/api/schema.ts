@@ -173,7 +173,6 @@ export const GAME_FIELDS = [
   GAME.location,
   GAME.matchName,
   GAME.status,
-  GAME.websiteDescription,
   GAME.week,
 ] as const;
 

@@ -2367,6 +2367,7 @@ function App() {
             id: Date.now(),
             issuedByRef: true,
             label: `Suspended · ${reasonText}`,
+            note: reasonText,
             period: current.period,
             player: "—",
             points: 0,
@@ -5178,7 +5179,7 @@ function GameResolutionDialog({
                 Record game result
               </AlertDialog.Title>
               <AlertDialog.Description className="mt-0.5 text-sm text-pretty text-neutral-500">
-                Enter the official score, then mark the game final or suspended.
+                Enter the official score. Suspended games also require a reason.
               </AlertDialog.Description>
             </div>
             <AlertDialog.Cancel asChild>
@@ -5245,40 +5246,38 @@ function GameResolutionDialog({
             </div>
             <div className="mt-2 text-center text-sm font-semibold text-neutral-300">{winner}</div>
 
-            <div className="mt-4 border-t border-neutral-800 pt-4">
-              <label className="flex items-center justify-between gap-2 text-sm font-semibold text-neutral-200" htmlFor="game-resolution-note">
-                <span>{status === "Suspended" ? "Why was it suspended?" : "Game notes"}</span>
-                <span className="text-xs font-normal text-neutral-500">
-                  {status === "Suspended" ? "Required" : "Optional"}
-                </span>
-              </label>
-              <textarea
-                aria-describedby={noteError ? "game-resolution-note-error" : "game-resolution-note-help"}
-                aria-invalid={Boolean(noteError)}
-                className={cn(
-                  "mt-2 min-h-24 w-full resize-y rounded-lg border bg-neutral-950 px-3 py-2 text-sm text-pretty text-neutral-100 outline-none transition-colors focus:ring-2",
-                  noteError
-                    ? "border-red-500/60 focus:ring-red-500/40"
-                    : "border-neutral-800 focus:ring-amber-400/50",
-                )}
-                id="game-resolution-note"
-                maxLength={500}
-                placeholder={status === "Suspended" ? "Example: Power outage; game paused with 3:42 remaining." : "Optional context about the official result"}
-                value={note}
-                onChange={(event) => setNote(event.currentTarget.value)}
-              />
-              <div className="mt-1 flex items-start justify-between gap-3">
-                {noteError ? (
-                  <span className="text-xs text-red-300" id="game-resolution-note-error" role="alert">{noteError}</span>
-                ) : (
-                  <span className="text-xs text-pretty text-neutral-500" id="game-resolution-note-help">
-                    {status === "Suspended" ? "The reason is saved in Odoo and play-by-play." : "Notes are saved with the game in Odoo."}
-                  </span>
-                )}
-                <span className="shrink-0 text-xs tabular-nums text-neutral-600">{note.length}/500</span>
-              </div>
+            {status === "Suspended" && (
+              <div className="mt-4 border-t border-neutral-800 pt-4">
+                <label className="flex items-center justify-between gap-2 text-sm font-semibold text-neutral-200" htmlFor="game-resolution-note">
+                  <span>Why was it suspended?</span>
+                  <span className="text-xs font-normal text-neutral-500">Required</span>
+                </label>
+                <textarea
+                  aria-describedby={noteError ? "game-resolution-note-error" : "game-resolution-note-help"}
+                  aria-invalid={Boolean(noteError)}
+                  className={cn(
+                    "mt-2 min-h-24 w-full resize-y rounded-lg border bg-neutral-950 px-3 py-2 text-sm text-pretty text-neutral-100 outline-none transition-colors focus:ring-2",
+                    noteError
+                      ? "border-red-500/60 focus:ring-red-500/40"
+                      : "border-neutral-800 focus:ring-amber-400/50",
+                  )}
+                  id="game-resolution-note"
+                  maxLength={500}
+                  placeholder="Example: Power outage; game paused with 3:42 remaining."
+                  value={note}
+                  onChange={(event) => setNote(event.currentTarget.value)}
+                />
+                <div className="mt-1 flex items-start justify-between gap-3">
+                  {noteError ? (
+                    <span className="text-xs text-red-300" id="game-resolution-note-error" role="alert">{noteError}</span>
+                  ) : (
+                    <span className="text-xs text-pretty text-neutral-500" id="game-resolution-note-help">
+                      The reason is saved in Odoo and shown in play-by-play.
+                    </span>
+                  )}
+                  <span className="shrink-0 text-xs tabular-nums text-neutral-600">{note.length}/500</span>
+                </div>
 
-              {status === "Suspended" && (
                 <div className="mt-2 flex flex-wrap gap-1.5" aria-label="Common suspension reasons">
                   {SUSPENSION_REASON_PRESETS.map((preset) => (
                     <button
@@ -5296,12 +5295,12 @@ function GameResolutionDialog({
                     </button>
                   ))}
                 </div>
-              )}
-            </div>
+              </div>
+            )}
 
             <div className="mt-4 rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2 text-xs text-pretty text-neutral-500">
               {isOnline
-                ? "The score, status, and notes will be verified in Odoo before sync is confirmed."
+                ? "The score and status are verified in Odoo; suspension reasons are saved in play-by-play."
                 : "You are offline. This result will stay on this device and sync automatically when connected."}
             </div>
           </div>
@@ -5332,7 +5331,7 @@ function GameResolutionDialog({
                   onFinish({
                     awayScore: parsedAwayScore,
                     homeScore: parsedHomeScore,
-                    note: noteText,
+                    note: status === "Suspended" ? noteText : "",
                     status,
                   });
                 }}

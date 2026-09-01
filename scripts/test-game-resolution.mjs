@@ -5,7 +5,6 @@ const GAME = {
   awayScore: "x_studio_away_score",
   homeScore: "x_studio_home_score",
   status: "x_studio_status",
-  websiteDescription: "x_studio_website_description",
 };
 
 const EVENT = {
@@ -27,7 +26,6 @@ class MockOdooClient {
       [GAME.awayScore]: 0,
       [GAME.homeScore]: 0,
       [GAME.status]: "Scheduled",
-      [GAME.websiteDescription]: "",
     };
     this.events = [];
   }
@@ -99,8 +97,8 @@ try {
     assert.equal(client.game[GAME.awayScore], 71);
     assert.equal(client.game[GAME.homeScore], 68);
     assert.equal(client.game[GAME.status], "Final");
-    assert.equal(client.game[GAME.websiteDescription], "Official result");
-    assert.equal(client.eventCreates, 0, "final notes belong to the game and must not create a suspension event");
+    assert.equal("x_studio_website_description" in client.game, false);
+    assert.equal(client.eventCreates, 0, "a final result must not create a suspension event");
   }
 
   {
@@ -108,7 +106,7 @@ try {
     const result = await saveMatchStatus(client, makeMatch(35, 41), "Suspended", "Power outage");
     assert.equal(result.saved, true);
     assert.equal(client.game[GAME.status], "Suspended");
-    assert.equal(client.game[GAME.websiteDescription], "Power outage");
+    assert.equal("x_studio_website_description" in client.game, false);
     assert.equal(client.eventCreates, 1);
     assert.equal(client.events[0][EVENT.note], "Power outage");
 
@@ -144,7 +142,7 @@ try {
     assert.match(result.log.detail, /did not confirm/i);
   }
 
-  process.stdout.write("Game resolution contract tests passed: score/status/note write-back, required suspension reason, verified Odoo writes, and idempotent suspension retries.\n");
+  process.stdout.write("Game resolution contract tests passed: score/status write-back, required suspension reason, play-by-play notes, verified Odoo writes, and idempotent retries.\n");
 } finally {
   await vite.close();
 }

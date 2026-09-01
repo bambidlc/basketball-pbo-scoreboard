@@ -121,6 +121,7 @@ export type GameEvent = {
   id: number;
   issuedByRef?: boolean;
   label: string;
+  note?: string;
   period?: number;
   player: string;
   playerId?: number;
@@ -358,6 +359,26 @@ export async function loadMatchOptions(client: OdooClient): Promise<MatchOption[
     // receive a manual result or suspension without falling off an arbitrary recent-games cap.
     { limit: 500, order: `${GAME.datetime} desc` },
   );
+  const gameIds = games.map((game) => numberValue(game.id)).filter((id) => id > 0);
+  const suspensionEvents = gameIds.length > 0
+    ? await client.searchRead<OdooRecord>(
+        MODELS.gameEvent,
+        [
+          [GAME_EVENT.game, "in", gameIds],
+          [GAME_EVENT.actionType, "=", "suspension"],
+        ],
+        ["id", GAME_EVENT.game, GAME_EVENT.note],
+        { limit: 2000, order: "id desc" },
+      ).catch(() => [] as OdooRecord[])
+    : [];
+  const suspensionNoteByGameId = new Map<number, string>();
+  for (const event of suspensionEvents) {
+    const gameId = relationId(event[GAME_EVENT.game]);
+    const reason = stringValue(event[GAME_EVENT.note]).trim();
+    if (gameId && reason && !suspensionNoteByGameId.has(gameId)) {
+      suspensionNoteByGameId.set(gameId, reason);
+    }
+  }
 
   const teamIds = uniqueNumbers(
     games.flatMap((game) => [
@@ -408,7 +429,7 @@ export async function loadMatchOptions(client: OdooClient): Promise<MatchOption[
           stringValue(game.display_name) ||
           `Game ${id}`,
         status: stringValue(game[GAME.status]) || "Scheduled",
-        statusNote: plainTextFromHtml(game[GAME.websiteDescription]) || undefined,
+        statusNote: suspensionNoteByGameId.get(id),
         week: stringValue(game[GAME.week]),
       } satisfies MatchOption;
     })
@@ -511,7 +532,6 @@ export async function saveMatchStatus(
         [GAME.awayScore]: match.awayScore,
         [GAME.homeScore]: match.homeScore,
         [GAME.status]: status,
-        ...(trimmedNote ? { [GAME.websiteDescription]: trimmedNote } : {}),
       },
       capabilities.game,
     );
@@ -521,7 +541,7 @@ export async function saveMatchStatus(
     }
 
     const verificationFields = filterReadableFields(
-      [GAME.awayScore, GAME.homeScore, GAME.status, GAME.websiteDescription],
+      [GAME.awayScore, GAME.homeScore, GAME.status],
       capabilities.game,
     );
     const [verifiedGame] = await client.read<OdooRecord>(MODELS.game, [match.gameId], verificationFields);
@@ -529,10 +549,9 @@ export async function saveMatchStatus(
       !verifiedGame ||
       numberValue(verifiedGame[GAME.awayScore], -1) !== match.awayScore ||
       numberValue(verifiedGame[GAME.homeScore], -1) !== match.homeScore ||
-      stringValue(verifiedGame[GAME.status]) !== status ||
-      (trimmedNote && plainTextFromHtml(verifiedGame[GAME.websiteDescription]) !== trimmedNote)
+      stringValue(verifiedGame[GAME.status]) !== status
     ) {
-      throw new Error("Odoo could not verify the saved score, status, and notes.");
+      throw new Error("Odoo could not verify the saved score and status.");
     }
     const flowMessage = await saveGameFlowFields(client, match, capabilities);
 
@@ -1490,7 +1509,7 @@ async function normalizeGameRecord(
     scorekeeper2: stringValue(game[GAME.scorekeeper2]) || undefined,
     shotClock: numberValue(game[GAME.shotClockSeconds], fallbackMatch.shotClock),
     status: stringValue(game[GAME.status]) || "Scheduled",
-    statusNote: plainTextFromHtml(game[GAME.websiteDescription]) || undefined,
+    statusNote: events.find((event) => event.action === "suspension" && event.note)?.note,
     syncMessage: "Live data connected",
     syncedAt: new Date().toISOString(),
   };
@@ -2267,6 +2286,7 @@ function normalizeGameEvent(
     icon: getEventIcon(action, points),
     id,
     label: stringValue(record[GAME_EVENT.name]) || titleCase(action),
+    note: stringValue(record[GAME_EVENT.note]) || undefined,
     period: numberValue(record[GAME_EVENT.period]),
     player: relationName(record[GAME_EVENT.player]) || "Player",
     playerId: relationId(record[GAME_EVENT.player]),
@@ -2450,22 +2470,6 @@ function relationName(value: unknown) {
 
 function stringValue(value: unknown) {
   return typeof value === "string" ? value : "";
-}
-
-function plainTextFromHtml(value: unknown) {
-  return stringValue(value)
-    .replace(/<br\s*\/?\s*>/gi, "\n")
-    .replace(/<\/p\s*>/gi, "\n")
-    .replace(/<[^>]+>/g, "")
-    .replace(/&nbsp;/gi, " ")
-    .replace(/&amp;/gi, "&")
-    .replace(/&lt;/gi, "<")
-    .replace(/&gt;/gi, ">")
-    .replace(/&quot;/gi, '"')
-    .replace(/&#39;/gi, "'")
-    .replace(/\r/g, "")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
 }
 
 function numberValue(value: unknown, fallback = 0) {
