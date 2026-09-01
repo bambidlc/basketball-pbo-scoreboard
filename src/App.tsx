@@ -1,3 +1,4 @@
+import * as AlertDialog from "@radix-ui/react-alert-dialog";
 import {
   Activity,
   ArrowLeft,
@@ -90,6 +91,14 @@ type OfficialKey = "referee" | "refereeAssistant" | "referee3" | "scorekeeper" |
 type OfficialsSelection = Partial<Record<OfficialKey, string>>;
 type OfficialsSelectionStore = Record<string, OfficialsSelection>;
 type StatsMode = "professional" | "youth";
+type GameResolutionStatus = "Final" | "Suspended";
+type GameResolutionInput = {
+  awayScore: number;
+  homeScore: number;
+  note: string;
+  status: GameResolutionStatus;
+};
+type GameResolutionTeam = Pick<Team, "accentColor" | "color" | "logoUrl" | "name" | "textColor">;
 
 type PeriodSettings = {
   overtimeSeconds: number;
@@ -414,6 +423,7 @@ function App() {
   const [freeThrowPrompt, setFreeThrowPrompt] = useState<{ made: boolean } | undefined>(undefined);
   const [techOpen, setTechOpen] = useState(false);
   const [endGameOpen, setEndGameOpen] = useState(false);
+  const [quickResultOption, setQuickResultOption] = useState<MatchOption | undefined>(undefined);
   // When the scorer advances the period, show a summary of the period that just ended.
   const [endPeriodPrompt, setEndPeriodPrompt] = useState<number | undefined>(undefined);
   // After the period summary, pick the starting five for the new period.
@@ -491,20 +501,7 @@ function App() {
   // available offline. Keyed by gameId; the loader only restores it for the same game.
   useEffect(() => {
     if (!customMode && match.gameId) {
-      const snapshot = {
-        gameId: match.gameId,
-        savedAt: Date.now(),
-        match,
-      } satisfies StoredLiveMatch;
-      writeStoredJson(STORAGE_KEYS.liveMatch, snapshot);
-      const storedMatches = readStoredJson<Record<string, StoredLiveMatch>>(STORAGE_KEYS.liveMatches) ?? {};
-      const nextMatches = { ...storedMatches, [String(match.gameId)]: snapshot };
-      const newest = Object.fromEntries(
-        Object.entries(nextMatches)
-          .sort(([, first], [, second]) => second.savedAt - first.savedAt)
-          .slice(0, 12),
-      );
-      writeStoredJson(STORAGE_KEYS.liveMatches, newest);
+      persistStoredLiveMatch(match);
     }
   }, [customMode, match]);
 
@@ -1114,6 +1111,67 @@ function App() {
     handleGameSelect(gameId);
     preGameOpenRef.current = true;
     setPreGameOpen(true);
+  }
+
+  function openQuickResult(option: MatchOption) {
+    setQuickResultOption(option);
+  }
+
+  function saveQuickResult(result: GameResolutionInput) {
+    const option = quickResultOption;
+    if (!option) {
+      return;
+    }
+
+    const cached = readStoredLiveMatch(option.id);
+    const baseMatch = cached ?? buildScheduledMatchShell(option, periodSettings);
+    const note = result.note.trim();
+    const nextMatch: LiveMatch = {
+      ...baseMatch,
+      awayScore: result.awayScore,
+      homeScore: result.homeScore,
+      status: result.status,
+      statusNote: note || baseMatch.statusNote,
+      syncMessage: isOnline
+        ? "Game result queued for Odoo verification."
+        : "Game result saved offline — it will sync automatically.",
+    };
+
+    setQuickResultOption(undefined);
+    setMatchOptions((current) =>
+      current.map((saved) =>
+        saved.id === option.id
+          ? {
+              ...saved,
+              awayScore: result.awayScore,
+              homeScore: result.homeScore,
+              status: result.status,
+              statusNote: note || saved.statusNote,
+            }
+          : saved,
+      ),
+    );
+    persistStoredLiveMatch(nextMatch);
+    if (matchRef.current.gameId === option.id) {
+      matchRef.current = nextMatch;
+      setMatch(nextMatch);
+      setIsClockRunning(false);
+    }
+
+    appendLog(
+      createLog(
+        result.status === "Final" ? "success" : "warning",
+        result.status === "Final" ? "Manual result saved" : "Game suspended",
+        `${option.awayName} ${result.awayScore}–${result.homeScore} ${option.homeName}${note ? ` · ${note}` : ""}`,
+      ),
+    );
+
+    void dispatchSaveStatus(nextMatch, result.status, note || undefined).then((saveResult) => {
+      appendLog(saveResult.log);
+      setConnectionStatus(
+        saveResult.log.level === "error" ? "error" : saveResult.saved ? "connected" : "local",
+      );
+    });
   }
 
   function activateLiveView(mode: StatsMode, gameId: number | undefined = selectedGameIdRef.current) {
@@ -2287,13 +2345,14 @@ function App() {
   // (the saved state reloads, and the next recorded action flips it back to Live). A
   // suspension carries a reason that is logged, dropped into the play-by-play, and saved
   // so it is still visible when the game is resumed.
-  function finishGame(status: "Final" | "Suspended", reason?: string) {
+  function finishGame(result: GameResolutionInput) {
     const current = matchRef.current;
-    const reasonText = reason?.trim();
+    const reasonText = result.note.trim();
+    const status = result.status;
     const winner =
-      current.homeScore === current.awayScore
+      result.homeScore === result.awayScore
         ? "Tie game"
-        : current.homeScore > current.awayScore
+        : result.homeScore > result.awayScore
           ? `${current.home.name} win`
           : `${current.away.name} win`;
 
@@ -2318,25 +2377,44 @@ function App() {
 
     const nextMatch = {
       ...current,
+      awayScore: result.awayScore,
+      homeScore: result.homeScore,
       status,
+      statusNote: reasonText || current.statusNote,
       events: suspensionEvent ? [suspensionEvent, ...current.events] : current.events,
     };
     matchRef.current = nextMatch;
     setMatch(nextMatch);
     appendLog(
       status === "Final"
-        ? createLog("success", "Game ended", `${winner} (${current.awayScore}-${current.homeScore})`)
+        ? createLog("success", "Game ended", `${winner} (${result.awayScore}-${result.homeScore})`)
         : createLog(
             "warning",
             "Game suspended",
-            `${reasonText ? `${reasonText} · ` : "Resumable · "}${current.awayScore}-${current.homeScore}`,
+            `${reasonText} · ${result.awayScore}-${result.homeScore}`,
           ),
     );
+
+    if (current.gameId) {
+      setMatchOptions((options) =>
+        options.map((option) =>
+          option.id === current.gameId
+            ? {
+                ...option,
+                awayScore: result.awayScore,
+                homeScore: result.homeScore,
+                status,
+                statusNote: reasonText || option.statusNote,
+              }
+            : option,
+        ),
+      );
+    }
 
     void dispatchSaveStatus(
       nextMatch,
       status,
-      status === "Suspended" ? reasonText : undefined,
+      reasonText || undefined,
       suspensionEvent?.id,
     ).then((result) => {
       if (result.eventId && suspensionEvent) {
@@ -2486,6 +2564,7 @@ function App() {
           onGameSelect={handleGameSelect}
           onManageRoster={openGameDayRoster}
           onOpenCustomMatch={() => setCustomMatchOpen(true)}
+          onOpenResult={openQuickResult}
           onPeriodSettingsChange={updatePeriodSettings}
           onRefresh={() => refreshMatch(undefined, { force: true, loadOptions: true })}
           onResumeCustomMatch={() => setScreenMode("live")}
@@ -2508,6 +2587,19 @@ function App() {
             onTogglePresent={togglePresent}
             onToggleStarter={toggleStarter}
             onUpdatePlayer={updateRosterPlayer}
+          />
+        )}
+        {quickResultOption && (
+          <GameResolutionDialog
+            away={matchOptionTeamIdentity(quickResultOption, "away")}
+            awayScore={quickResultOption.awayScore}
+            home={matchOptionTeamIdentity(quickResultOption, "home")}
+            homeScore={quickResultOption.homeScore}
+            initialNote={quickResultOption.statusNote}
+            initialStatus={quickResultOption.status}
+            isOnline={isOnline}
+            onClose={() => setQuickResultOption(undefined)}
+            onFinish={saveQuickResult}
           />
         )}
       </LazyMotion>
@@ -2693,11 +2785,14 @@ function App() {
       )}
 
       {endGameOpen && (
-        <EndGameDialog
+        <GameResolutionDialog
           away={match.away}
           home={match.home}
           awayScore={match.awayScore}
           homeScore={match.homeScore}
+          initialNote={match.statusNote}
+          initialStatus={match.status}
+          isOnline={isOnline}
           onClose={closeEndGame}
           onFinish={finishGame}
         />
@@ -2888,6 +2983,7 @@ function GameDashboard({
   onGameSelect,
   onManageRoster,
   onOpenCustomMatch,
+  onOpenResult,
   onPeriodSettingsChange,
   onRefresh,
   onResumeCustomMatch,
@@ -2909,6 +3005,7 @@ function GameDashboard({
   onGameSelect: (gameId: number | undefined) => void;
   onManageRoster: (gameId: number) => void;
   onOpenCustomMatch: () => void;
+  onOpenResult: (option: MatchOption) => void;
   onPeriodSettingsChange: (settings: Partial<PeriodSettings>) => void;
   onRefresh: () => void;
   onResumeCustomMatch: () => void;
@@ -3124,6 +3221,7 @@ function GameDashboard({
                           selected={option.id === selectedGameId}
                           onActivate={onActivate}
                           onManageRoster={() => onManageRoster(option.id)}
+                          onOpenResult={() => onOpenResult(option)}
                           onSelect={() => onGameSelect(option.id)}
                         />
                       ))}
@@ -3155,6 +3253,19 @@ function GameDashboard({
       </section>
     </main>
   );
+}
+
+function gameStatusClass(status: string) {
+  if (status === "Final") {
+    return "border-lime-500/40 bg-lime-500/10 text-lime-300";
+  }
+  if (status === "Suspended") {
+    return "border-amber-500/40 bg-amber-500/10 text-amber-200";
+  }
+  if (status === "Live") {
+    return "border-red-500/40 bg-red-500/10 text-red-300";
+  }
+  return "border-neutral-700 bg-neutral-900 text-neutral-400";
 }
 
 function DashboardLoadingState({ message }: { message: string }) {
@@ -3487,12 +3598,14 @@ function GameCard({
   selected,
   onActivate,
   onManageRoster,
+  onOpenResult,
   onSelect,
 }: {
   option: MatchOption;
   selected: boolean;
   onActivate: (mode: StatsMode, gameId?: number) => void;
   onManageRoster: () => void;
+  onOpenResult: () => void;
   onSelect: () => void;
 }) {
   return (
@@ -3505,7 +3618,10 @@ function GameCard({
     >
       <button className="block w-full rounded-lg text-left focus:outline-none focus:ring-2 focus:ring-amber-400/50" type="button" onClick={onSelect}>
         <div className="flex items-center justify-between gap-3">
-          <span className="rounded-full border border-neutral-700 bg-neutral-900 px-2 py-0.5 text-[11px] font-semibold text-neutral-400">
+          <span className={cn(
+            "rounded-full border px-2 py-0.5 text-[11px] font-semibold",
+            gameStatusClass(option.status),
+          )}>
             {option.status}
           </span>
           <span className="font-mono text-xs text-neutral-500 tabular-nums">{option.week || `#${option.id}`}</span>
@@ -3547,8 +3663,13 @@ function GameCard({
             <span className="truncate">{option.location || "Location pending"}</span>
           </span>
         </div>
+        {option.status === "Suspended" && option.statusNote && (
+          <div className="mt-2 line-clamp-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-2.5 py-2 text-xs text-pretty text-amber-100">
+            <span className="font-semibold">Suspended:</span> {option.statusNote}
+          </div>
+        )}
       </button>
-      <div className="mt-3 grid grid-cols-3 gap-2 border-t border-neutral-800 pt-2.5">
+      <div className="mt-3 grid grid-cols-2 gap-2 border-t border-neutral-800 pt-2.5">
         <button
           className="flex h-9 items-center justify-center gap-1.5 rounded-lg border border-amber-500/40 bg-amber-500/10 text-xs font-semibold text-amber-200 transition-colors hover:bg-amber-500/20 focus:outline-none focus:ring-2 focus:ring-amber-500/50"
           type="button"
@@ -3556,6 +3677,14 @@ function GameCard({
         >
           <ClipboardList size={14} />
           Roster
+        </button>
+        <button
+          className="flex h-9 items-center justify-center gap-1.5 rounded-lg border border-neutral-700 bg-neutral-900 text-xs font-semibold text-neutral-200 transition-colors hover:bg-neutral-800 focus:outline-none focus:ring-2 focus:ring-neutral-500"
+          type="button"
+          onClick={onOpenResult}
+        >
+          <Trophy size={14} />
+          {option.status === "Final" || option.status === "Suspended" ? "Edit result" : "Result"}
         </button>
         <button
           className="h-9 rounded-lg border border-neutral-200 bg-neutral-100 text-xs font-semibold text-neutral-950 transition-colors hover:bg-white focus:outline-none focus:ring-2 focus:ring-neutral-400"
@@ -3732,7 +3861,7 @@ function teamPalette(color: string | undefined, fallback: { base: string; soft: 
 // Exposes each side's identity color as CSS variables so descendants (score header,
 // court labels, rosters, event feed) can reference var(--c-away) / var(--c-home) instead
 // of hard-coded red/blue. Falls back to the original palette when no club color is set.
-function teamColorVars(away: Team, home: Team): CSSProperties {
+function teamColorVars(away: GameResolutionTeam, home: GameResolutionTeam): CSSProperties {
   const a = teamPalette(away.color, AWAY_FALLBACK);
   const h = teamPalette(home.color, HOME_FALLBACK);
   return {
@@ -3770,6 +3899,24 @@ function matchOptionColorVars(option: MatchOption): CSSProperties {
       textColor: option.homeTextColor,
     },
   );
+}
+
+function matchOptionTeamIdentity(option: MatchOption, side: TeamId): GameResolutionTeam {
+  return side === "away"
+    ? {
+        accentColor: option.awayAccentColor,
+        color: option.awayColor,
+        logoUrl: option.awayLogoUrl,
+        name: option.awayName,
+        textColor: option.awayTextColor,
+      }
+    : {
+        accentColor: option.homeAccentColor,
+        color: option.homeColor,
+        logoUrl: option.homeLogoUrl,
+        name: option.homeName,
+        textColor: option.homeTextColor,
+      };
 }
 
 type ClubIdentityVisual = Pick<Team, "accentColor" | "color" | "logoUrl" | "name" | "textColor">;
@@ -4972,141 +5119,287 @@ function WarningDialog({
   );
 }
 
-function EndGameDialog({
+function GameResolutionDialog({
   away,
   home,
   awayScore,
   homeScore,
+  initialNote,
+  initialStatus,
+  isOnline,
   onFinish,
   onClose,
 }: {
-  away: Team;
-  home: Team;
+  away: GameResolutionTeam;
+  home: GameResolutionTeam;
   awayScore: number;
   homeScore: number;
-  onFinish: (status: "Final" | "Suspended", reason?: string) => void;
+  initialNote?: string;
+  initialStatus?: string;
+  isOnline: boolean;
+  onFinish: (result: GameResolutionInput) => void;
   onClose: () => void;
 }) {
-  const [reason, setReason] = useState("");
-  const reasonText = reason.trim();
-  // A suspension must record why — the reason is logged, dropped into the play-by-play, and
-  // saved so it is visible when the game is resumed.
-  const canSuspend = reasonText.length > 0;
+  const [status, setStatus] = useState<GameResolutionStatus>(
+    initialStatus === "Suspended" ? "Suspended" : "Final",
+  );
+  const [awayValue, setAwayValue] = useState(String(awayScore));
+  const [homeValue, setHomeValue] = useState(String(homeScore));
+  const [note, setNote] = useState(initialNote ?? "");
+  const parsedAwayScore = parseResolutionScore(awayValue);
+  const parsedHomeScore = parseResolutionScore(homeValue);
+  const noteText = note.trim();
+  const awayError = parsedAwayScore === undefined ? "Enter a score from 0 to 999." : undefined;
+  const homeError = parsedHomeScore === undefined ? "Enter a score from 0 to 999." : undefined;
+  const noteError = status === "Suspended" && noteText.length === 0
+    ? "Explain why the game is suspended."
+    : undefined;
+  const canSubmit = !awayError && !homeError && !noteError;
   const winner =
-    homeScore === awayScore
+    parsedHomeScore === undefined || parsedAwayScore === undefined
+      ? "Enter the official score"
+      : parsedHomeScore === parsedAwayScore
       ? "Tie game"
-      : homeScore > awayScore
+      : parsedHomeScore > parsedAwayScore
         ? `${home.name} win`
         : `${away.name} win`;
 
   return (
-    <div
-      aria-modal="true"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
-      role="dialog"
-      onClick={onClose}
-    >
-      <div
-        className="flex max-h-[92vh] w-full max-w-md flex-col overflow-hidden rounded-2xl border border-neutral-700 bg-neutral-900 shadow-2xl shadow-black/60"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <div className="flex items-center justify-between gap-3 border-b border-neutral-800 px-4 py-3">
-          <div className="text-[10px] font-black uppercase tracking-widest text-amber-400">End of game</div>
-          <button
-            aria-label="Close"
-            className="flex size-9 items-center justify-center rounded-lg border border-neutral-800 bg-neutral-950 text-neutral-400 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500"
-            type="button"
-            onClick={onClose}
-          >
-            <CircleX size={18} />
-          </button>
-        </div>
-
-        <div className="min-h-0 flex-1 overflow-y-auto scrollbar-slim">
-          <div className="px-4 py-4 text-center">
-            <div className="text-[11px] font-black uppercase tracking-wide text-neutral-500">Current score</div>
-            <div className="mt-1 flex items-center justify-center gap-3 font-mono text-3xl font-black tabular-nums">
-              <span style={{ color: "var(--c-away-soft)" }}>{awayScore}</span>
-              <span className="text-neutral-600">–</span>
-              <span style={{ color: "var(--c-home-soft)" }}>{homeScore}</span>
+    <AlertDialog.Root open onOpenChange={(open) => !open && onClose()}>
+      <AlertDialog.Portal>
+        <AlertDialog.Overlay className="fixed inset-0 z-40 bg-black/75" />
+        <AlertDialog.Content
+          className="fixed left-1/2 top-1/2 z-50 flex max-h-[calc(100dvh-1.5rem)] w-[calc(100%-1.5rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-2xl border border-neutral-700 bg-neutral-900 text-neutral-100 shadow-2xl [font-family:Inter,ui-sans-serif,system-ui,sans-serif]"
+          style={teamColorVars(away, home)}
+        >
+          <div className="flex items-start justify-between gap-3 border-b border-neutral-800 px-4 py-3">
+            <div className="min-w-0">
+              <AlertDialog.Title className="text-base font-semibold text-balance text-neutral-50">
+                Record game result
+              </AlertDialog.Title>
+              <AlertDialog.Description className="mt-0.5 text-sm text-pretty text-neutral-500">
+                Enter the official score, then mark the game final or suspended.
+              </AlertDialog.Description>
             </div>
-            <div className="mt-1 text-sm font-bold text-neutral-300">{winner}</div>
+            <AlertDialog.Cancel asChild>
+              <button
+                aria-label="Close game result"
+                className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-neutral-800 bg-neutral-950 text-neutral-400 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500"
+                type="button"
+              >
+                <CircleX size={18} />
+              </button>
+            </AlertDialog.Cancel>
           </div>
 
-          <div className="border-t border-neutral-800 px-4 py-3">
-            <label className="mb-1.5 flex items-center gap-2 text-[11px] font-black uppercase tracking-wide text-neutral-400" htmlFor="suspend-reason">
-              Suspension reason
-              <span className="text-amber-400">· required to suspend</span>
-            </label>
-            <input
-              className={cn(
-                "h-10 w-full rounded-lg border bg-neutral-950 px-3 text-sm font-semibold text-neutral-100 outline-none transition-colors focus:ring-2",
-                reasonText.length === 0
-                  ? "border-amber-500/50 focus:ring-amber-500/40"
-                  : "border-neutral-800 focus:ring-neutral-500",
+          <div className="min-h-0 flex-1 overflow-y-auto p-4 scrollbar-slim">
+            <div className="grid grid-cols-2 gap-2 rounded-xl border border-neutral-800 bg-neutral-950 p-1" role="group" aria-label="Game result status">
+              <button
+                aria-pressed={status === "Final"}
+                className={cn(
+                  "flex h-11 items-center justify-center gap-2 rounded-lg text-sm font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-amber-400/60",
+                  status === "Final"
+                    ? "bg-amber-300 text-neutral-950"
+                    : "text-neutral-400 hover:bg-neutral-800 hover:text-neutral-100",
+                )}
+                type="button"
+                onClick={() => setStatus("Final")}
+              >
+                <Trophy size={16} />
+                Final result
+              </button>
+              <button
+                aria-pressed={status === "Suspended"}
+                className={cn(
+                  "flex h-11 items-center justify-center gap-2 rounded-lg text-sm font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-amber-400/60",
+                  status === "Suspended"
+                    ? "bg-amber-300 text-neutral-950"
+                    : "text-neutral-400 hover:bg-neutral-800 hover:text-neutral-100",
+                )}
+                type="button"
+                onClick={() => setStatus("Suspended")}
+              >
+                <Pause size={16} />
+                Suspended
+              </button>
+            </div>
+
+            <div className="mt-4 grid grid-cols-[minmax(0,1fr)_32px_minmax(0,1fr)] items-start gap-2">
+              <ResolutionScoreField
+                error={awayError}
+                label="Visitor"
+                side="away"
+                team={away}
+                value={awayValue}
+                onChange={setAwayValue}
+              />
+              <div className="pt-16 text-center text-xl font-semibold text-neutral-600">–</div>
+              <ResolutionScoreField
+                error={homeError}
+                label="Home"
+                side="home"
+                team={home}
+                value={homeValue}
+                onChange={setHomeValue}
+              />
+            </div>
+            <div className="mt-2 text-center text-sm font-semibold text-neutral-300">{winner}</div>
+
+            <div className="mt-4 border-t border-neutral-800 pt-4">
+              <label className="flex items-center justify-between gap-2 text-sm font-semibold text-neutral-200" htmlFor="game-resolution-note">
+                <span>{status === "Suspended" ? "Why was it suspended?" : "Game notes"}</span>
+                <span className="text-xs font-normal text-neutral-500">
+                  {status === "Suspended" ? "Required" : "Optional"}
+                </span>
+              </label>
+              <textarea
+                aria-describedby={noteError ? "game-resolution-note-error" : "game-resolution-note-help"}
+                aria-invalid={Boolean(noteError)}
+                className={cn(
+                  "mt-2 min-h-24 w-full resize-y rounded-lg border bg-neutral-950 px-3 py-2 text-sm text-pretty text-neutral-100 outline-none transition-colors focus:ring-2",
+                  noteError
+                    ? "border-red-500/60 focus:ring-red-500/40"
+                    : "border-neutral-800 focus:ring-amber-400/50",
+                )}
+                id="game-resolution-note"
+                maxLength={500}
+                placeholder={status === "Suspended" ? "Example: Power outage; game paused with 3:42 remaining." : "Optional context about the official result"}
+                value={note}
+                onChange={(event) => setNote(event.currentTarget.value)}
+              />
+              <div className="mt-1 flex items-start justify-between gap-3">
+                {noteError ? (
+                  <span className="text-xs text-red-300" id="game-resolution-note-error" role="alert">{noteError}</span>
+                ) : (
+                  <span className="text-xs text-pretty text-neutral-500" id="game-resolution-note-help">
+                    {status === "Suspended" ? "The reason is saved in Odoo and play-by-play." : "Notes are saved with the game in Odoo."}
+                  </span>
+                )}
+                <span className="shrink-0 text-xs tabular-nums text-neutral-600">{note.length}/500</span>
+              </div>
+
+              {status === "Suspended" && (
+                <div className="mt-2 flex flex-wrap gap-1.5" aria-label="Common suspension reasons">
+                  {SUSPENSION_REASON_PRESETS.map((preset) => (
+                    <button
+                      className={cn(
+                        "rounded-full border px-2.5 py-1 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-amber-400/50",
+                        note === preset
+                          ? "border-amber-400/60 bg-amber-400/10 text-amber-200"
+                          : "border-neutral-800 bg-neutral-950 text-neutral-400 hover:bg-neutral-800 hover:text-neutral-100",
+                      )}
+                      key={preset}
+                      type="button"
+                      onClick={() => setNote(preset)}
+                    >
+                      {preset}
+                    </button>
+                  ))}
+                </div>
               )}
-              id="suspend-reason"
-              placeholder="Why is the game being suspended?"
-              value={reason}
-              onChange={(event) => setReason(event.currentTarget.value)}
-            />
-            <div className="mt-2 flex flex-wrap gap-1.5">
-              {SUSPENSION_REASON_PRESETS.map((preset) => (
-                <button
-                  className={cn(
-                    "rounded-full border px-2.5 py-1 text-[11px] font-bold transition-colors focus:outline-none focus:ring-2 focus:ring-neutral-500",
-                    reason === preset
-                      ? "border-amber-500/50 bg-amber-500/10 text-amber-200"
-                      : "border-neutral-800 bg-neutral-950 text-neutral-300 hover:bg-neutral-800 hover:text-neutral-100",
-                  )}
-                  key={preset}
-                  type="button"
-                  onClick={() => setReason(preset)}
-                >
-                  {preset}
-                </button>
-              ))}
+            </div>
+
+            <div className="mt-4 rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2 text-xs text-pretty text-neutral-500">
+              {isOnline
+                ? "The score, status, and notes will be verified in Odoo before sync is confirmed."
+                : "You are offline. This result will stay on this device and sync automatically when connected."}
             </div>
           </div>
 
-          <div className="grid gap-2 px-3 pt-1">
-            <button
-              className="flex h-12 items-center justify-center gap-2 rounded-xl border border-amber-500/40 bg-amber-500/10 text-sm font-black uppercase tracking-wide text-amber-200 transition-colors hover:bg-amber-500/20 focus:outline-none focus:ring-2 focus:ring-amber-500/50 disabled:cursor-not-allowed disabled:opacity-40"
-              disabled={!canSuspend}
-              title={canSuspend ? undefined : "Enter a suspension reason first"}
-              type="button"
-              onClick={() => onFinish("Suspended", reasonText)}
-            >
-              <Pause size={18} />
-              Suspend — resume later
-            </button>
-            <button
-              className="flex h-12 items-center justify-center gap-2 rounded-xl border border-red-500/40 bg-red-500/10 text-sm font-black uppercase tracking-wide text-red-200 transition-colors hover:bg-red-500/20 focus:outline-none focus:ring-2 focus:ring-red-500/50"
-              type="button"
-              onClick={() => onFinish("Final")}
-            >
-              <Trophy size={18} />
-              End game (Final)
-            </button>
+          <div className="flex items-center justify-end gap-2 border-t border-neutral-800 px-4 pt-3 [padding-bottom:max(0.75rem,env(safe-area-inset-bottom))]">
+            <AlertDialog.Cancel asChild>
+              <button
+                className="h-11 rounded-lg border border-neutral-700 bg-neutral-950 px-4 text-sm font-semibold text-neutral-300 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500"
+                type="button"
+              >
+                Cancel
+              </button>
+            </AlertDialog.Cancel>
+            <AlertDialog.Action asChild>
+              <button
+                className={cn(
+                  "flex h-11 items-center justify-center gap-2 rounded-lg px-4 text-sm font-semibold transition-colors focus:outline-none focus:ring-2 disabled:cursor-not-allowed disabled:opacity-40",
+                  status === "Final"
+                    ? "bg-red-500 text-white hover:bg-red-400 focus:ring-red-500/50"
+                    : "bg-amber-300 text-neutral-950 hover:bg-amber-200 focus:ring-amber-400/60",
+                )}
+                disabled={!canSubmit}
+                type="button"
+                onClick={() => {
+                  if (parsedAwayScore === undefined || parsedHomeScore === undefined || !canSubmit) {
+                    return;
+                  }
+                  onFinish({
+                    awayScore: parsedAwayScore,
+                    homeScore: parsedHomeScore,
+                    note: noteText,
+                    status,
+                  });
+                }}
+              >
+                {status === "Final" ? <Trophy size={16} /> : <Pause size={16} />}
+                {status === "Final" ? "Save final result" : "Suspend game"}
+              </button>
+            </AlertDialog.Action>
           </div>
-
-          <div className="px-4 pb-2 pt-3 text-center text-[11px] font-semibold text-neutral-500">
-            A suspended game keeps its score, stats &amp; reason and can be reopened from the dashboard to continue.
-          </div>
-        </div>
-
-        <div className="flex justify-end border-t border-neutral-800 px-4 py-3">
-          <button
-            className="h-10 rounded-lg border border-neutral-800 bg-neutral-950 px-4 text-xs font-black uppercase tracking-wide text-neutral-300 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500"
-            type="button"
-            onClick={onClose}
-          >
-            Cancel
-          </button>
-        </div>
-      </div>
-    </div>
+        </AlertDialog.Content>
+      </AlertDialog.Portal>
+    </AlertDialog.Root>
   );
+}
+
+function ResolutionScoreField({
+  error,
+  label,
+  side,
+  team,
+  value,
+  onChange,
+}: {
+  error?: string;
+  label: "Visitor" | "Home";
+  side: TeamId;
+  team: GameResolutionTeam;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const errorId = `${side}-resolution-score-error`;
+  return (
+    <label className="min-w-0 rounded-xl border border-neutral-800 bg-neutral-950 p-3 text-center">
+      <span className="flex min-w-0 items-center justify-center gap-2">
+        <ClubLogo compact side={side} team={team} />
+        <span className="min-w-0 text-left">
+          <span className="block text-xs font-medium text-neutral-500">{label}</span>
+          <span className="block truncate text-sm font-semibold text-neutral-100">{team.name}</span>
+        </span>
+      </span>
+      <input
+        aria-describedby={error ? errorId : undefined}
+        aria-invalid={Boolean(error)}
+        aria-label={`${team.name} official score`}
+        className={cn(
+          "mt-3 h-14 w-full rounded-lg border bg-neutral-900 px-2 text-center font-mono text-2xl font-bold tabular-nums text-neutral-50 outline-none focus:ring-2",
+          error ? "border-red-500/60 focus:ring-red-500/40" : "border-neutral-700 focus:ring-amber-400/50",
+        )}
+        inputMode="numeric"
+        max="999"
+        min="0"
+        pattern="[0-9]*"
+        type="number"
+        value={value}
+        onChange={(event) => onChange(event.currentTarget.value.replace(/[^0-9]/g, "").slice(0, 3))}
+      />
+      {error && <span className="mt-1 block text-xs text-red-300" id={errorId} role="alert">{error}</span>}
+    </label>
+  );
+}
+
+function parseResolutionScore(value: string) {
+  if (!/^\d{1,3}$/.test(value.trim())) {
+    return undefined;
+  }
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed >= 0 && parsed <= 999 ? parsed : undefined;
 }
 
 function FoulDialog({
@@ -7827,6 +8120,27 @@ function readStoredLiveMatch(gameId: number | undefined): LiveMatch | undefined 
   return legacy && legacy.gameId === gameId && legacy.match ? legacy.match : undefined;
 }
 
+function persistStoredLiveMatch(match: LiveMatch) {
+  if (!match.gameId) {
+    return;
+  }
+
+  const snapshot = {
+    gameId: match.gameId,
+    savedAt: Date.now(),
+    match,
+  } satisfies StoredLiveMatch;
+  writeStoredJson(STORAGE_KEYS.liveMatch, snapshot);
+  const storedMatches = readStoredJson<Record<string, StoredLiveMatch>>(STORAGE_KEYS.liveMatches) ?? {};
+  const nextMatches = { ...storedMatches, [String(match.gameId)]: snapshot };
+  const newest = Object.fromEntries(
+    Object.entries(nextMatches)
+      .sort(([, first], [, second]) => second.savedAt - first.savedAt)
+      .slice(0, 12),
+  );
+  writeStoredJson(STORAGE_KEYS.liveMatches, newest);
+}
+
 function readStoredSyncLog(apiEnabled: boolean) {
   const storedLog = readStoredJson<SyncLogEntry[]>(STORAGE_KEYS.syncLog);
   if (Array.isArray(storedLog) && storedLog.length > 0) {
@@ -8014,6 +8328,7 @@ function buildScheduledMatchShell(option: MatchOption, settings: PeriodSettings)
     possession: "home",
     shotClock: FULL_SHOT_CLOCK,
     status: option.status,
+    statusNote: option.statusNote,
     syncMessage: "Offline schedule copy — changes are saved on this device.",
   };
 }

@@ -163,6 +163,7 @@ export type LiveMatch = {
   scorekeeper2?: string;
   shotClock: number;
   status: string;
+  statusNote?: string;
   syncMessage: string;
   syncedAt?: string;
 };
@@ -193,6 +194,7 @@ export type MatchOption = {
   location?: string;
   name: string;
   status: string;
+  statusNote?: string;
   week?: string;
 };
 
@@ -352,7 +354,9 @@ export async function loadMatchOptions(client: OdooClient): Promise<MatchOption[
     MODELS.game,
     [],
     GAME_FIELDS,
-    { limit: 40, order: `${GAME.datetime} desc` },
+    // Keep the complete season available from the operations dashboard so every game can
+    // receive a manual result or suspension without falling off an arbitrary recent-games cap.
+    { limit: 500, order: `${GAME.datetime} desc` },
   );
 
   const teamIds = uniqueNumbers(
@@ -404,6 +408,7 @@ export async function loadMatchOptions(client: OdooClient): Promise<MatchOption[
           stringValue(game.display_name) ||
           `Game ${id}`,
         status: stringValue(game[GAME.status]) || "Scheduled",
+        statusNote: plainTextFromHtml(game[GAME.websiteDescription]) || undefined,
         week: stringValue(game[GAME.week]),
       } satisfies MatchOption;
     })
@@ -496,15 +501,63 @@ export async function saveMatchStatus(
 
   try {
     const capabilities = await getSchemaCapabilities(client);
-    await client.write(MODELS.game, [match.gameId], { [GAME.status]: status });
+    const trimmedNote = note?.trim();
+    if (status === "Suspended" && !trimmedNote) {
+      throw new Error("A suspension reason is required.");
+    }
+
+    const gameValues = filterWritableValues(
+      {
+        [GAME.awayScore]: match.awayScore,
+        [GAME.homeScore]: match.homeScore,
+        [GAME.status]: status,
+        ...(trimmedNote ? { [GAME.websiteDescription]: trimmedNote } : {}),
+      },
+      capabilities.game,
+    );
+    const written = await client.write(MODELS.game, [match.gameId], gameValues);
+    if (!written) {
+      throw new Error("Odoo did not confirm the game result update.");
+    }
+
+    const verificationFields = filterReadableFields(
+      [GAME.awayScore, GAME.homeScore, GAME.status, GAME.websiteDescription],
+      capabilities.game,
+    );
+    const [verifiedGame] = await client.read<OdooRecord>(MODELS.game, [match.gameId], verificationFields);
+    if (
+      !verifiedGame ||
+      numberValue(verifiedGame[GAME.awayScore], -1) !== match.awayScore ||
+      numberValue(verifiedGame[GAME.homeScore], -1) !== match.homeScore ||
+      stringValue(verifiedGame[GAME.status]) !== status ||
+      (trimmedNote && plainTextFromHtml(verifiedGame[GAME.websiteDescription]) !== trimmedNote)
+    ) {
+      throw new Error("Odoo could not verify the saved score, status, and notes.");
+    }
     const flowMessage = await saveGameFlowFields(client, match, capabilities);
 
     // A note (e.g. the suspension reason) is persisted as a game event so it survives a
     // reload and is visible in the play-by-play when the game is resumed.
     let eventId: number | undefined;
     let noteMessage = "";
-    const trimmedNote = note?.trim();
-    if (trimmedNote && capabilities.gameEvent.exists) {
+    if (status === "Suspended" && trimmedNote && capabilities.gameEvent.exists) {
+      const canMatchExistingReason =
+        capabilities.gameEvent.fields.has(GAME_EVENT.game) &&
+        capabilities.gameEvent.fields.has(GAME_EVENT.actionType) &&
+        capabilities.gameEvent.fields.has(GAME_EVENT.note);
+      const existingEvents = canMatchExistingReason
+        ? await client.searchRead<OdooRecord>(
+            MODELS.gameEvent,
+            [
+              [GAME_EVENT.game, "=", match.gameId],
+              [GAME_EVENT.actionType, "=", "suspension"],
+              [GAME_EVENT.note, "=", trimmedNote],
+            ],
+            ["id"],
+            { limit: 1, order: "id desc" },
+          )
+        : [];
+      eventId = numberValue(existingEvents[0]?.id) || undefined;
       const eventValues = filterWritableValues(
         {
           [GAME_EVENT.active]: true,
@@ -519,10 +572,10 @@ export async function saveMatchStatus(
         capabilities.gameEvent,
       );
 
-      if (eventValues[GAME_EVENT.name]) {
+      if (!eventId && eventValues[GAME_EVENT.name]) {
         eventId = await client.create(MODELS.gameEvent, eventValues);
-        noteMessage = "Reason saved.";
       }
+      noteMessage = eventId ? "Reason saved." : "Reason saved with the game.";
     }
 
     return {
@@ -1437,6 +1490,7 @@ async function normalizeGameRecord(
     scorekeeper2: stringValue(game[GAME.scorekeeper2]) || undefined,
     shotClock: numberValue(game[GAME.shotClockSeconds], fallbackMatch.shotClock),
     status: stringValue(game[GAME.status]) || "Scheduled",
+    statusNote: plainTextFromHtml(game[GAME.websiteDescription]) || undefined,
     syncMessage: "Live data connected",
     syncedAt: new Date().toISOString(),
   };
@@ -2396,6 +2450,22 @@ function relationName(value: unknown) {
 
 function stringValue(value: unknown) {
   return typeof value === "string" ? value : "";
+}
+
+function plainTextFromHtml(value: unknown) {
+  return stringValue(value)
+    .replace(/<br\s*\/?\s*>/gi, "\n")
+    .replace(/<\/p\s*>/gi, "\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/\r/g, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 }
 
 function numberValue(value: unknown, fallback = 0) {
