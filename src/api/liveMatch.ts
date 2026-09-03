@@ -1122,6 +1122,7 @@ export function createLog(
     message: sanitizeDashboardText(message),
     time: new Date().toLocaleTimeString([], {
       hour: "2-digit",
+      hour12: true,
       minute: "2-digit",
       second: "2-digit",
     }),

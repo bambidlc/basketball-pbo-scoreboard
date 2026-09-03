@@ -38,6 +38,22 @@ export function currentOdooDateTimeKey(now = new Date()): string {
   return now.toISOString().slice(0, 19).replace("T", " ");
 }
 
+export function formatGameTime(datetime?: string): string {
+  const match = datetime?.trim().match(/\b(\d{2}):(\d{2})\b/);
+  if (!match) {
+    return "";
+  }
+
+  const hour = Number(match[1]);
+  if (hour < 0 || hour > 23) {
+    return "";
+  }
+
+  const period = hour >= 12 ? "PM" : "AM";
+  const displayHour = hour % 12 || 12;
+  return `${displayHour}:${match[2]} ${period}`;
+}
+
 function normalizedStatus(option: MatchOption): string {
   return option.status.trim().toLocaleLowerCase("es");
 }

@@ -69,6 +69,7 @@ import {
 import {
   currentPboDateKey,
   findRelevantGame,
+  formatGameTime,
   matchDateKey,
   orderGamesByRelevance,
   shouldAdvanceToRelevantGame,
@@ -2927,11 +2928,6 @@ function formatGameDateHeading(dateKey: string): string {
     month: "long",
     day: "numeric",
   });
-}
-
-function formatGameTime(datetime?: string): string {
-  const match = datetime?.trim().match(/\b(\d{2}):(\d{2})\b/);
-  return match ? `${match[1]}:${match[2]}` : "";
 }
 
 function groupGamesByDateAndLocation(options: MatchOption[]): GameDateGroup[] {

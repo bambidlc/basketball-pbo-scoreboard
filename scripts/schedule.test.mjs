@@ -4,6 +4,7 @@ import {
   currentOdooDateTimeKey,
   currentPboDateKey,
   findRelevantGame,
+  formatGameTime,
   matchDateKey,
   orderGamesByRelevance,
   shouldAdvanceToRelevantGame,
@@ -27,6 +28,13 @@ test("Puerto Rico date is independent of the browser's local timezone", () => {
   assert.equal(currentPboDateKey(new Date("2026-09-04T03:30:00Z")), "2026-09-03");
   assert.equal(currentOdooDateTimeKey(new Date("2026-09-04T03:30:00Z")), "2026-09-04 03:30:00");
   assert.equal(matchDateKey("2026-09-04 03:30:00"), "2026-09-03");
+});
+
+test("formats dashboard tip-off times with AM and PM", () => {
+  assert.equal(formatGameTime("2026-09-05 00:05:00"), "12:05 AM");
+  assert.equal(formatGameTime("2026-09-05 09:30:00"), "9:30 AM");
+  assert.equal(formatGameTime("2026-09-05 12:00:00"), "12:00 PM");
+  assert.equal(formatGameTime("2026-09-05 18:45:00"), "6:45 PM");
 });
 
 test("orders the nearest future date first and recent past dates afterward", () => {
