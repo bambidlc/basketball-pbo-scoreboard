@@ -370,34 +370,29 @@ function App() {
     () => readStoredNumber(STORAGE_KEYS.selectedGameId) ?? apiConfig.liveGameId,
     [apiConfig.liveGameId],
   );
-  // Custom (local) match mode: a roster typed into the app with no Odoo behind it, for
-  // testing. When on, the stored match is restored on load and Odoo polling is paused.
-  const initialCustomMode = useMemo(() => readStoredBoolean(STORAGE_KEYS.customMode, false), []);
-  const initialCustomMatch = useMemo(
-    () => (initialCustomMode ? readStoredJson<LiveMatch>(STORAGE_KEYS.customMatch) : undefined),
-    [initialCustomMode],
-  );
   // Last Odoo-backed match scored on this device, persisted on every change. Restored on
   // load so a reload/crash — or a cold start with no signal — resumes the whole game
   // (events, score, clock) instead of an empty board. Only seeded when it matches the
   // selected game; a live Odoo poll later merges fresh server data over it.
   const initialLiveMatch = useMemo(
-    () => (initialCustomMode ? undefined : readStoredLiveMatch(initialSelectedGameId)),
-    [initialCustomMode, initialSelectedGameId],
+    () => readStoredLiveMatch(initialSelectedGameId),
+    [initialSelectedGameId],
   );
-  const seededMatch = initialCustomMode && initialCustomMatch ? initialCustomMatch : initialLiveMatch;
+  const seededMatch = initialLiveMatch;
   const initialMatchOptions = useMemo(
     () => readStoredJson<MatchOption[]>(STORAGE_KEYS.matchOptions) ?? [],
     [],
   );
-  const [customMode, setCustomMode] = useState(() => initialCustomMode && Boolean(initialCustomMatch));
+  // Custom games deliberately live in this tab's React state only. Persisting this flag in
+  // localStorage made every newly opened tab inherit local mode and stop polling Odoo.
+  const [customMode, setCustomMode] = useState(false);
   const [customMatchOpen, setCustomMatchOpen] = useState(false);
   const [match, setMatch] = useState<LiveMatch>(() => seededMatch ?? fallbackMatch);
   const [matchOptions, setMatchOptions] = useState<MatchOption[]>(initialMatchOptions);
   const [selectedGameId, setSelectedGameId] = useState<number | undefined>(initialSelectedGameId);
   const [screenMode, setScreenMode] = useState<ScreenMode>(() =>
     // Resume straight into the live view when the seeded game is still in progress.
-    (initialCustomMode && initialCustomMatch) || initialLiveMatch?.status === "Live"
+    initialLiveMatch?.status === "Live"
       ? "live"
       : "dashboard",
   );
@@ -497,15 +492,14 @@ function App() {
 
   useEffect(() => {
     customModeRef.current = customMode;
-    writeStoredBoolean(STORAGE_KEYS.customMode, customMode);
   }, [customMode]);
 
-  // While a custom (local) match is active, persist the whole match so a reload resumes it.
+  // Clean up the legacy shared custom-game state. New tabs must always be free to connect
+  // to Odoo, even if another tab is currently running a temporary local game.
   useEffect(() => {
-    if (customMode) {
-      writeStoredJson(STORAGE_KEYS.customMatch, match);
-    }
-  }, [customMode, match]);
+    writeStoredBoolean(STORAGE_KEYS.customMode, false);
+    writeStoredJson(STORAGE_KEYS.customMatch, undefined);
+  }, []);
 
   // Persist every Odoo-backed match snapshot so the game survives a reload/crash and is
   // available offline. Keyed by gameId; the loader only restores it for the same game.
@@ -1236,9 +1230,10 @@ function App() {
     setSelectedTeam("home");
     customModeRef.current = true;
     setCustomMode(true);
+    selectedGameIdRef.current = undefined;
+    setSelectedGameId(undefined);
     matchRef.current = built;
     setMatch(built);
-    writeStoredJson(STORAGE_KEYS.customMatch, built);
     setCustomMatchOpen(false);
     setScreenMode("live");
     appendLog(createLog("success", "Custom match started", built.matchName));
