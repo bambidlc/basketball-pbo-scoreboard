@@ -66,6 +66,13 @@ import {
   type Team,
   type TeamId,
 } from "./api/liveMatch";
+import {
+  currentPboDateKey,
+  findRelevantGame,
+  matchDateKey,
+  orderGamesByRelevance,
+  shouldAdvanceToRelevantGame,
+} from "./schedule";
 import { OdooClient, getOdooConfig } from "./api/odooClient";
 import { makeOpId, trimMatchForOutbox, type OutboxOp } from "./api/outbox";
 import { CourtSvg } from "./components/CourtSvg";
@@ -128,6 +135,7 @@ type ActionDetail = {
 type RefreshOptions = {
   force?: boolean;
   loadOptions?: boolean;
+  selectRelevant?: boolean;
 };
 
 type UndoItem = {
@@ -343,6 +351,7 @@ const STORAGE_KEYS = {
 const SYNC_LOG_LIMIT = 25;
 const VISIBLE_SYNC_LOG_LIMIT = 3;
 const UNDO_LIMIT = 500;
+const MATCH_OPTIONS_REFRESH_MS = 60_000;
 const REGULATION_CLOCK_SECONDS = 5 * 60;
 const OVERTIME_CLOCK_SECONDS = 5 * 60;
 const DEFAULT_PERIOD_COUNT = 5;
@@ -456,6 +465,7 @@ function App() {
   const matchRef = useRef<LiveMatch>(seededMatch ?? fallbackMatch);
   const customModeRef = useRef(customMode);
   const clockExpiryHandledRef = useRef(false);
+  const matchOptionsLoadedAtRef = useRef(0);
   const matchOptionsLoadedRef = useRef(false);
   const preGameOpenRef = useRef(false);
   const pendingRefreshRef = useRef<{ gameId?: number; options: RefreshOptions } | null>(null);
@@ -506,9 +516,7 @@ function App() {
   }, [customMode, match]);
 
   useEffect(() => {
-    if (matchOptions.length > 0) {
-      writeStoredJson(STORAGE_KEYS.matchOptions, matchOptions);
-    }
+    writeStoredJson(STORAGE_KEYS.matchOptions, matchOptions);
   }, [matchOptions]);
 
   // Keep the outbox mirror ref + its persisted copy in lockstep with the queue state.
@@ -550,12 +558,32 @@ function App() {
       setConnectionStatus("syncing");
 
       try {
-        const shouldLoadOptions = options.loadOptions || !matchOptionsLoadedRef.current;
-        const result = await loadLiveMatch(apiClient, requestedGameId);
-        const rateLimited = isRateLimitLog(result.log);
-        const optionsResult = shouldLoadOptions && !rateLimited
-          ? await loadMatchOptions(apiClient).catch(() => [] as MatchOption[])
-          : ([] as MatchOption[]);
+        const shouldLoadOptions = Boolean(
+          options.loadOptions ||
+          !matchOptionsLoadedRef.current ||
+          now - matchOptionsLoadedAtRef.current >= MATCH_OPTIONS_REFRESH_MS
+        );
+        let optionsResult: MatchOption[] | undefined;
+        let scheduleError: string | undefined;
+        if (shouldLoadOptions) {
+          try {
+            optionsResult = await loadMatchOptions(apiClient);
+          } catch (error) {
+            scheduleError = readableError(error);
+          }
+        }
+
+        let targetGameId = requestedGameId;
+        if (options.selectRelevant && optionsResult && optionsResult.length > 0) {
+          const selectedOption = optionsResult.find((option) => option.id === requestedGameId);
+          const relevantOption = findRelevantGame(optionsResult);
+          if (relevantOption && shouldAdvanceToRelevantGame(selectedOption)) {
+            targetGameId = relevantOption.id;
+          }
+        }
+
+        const result = await loadLiveMatch(apiClient, targetGameId);
+        const rateLimited = isRateLimitLog(result.log) || Boolean(scheduleError?.includes("429"));
 
         if (rateLimited) {
           rateLimitUntilRef.current = Date.now() + 30000;
@@ -575,17 +603,19 @@ function App() {
             apiConfig.enabled &&
             result.source === "local" &&
             current.gameId &&
-            current.gameId === requestedGameId
+            current.gameId === targetGameId
           ) {
             return {
               ...current,
               syncMessage: rateLimited
                 ? "Rate limited. Holding current live data and retrying shortly."
-                : result.log.detail ?? result.log.message,
+                : scheduleError
+                  ? `Schedule refresh failed: ${scheduleError}`
+                  : result.log.detail ?? result.log.message,
             };
           }
 
-          const cachedMatch = readStoredLiveMatch(requestedGameId);
+          const cachedMatch = readStoredLiveMatch(targetGameId);
           const sourceMatch = result.source === "api" ? result.match : cachedMatch ?? result.match;
           const loadedMatch = applyStoredGameDayRoster(
             applyStoredOfficials(applyStoredAttendance(applyStoredStarters(sourceMatch))),
@@ -593,6 +623,9 @@ function App() {
 
           return {
             ...loadedMatch,
+            syncMessage: scheduleError
+              ? `Schedule refresh failed: ${scheduleError}`
+              : loadedMatch.syncMessage,
             events: result.source === "api"
               ? mergeEventHistory(
                   current.gameId === loadedMatch.gameId ? current.events : [],
@@ -602,19 +635,27 @@ function App() {
           };
         });
 
-        if (shouldLoadOptions && !rateLimited && optionsResult.length > 0) {
+        if (optionsResult) {
           matchOptionsLoadedRef.current = true;
+          matchOptionsLoadedAtRef.current = Date.now();
           setMatchOptions(optionsResult);
         }
 
         const nextGameId = result.source === "api"
           ? result.match.gameId
-          : (loadedGameIdRef.current ?? requestedGameId);
+          : (loadedGameIdRef.current ?? targetGameId);
         selectedGameIdRef.current = nextGameId;
         setSelectedGameId(nextGameId);
         appendLog(result.log);
+        if (scheduleError) {
+          appendLog(createLog("error", "Schedule refresh failed", scheduleError));
+        }
         setConnectionStatus(
-          result.log.level === "error" ? "error" : result.source === "api" ? "connected" : "local",
+          scheduleError || result.log.level === "error"
+            ? "error"
+            : result.source === "api"
+              ? "connected"
+              : "local",
         );
       } finally {
         inFlightRefreshRef.current = false;
@@ -910,7 +951,7 @@ function App() {
       return undefined;
     }
 
-    void refreshMatch(undefined, { loadOptions: true });
+    void refreshMatch(undefined, { loadOptions: true, selectRelevant: true });
 
     if (!apiConfig.enabled) {
       return undefined;
@@ -1210,7 +1251,7 @@ function App() {
     writeStoredJson(STORAGE_KEYS.customMatch, undefined);
     setScreenMode("dashboard");
     appendLog(createLog("info", "Custom match closed", "Back to Odoo games."));
-    void refreshMatch(undefined, { force: true, loadOptions: true });
+    void refreshMatch(undefined, { force: true, loadOptions: true, selectRelevant: true });
   }
 
   function updatePeriodSettings(values: Partial<PeriodSettings>) {
@@ -2567,7 +2608,7 @@ function App() {
           onOpenCustomMatch={() => setCustomMatchOpen(true)}
           onOpenResult={openQuickResult}
           onPeriodSettingsChange={updatePeriodSettings}
-          onRefresh={() => refreshMatch(undefined, { force: true, loadOptions: true })}
+          onRefresh={() => refreshMatch(undefined, { force: true, loadOptions: true, selectRelevant: true })}
           onResumeCustomMatch={() => setScreenMode("live")}
           onStatsModeChange={setStatsMode}
         />
@@ -2877,13 +2918,6 @@ type GameDateGroup = {
   total: number;
 };
 
-function gameDateKey(datetime?: string): string {
-  const trimmed = datetime?.trim() ?? "";
-  // Odoo datetimes arrive as "YYYY-MM-DD HH:MM:SS" — the leading 10 chars are the date.
-  const datePart = trimmed.slice(0, 10);
-  return /^\d{4}-\d{2}-\d{2}$/.test(datePart) ? datePart : "";
-}
-
 function formatGameDateHeading(dateKey: string): string {
   if (!dateKey) {
     return "Date pending";
@@ -2907,8 +2941,8 @@ function formatGameTime(datetime?: string): string {
 
 function groupGamesByDateAndLocation(options: MatchOption[]): GameDateGroup[] {
   const byDate = new Map<string, MatchOption[]>();
-  for (const option of options) {
-    const key = gameDateKey(option.datetime);
+  for (const option of orderGamesByRelevance(options, currentPboDateKey())) {
+    const key = matchDateKey(option.datetime);
     const bucket = byDate.get(key);
     if (bucket) {
       bucket.push(option);
@@ -2939,8 +2973,13 @@ function groupGamesByDateAndLocation(options: MatchOption[]): GameDateGroup[] {
         location: locationKey || "Location pending",
       });
     }
-    // Named courts first (alphabetical), then any games without a location.
+    // Put the court containing this day's most relevant game first, then keep the
+    // remaining named courts alphabetical and undated locations last.
+    const leadingLocationKey = (games[0]?.location ?? "").trim() || "__pending__";
     locations.sort((a, b) => {
+      if (a.key === leadingLocationKey || b.key === leadingLocationKey) {
+        return a.key === leadingLocationKey ? -1 : 1;
+      }
       if (a.hasLocation !== b.hasLocation) {
         return a.hasLocation ? -1 : 1;
       }
@@ -2955,14 +2994,6 @@ function groupGamesByDateAndLocation(options: MatchOption[]): GameDateGroup[] {
       total: games.length,
     });
   }
-
-  // Most recent date first, with undated games last.
-  groups.sort((a, b) => {
-    if (a.hasDate !== b.hasDate) {
-      return a.hasDate ? -1 : 1;
-    }
-    return b.dateKey.localeCompare(a.dateKey);
-  });
 
   return groups;
 }
@@ -3012,7 +3043,9 @@ function GameDashboard({
   onResumeCustomMatch: () => void;
   onStatsModeChange: (mode: StatsMode) => void;
 }) {
-  const dateGroups = useMemo(() => groupGamesByDateAndLocation(matchOptions), [matchOptions]);
+  const orderedMatchOptions = useMemo(() => orderGamesByRelevance(matchOptions), [matchOptions]);
+  const dateGroups = useMemo(() => groupGamesByDateAndLocation(orderedMatchOptions), [orderedMatchOptions]);
+  const relevantGameId = useMemo(() => findRelevantGame(orderedMatchOptions)?.id, [orderedMatchOptions]);
   const statusText =
     !isOnline
       ? "Offline · ready"
@@ -3098,7 +3131,7 @@ function GameDashboard({
               onChange={(event) => onGameSelect(readSelectNumber(event.currentTarget.value))}
             >
               {selectedGameId ? null : <option value="">Choose a game</option>}
-              {matchOptions.map((option) => (
+              {orderedMatchOptions.map((option) => (
                 <option key={option.id} value={option.id}>{option.name}</option>
               ))}
             </select>
@@ -3218,6 +3251,7 @@ function GameDashboard({
                       {locationGroup.games.map((option) => (
                         <GameCard
                           key={option.id}
+                          nextGame={option.id === relevantGameId}
                           option={option}
                           selected={option.id === selectedGameId}
                           onActivate={onActivate}
@@ -3595,6 +3629,7 @@ function CustomTeamColumn({
 }
 
 function GameCard({
+  nextGame,
   option,
   selected,
   onActivate,
@@ -3602,6 +3637,7 @@ function GameCard({
   onOpenResult,
   onSelect,
 }: {
+  nextGame: boolean;
   option: MatchOption;
   selected: boolean;
   onActivate: (mode: StatsMode, gameId?: number) => void;
@@ -3613,18 +3649,29 @@ function GameCard({
     <article
       className={cn(
         "rounded-xl border bg-neutral-950 p-3 transition-colors",
-        selected ? "border-amber-400/70 ring-1 ring-inset ring-amber-400/20" : "border-neutral-800 hover:border-neutral-700",
+        selected
+          ? "border-amber-400/70 ring-1 ring-inset ring-amber-400/20"
+          : nextGame
+            ? "border-sky-400/60 ring-1 ring-inset ring-sky-400/15"
+            : "border-neutral-800 hover:border-neutral-700",
       )}
       style={matchOptionColorVars(option)}
     >
       <button className="block w-full rounded-lg text-left focus:outline-none focus:ring-2 focus:ring-amber-400/50" type="button" onClick={onSelect}>
         <div className="flex items-center justify-between gap-3">
-          <span className={cn(
-            "rounded-full border px-2 py-0.5 text-[11px] font-semibold",
-            gameStatusClass(option.status),
-          )}>
-            {option.status}
-          </span>
+          <div className="flex min-w-0 items-center gap-1.5">
+            {nextGame && (
+              <span className="rounded-full border border-sky-400/40 bg-sky-400/10 px-2 py-0.5 text-[11px] font-semibold text-sky-200">
+                Next
+              </span>
+            )}
+            <span className={cn(
+              "rounded-full border px-2 py-0.5 text-[11px] font-semibold",
+              gameStatusClass(option.status),
+            )}>
+              {option.status}
+            </span>
+          </div>
           <span className="font-mono text-xs text-neutral-500 tabular-nums">{option.week || `#${option.id}`}</span>
         </div>
         <h3 className="mt-2 truncate text-sm font-semibold text-neutral-50">{option.name}</h3>
@@ -9308,6 +9355,10 @@ function readSelectNumber(value: string) {
 
 function isRateLimitLog(entry: SyncLogEntry) {
   return entry.message.includes("429") || Boolean(entry.detail?.includes("429"));
+}
+
+function readableError(error: unknown) {
+  return error instanceof Error ? error.message : "Unknown connection error";
 }
 
 function titleCase(value: string) {

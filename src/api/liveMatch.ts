@@ -21,6 +21,7 @@ import {
 } from "./schema";
 import { OdooClient, type OdooRecord } from "./odooClient";
 import { resolveClubColor } from "./colorPalette";
+import { currentOdooDateTimeKey } from "../schedule";
 
 export type TeamId = "away" | "home";
 
@@ -1209,7 +1210,10 @@ async function loadGameRecord(
 
   const upcomingGames = await client.searchRead<OdooRecord>(
     MODELS.game,
-    [[GAME.status, "=", "Scheduled"]],
+    [
+      [GAME.status, "=", "Scheduled"],
+      [GAME.datetime, ">=", currentOdooDateTimeKey()],
+    ],
     GAME_FIELDS,
     { limit: 1, order: `${GAME.datetime} asc` },
   );
