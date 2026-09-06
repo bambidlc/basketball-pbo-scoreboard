@@ -281,7 +281,9 @@ export class OdooClient {
       await this.waitForRequestSlot(attempt);
 
       try {
-        const response = await fetch(url, init);
+        // A stalled request must release the serialized connection so queued results
+        // can retry instead of waiting indefinitely behind a broken connection.
+        const response = await fetch(url, { ...init, signal: AbortSignal.timeout(20000) });
         const payload = (await response.json().catch(() => null)) as unknown;
 
         if (response.ok) {

@@ -7,6 +7,7 @@ import {
   formatGameTime,
   matchDateKey,
   orderGamesByRelevance,
+  orderGamesByTipoff,
   shouldAdvanceToRelevantGame,
 } from "../src/schedule.ts";
 
@@ -72,4 +73,14 @@ test("passed games from today move behind the next tip-off", () => {
 
   assert.deepEqual(ordered.map(({ id }) => id), [2, 3, 1]);
   assert.equal(findRelevantGame(ordered, "2026-09-03", "2026-09-03 18:00:00")?.id, 2);
+});
+
+
+test("display order stays fixed after saving results, including tied tip-off times", () => {
+  const games = [game(3, "2026-09-06 12:00:00"), game(2, "2026-09-06 11:00:00"), game(1, "2026-09-06 11:00:00")];
+  assert.deepEqual(orderGamesByTipoff(games).map(game => game.id), [1, 2, 3]);
+  games[2].status = "Final";
+  games[1].status = "Suspended";
+  games[0].status = "Cancelled";
+  assert.deepEqual(orderGamesByTipoff(games).map(game => game.id), [1, 2, 3]);
 });

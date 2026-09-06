@@ -67,15 +67,12 @@ import {
   type TeamId,
 } from "./api/liveMatch";
 import {
-  currentPboDateKey,
   findRelevantGame,
   formatGameTime,
-  matchDateKey,
-  orderGamesByRelevance,
-  shouldAdvanceToRelevantGame,
 } from "./schedule";
 import { OdooClient, getOdooConfig } from "./api/odooClient";
 import { applyPendingResult, makeOpId, trimMatchForOutbox, type OutboxOp } from "./api/outbox";
+import { ScheduleBrowser } from "./components/ScheduleBrowser";
 import { CourtSvg } from "./components/CourtSvg";
 import { cn } from "./lib/cn";
 
@@ -389,6 +386,7 @@ function App() {
   const [customMode, setCustomMode] = useState(false);
   const [customMatchOpen, setCustomMatchOpen] = useState(false);
   const [match, setMatch] = useState<LiveMatch>(() => seededMatch ?? fallbackMatch);
+  const [resultFeedback, setResultFeedback] = useState<Record<number, string>>({});
   const [matchOptions, setMatchOptions] = useState<MatchOption[]>(initialMatchOptions);
   const [selectedGameId, setSelectedGameId] = useState<number | undefined>(initialSelectedGameId);
   const [screenMode, setScreenMode] = useState<ScreenMode>(() =>
@@ -554,6 +552,11 @@ function App() {
         return;
       }
 
+      // Give queued writes priority over background reads on a slow connection.
+      if (!options.force && pendingOpsRef.current.length > 0) {
+        return;
+      }
+
       inFlightRefreshRef.current = true;
       setIsRefreshing(true);
       setConnectionStatus("syncing");
@@ -578,7 +581,7 @@ function App() {
         if (options.selectRelevant && optionsResult && optionsResult.length > 0) {
           const selectedOption = optionsResult.find((option) => option.id === requestedGameId);
           const relevantOption = findRelevantGame(optionsResult);
-          if (relevantOption && shouldAdvanceToRelevantGame(selectedOption)) {
+          if (relevantOption && !selectedOption) {
             targetGameId = relevantOption.id;
           }
         }
@@ -591,7 +594,7 @@ function App() {
         }
 
         // A custom match may have started while this load was in flight — keep it.
-        if (customModeRef.current || revisionAtStart !== mutationRevisionRef.current) {
+        if (customModeRef.current || revisionAtStart !== mutationRevisionRef.current || requestedGameId !== selectedGameIdRef.current) {
           return;
         }
 
@@ -678,7 +681,7 @@ function App() {
 
   const syncFlowState = useCallback(
     (label: string, nextMatch: LiveMatch = matchRef.current, quiet = false) => {
-      void saveMatchFlowState(apiClient, nextMatch).then((result) => {
+      void saveMatchFlowState(apiClient, nextMatch, label === "Equalization removed").then((result) => {
         if (!quiet || result.log.level === "error") {
           appendLog({
             ...result.log,
@@ -765,6 +768,7 @@ function App() {
           queue = queue.map((queued) => rewriteOutboxRoster(queued, result.match!));
         }
         if (result.saved) {
+          if (op.kind === "status" && op.match.gameId) setResultFeedback(current => ({ ...current, [op.match.gameId!]: "Saved to Odoo" }));
           if (result.eventId && "eventId" in op && op.eventId != null) {
             linkServerEventId(op.eventId, result.eventId);
           }
@@ -960,7 +964,7 @@ function App() {
       if (pendingOpsRef.current.length > 0) {
         void flushOutbox();
       }
-    }, Math.max(5000, apiConfig.pollMs));
+    }, Math.max(5000, Math.min(15000, apiConfig.pollMs)));
     return () => window.clearInterval(timerId);
   }, [apiConfig.enabled, apiConfig.pollMs, flushOutbox]);
 
@@ -1174,6 +1178,7 @@ function App() {
   }
 
   function openQuickResult(option: MatchOption) {
+    handleGameSelect(option.id);
     setQuickResultOption(option);
   }
 
@@ -1226,7 +1231,9 @@ function App() {
       ),
     );
 
+    setResultFeedback(current => ({ ...current, [option.id]: "Saving result…" }));
     void dispatchSaveStatus(nextMatch, result.status, note || undefined).then((saveResult) => {
+      setResultFeedback(current => ({ ...current, [option.id]: saveResult.saved ? "Saved to Odoo" : saveResult.log.detail || "Saved on device · sync pending" }));
       appendLog(saveResult.log);
       setConnectionStatus(
         saveResult.log.level === "error" ? "error" : saveResult.saved ? "connected" : "local",
@@ -2618,6 +2625,8 @@ function App() {
           isOnline={isOnline}
           matchOptions={matchOptions}
           periodSettings={periodSettings}
+          pendingOps={pendingOps}
+          resultFeedback={resultFeedback}
           selectedGameId={selectedGameId}
           statsMode={statsMode}
           syncMessage={match.syncMessage}
@@ -2628,7 +2637,7 @@ function App() {
           onOpenCustomMatch={() => setCustomMatchOpen(true)}
           onOpenResult={openQuickResult}
           onPeriodSettingsChange={updatePeriodSettings}
-          onRefresh={() => refreshMatch(undefined, { force: true, loadOptions: true, selectRelevant: true })}
+          onRefresh={() => { void flushOutbox().then(() => refreshMatch(undefined, { force: true, loadOptions: true })); }}
           onResumeCustomMatch={() => setScreenMode("live")}
           onStatsModeChange={setStatsMode}
         />
@@ -2687,15 +2696,12 @@ function App() {
             homeScore={match.homeScore}
             foulBallTeam={foulBallTeam}
             matchName={match.matchName}
-            matchOptions={matchOptions}
             periodLabel={getPeriodLabel(match.period, periodSettings.periodCount)}
-            selectedGameId={selectedGameId}
             selectedTeam={selectedTeam}
             shotClock={match.shotClock}
             statsMode={statsMode}
             status={match.status}
             onBackToDashboard={() => setScreenMode("dashboard")}
-            onGameSelect={handleGameSelect}
             onSelectTeam={setSelectedTeam}
             onToggleFoulBall={toggleFoulBall}
           />
@@ -2923,96 +2929,6 @@ function App() {
   );
 }
 
-type GameLocationGroup = {
-  games: MatchOption[];
-  hasLocation: boolean;
-  key: string;
-  location: string;
-};
-
-type GameDateGroup = {
-  dateKey: string;
-  dateLabel: string;
-  hasDate: boolean;
-  locations: GameLocationGroup[];
-  total: number;
-};
-
-function formatGameDateHeading(dateKey: string): string {
-  if (!dateKey) {
-    return "Date pending";
-  }
-  const date = new Date(`${dateKey}T00:00:00`);
-  if (Number.isNaN(date.getTime())) {
-    return dateKey;
-  }
-  return date.toLocaleDateString(undefined, {
-    weekday: "long",
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  });
-}
-
-function groupGamesByDateAndLocation(options: MatchOption[]): GameDateGroup[] {
-  const byDate = new Map<string, MatchOption[]>();
-  for (const option of orderGamesByRelevance(options, currentPboDateKey())) {
-    const key = matchDateKey(option.datetime);
-    const bucket = byDate.get(key);
-    if (bucket) {
-      bucket.push(option);
-    } else {
-      byDate.set(key, [option]);
-    }
-  }
-
-  const groups: GameDateGroup[] = [];
-  for (const [dateKey, games] of byDate) {
-    const byLocation = new Map<string, MatchOption[]>();
-    for (const game of games) {
-      const locationKey = (game.location ?? "").trim();
-      const bucket = byLocation.get(locationKey);
-      if (bucket) {
-        bucket.push(game);
-      } else {
-        byLocation.set(locationKey, [game]);
-      }
-    }
-
-    const locations: GameLocationGroup[] = [];
-    for (const [locationKey, locationGames] of byLocation) {
-      locations.push({
-        games: locationGames,
-        hasLocation: Boolean(locationKey),
-        key: locationKey || "__pending__",
-        location: locationKey || "Location pending",
-      });
-    }
-    // Put the court containing this day's most relevant game first, then keep the
-    // remaining named courts alphabetical and undated locations last.
-    const leadingLocationKey = (games[0]?.location ?? "").trim() || "__pending__";
-    locations.sort((a, b) => {
-      if (a.key === leadingLocationKey || b.key === leadingLocationKey) {
-        return a.key === leadingLocationKey ? -1 : 1;
-      }
-      if (a.hasLocation !== b.hasLocation) {
-        return a.hasLocation ? -1 : 1;
-      }
-      return a.location.localeCompare(b.location);
-    });
-
-    groups.push({
-      dateKey,
-      dateLabel: formatGameDateHeading(dateKey),
-      hasDate: Boolean(dateKey),
-      locations,
-      total: games.length,
-    });
-  }
-
-  return groups;
-}
-
 function GameDashboard({
   apiEnabled,
   connectionStatus,
@@ -3022,6 +2938,8 @@ function GameDashboard({
   isOnline,
   matchOptions,
   periodSettings,
+  pendingOps,
+  resultFeedback,
   selectedGameId,
   statsMode,
   syncMessage,
@@ -3044,6 +2962,8 @@ function GameDashboard({
   isOnline: boolean;
   matchOptions: MatchOption[];
   periodSettings: PeriodSettings;
+  pendingOps: OutboxOp[];
+  resultFeedback: Record<number, string>;
   selectedGameId?: number;
   statsMode: StatsMode;
   syncMessage: string;
@@ -3058,248 +2978,43 @@ function GameDashboard({
   onResumeCustomMatch: () => void;
   onStatsModeChange: (mode: StatsMode) => void;
 }) {
-  const orderedMatchOptions = useMemo(() => orderGamesByRelevance(matchOptions), [matchOptions]);
-  const dateGroups = useMemo(() => groupGamesByDateAndLocation(orderedMatchOptions), [orderedMatchOptions]);
-  const relevantGameId = useMemo(() => findRelevantGame(orderedMatchOptions)?.id, [orderedMatchOptions]);
-  const statusText =
-    !isOnline
-      ? "Offline · ready"
-      : connectionStatus === "connected"
-      ? "Live"
-      : connectionStatus === "syncing"
-        ? "Syncing"
-        : apiEnabled
-          ? "Needs attention"
-          : "Local";
-
+  const pendingCount = pendingOps.length;
+  const statusText = !isOnline ? "Offline · saved on this device"
+    : pendingCount ? `${pendingCount} ${pendingCount === 1 ? "change" : "changes"} waiting to sync`
+    : connectionStatus === "error" ? "Connection interrupted"
+    : isRefreshing ? "Checking for updates" : connectionStatus === "connected" ? "Connected to Odoo" : apiEnabled ? "Connecting to Odoo" : "Local mode";
   return (
-    <main
-      className="min-h-dvh bg-neutral-950 px-3 py-4 text-neutral-100 [font-family:Inter,ui-sans-serif,system-ui,sans-serif] sm:px-5 sm:py-6 md:h-dvh md:overflow-hidden"
-      style={teamColorVars(currentMatch.away, currentMatch.home)}
-    >
-      <section className="mx-auto flex max-w-[1640px] flex-col gap-3 md:h-full md:min-h-0">
-        <header className="flex shrink-0 items-center justify-between gap-3 px-1">
+    <main className="h-dvh overflow-hidden bg-neutral-950 p-3 text-neutral-100 [font-family:Inter,ui-sans-serif,system-ui,sans-serif] sm:p-5 [padding-bottom:max(0.75rem,env(safe-area-inset-bottom))]">
+      <section className="mx-auto flex h-full max-w-[1640px] flex-col gap-3">
+        <header className="flex shrink-0 items-center justify-between gap-3">
           <div className="flex min-w-0 items-center gap-3">
-            <div className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-neutral-700 bg-neutral-900 text-amber-300">
-              <CalendarDays size={17} />
-            </div>
-            <div className="min-w-0">
-              <div className="text-xs font-semibold text-amber-300">Basketball PBO</div>
-              <h1 className="truncate text-lg font-semibold text-balance text-neutral-50">Game schedule</h1>
-            </div>
+            <div className="flex size-10 items-center justify-center rounded-xl bg-amber-300 text-neutral-950"><CalendarDays size={20} /></div>
+            <div><p className="text-xs font-semibold text-neutral-500">BASKETBALL PBO</p><h1 className="text-lg font-semibold text-balance">Game center</h1></div>
           </div>
-          <div className="flex shrink-0 items-center gap-2">
-            <div className="hidden max-w-56 text-right sm:block">
-              <div className="flex items-center justify-end gap-2 text-xs font-semibold text-neutral-300">
-                <span
-                  className={cn(
-                    "size-2 rounded-full",
-                    !isOnline
-                      ? "bg-amber-400"
-                      : connectionStatus === "connected"
-                      ? "bg-lime-400"
-                      : connectionStatus === "syncing"
-                        ? "bg-amber-400"
-                        : connectionStatus === "error"
-                          ? "bg-red-400"
-                          : "bg-neutral-500",
-                  )}
-                />
-                {statusText}
-              </div>
-              <div className="truncate text-xs text-neutral-600" title={syncMessage}>{syncMessage}</div>
-            </div>
-            <button
-              aria-label="Refresh games"
-              className="flex size-9 items-center justify-center rounded-lg border border-neutral-800 bg-neutral-900 text-neutral-400 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500 disabled:cursor-not-allowed disabled:opacity-60"
-              disabled={isRefreshing}
-              type="button"
-              onClick={onRefresh}
-            >
-              <RefreshCw className={isRefreshing ? "text-amber-300" : ""} size={15} />
-            </button>
-          </div>
+          <button className="flex h-10 items-center gap-2 rounded-lg border border-neutral-700 px-3 text-xs font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300 disabled:opacity-40" disabled={isRefreshing} onClick={onRefresh}><RefreshCw size={14} /><span>{pendingCount ? "Retry sync" : "Refresh"}</span></button>
         </header>
-
-        <section aria-label="Scorer setup" className="relative z-30 grid shrink-0 grid-cols-2 gap-2 rounded-xl border border-neutral-800 bg-neutral-900 p-2 shadow-sm lg:grid-cols-[190px_minmax(240px,1fr)_auto_auto_auto_auto]">
-          <div className="col-span-2 grid grid-cols-2 gap-1 rounded-lg border border-neutral-800 bg-neutral-950 p-1 sm:col-span-1">
-            <ModeButton
-              active={statsMode === "youth"}
-              icon={<Users size={16} />}
-              label="Youth"
-              onClick={() => onStatsModeChange("youth")}
-            />
-            <ModeButton
-              active={statsMode === "professional"}
-              icon={<Target size={16} />}
-              label="Pro"
-              onClick={() => onStatsModeChange("professional")}
-            />
+        <div role="status" aria-live="polite" className="flex min-h-9 shrink-0 items-center gap-2 rounded-lg border border-neutral-800 bg-neutral-900 px-3 py-2 text-xs text-neutral-400">
+          {!isOnline ? <WifiOff size={14} /> : <Wifi size={14} />}
+          <span className={cn("shrink-0", (pendingCount > 0 || connectionStatus === "error") && "text-amber-300")}>{statusText}</span>
+          <span className="hidden truncate border-l border-neutral-700 pl-2 text-neutral-500 sm:block" title={syncMessage}>{syncMessage}</span>
+        </div>
+        {isRefreshing && !matchOptions.length ? <DashboardLoadingState message={syncMessage} /> : <ScheduleBrowser games={matchOptions} selectedGameId={selectedGameId} renderGame={option => (
+          <GameCard option={option} selected={option.id === selectedGameId} statsMode={statsMode}
+            pending={pendingOps.some(op => (op.kind === "action" ? op.input.match.gameId : op.match.gameId) === option.id)}
+            saveFeedback={resultFeedback[option.id]}
+            onActivate={onActivate} onManageRoster={() => onManageRoster(option.id)}
+            onOpenResult={() => onOpenResult(option)} onSelect={() => onGameSelect(option.id)} />
+        )} />}
+        <details className="shrink-0 rounded-xl border border-neutral-800 bg-neutral-900">
+          <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-xs font-semibold text-neutral-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300"><span>Scorer settings · {statsMode === "youth" ? "Youth" : "Pro"} mode</span><ChevronDown size={14} /></summary>
+          <div className="grid max-h-64 gap-3 overflow-auto border-t border-neutral-800 p-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="grid grid-cols-2 gap-2"><ModeButton active={statsMode === "youth"} icon={<Users size={14} />} label="Youth" onClick={() => onStatsModeChange("youth")} /><ModeButton active={statsMode === "professional"} icon={<Target size={14} />} label="Pro" onClick={() => onStatsModeChange("professional")} /></div>
+            <PeriodSettingsControls settings={periodSettings} onChange={onPeriodSettingsChange} />
+            <button className="h-11 rounded-lg border border-neutral-700 text-xs font-semibold" onClick={onOpenCustomMatch}>Create custom game</button>
+            {customMatchActive && <div className="flex gap-2"><button className="h-11 rounded-lg border border-neutral-700 px-3 text-xs" onClick={onResumeCustomMatch}>Resume custom game</button><button className="h-11 rounded-lg border border-neutral-700 px-3 text-xs" onClick={onExitCustomMatch}>Exit</button></div>}
+            <p className="text-xs text-neutral-500">Selected: {currentMatch.matchName || "Choose a game above"}</p>
           </div>
-
-          <label className="col-span-2 min-w-0 sm:col-span-1">
-            <span className="sr-only">Selected game</span>
-            <select
-              aria-label="Selected game"
-              className="h-11 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 text-sm font-semibold text-neutral-100 outline-none focus:ring-2 focus:ring-amber-400/60"
-              value={selectedGameId ?? ""}
-              onChange={(event) => onGameSelect(readSelectNumber(event.currentTarget.value))}
-            >
-              {selectedGameId ? null : <option value="">Choose a game</option>}
-              {orderedMatchOptions.map((option) => (
-                <option key={option.id} value={option.id}>{option.name}</option>
-              ))}
-            </select>
-          </label>
-
-          <details className="group relative col-span-2 lg:col-span-1">
-            <summary className="flex h-11 cursor-pointer list-none items-center justify-center gap-2 rounded-lg border border-neutral-700 bg-neutral-950 px-3 text-xs font-semibold text-neutral-300 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500">
-              <Clock3 size={15} />
-              Game setup
-              <ChevronDown className="text-neutral-500 transition-transform duration-150 group-open:rotate-180" size={14} />
-            </summary>
-            <div className="mt-2 sm:absolute sm:right-0 sm:top-full sm:z-30 sm:w-80 sm:rounded-xl sm:border sm:border-neutral-700 sm:bg-neutral-900 sm:p-2 sm:shadow-xl">
-              <PeriodSettingsControls settings={periodSettings} onChange={onPeriodSettingsChange} />
-            </div>
-          </details>
-
-          <button
-            className="flex h-11 items-center justify-center gap-2 rounded-lg border border-neutral-700 bg-neutral-950 px-3 text-xs font-semibold text-neutral-300 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500 disabled:cursor-not-allowed disabled:opacity-40"
-            disabled={!selectedGameId}
-            type="button"
-            onClick={() => selectedGameId && onManageRoster(selectedGameId)}
-          >
-            <ClipboardList size={15} />
-            Roster
-          </button>
-
-          <button
-            className="flex h-11 items-center justify-center gap-2 rounded-lg border border-amber-300 bg-amber-300 px-4 text-sm font-bold text-neutral-950 transition-colors hover:border-amber-200 hover:bg-amber-200 focus:outline-none focus:ring-2 focus:ring-amber-400/60"
-            type="button"
-            onClick={() => onActivate(statsMode, selectedGameId)}
-          >
-            Open {statsMode === "youth" ? "youth" : "pro"}
-            <ChevronRight size={17} />
-          </button>
-
-          {customMatchActive ? (
-            <div className="flex items-center gap-1 rounded-lg border border-neutral-700 bg-neutral-950 p-1">
-              <button
-                className="flex h-9 flex-1 items-center justify-center gap-1.5 rounded-md bg-neutral-100 px-3 text-xs font-bold text-neutral-950 transition-colors hover:bg-white focus:outline-none focus:ring-2 focus:ring-neutral-400"
-                type="button"
-                onClick={onResumeCustomMatch}
-              >
-                <Play size={14} />
-                Resume
-              </button>
-              <button
-                className="h-9 rounded-md px-3 text-xs font-semibold text-neutral-400 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500"
-                type="button"
-                onClick={onExitCustomMatch}
-              >
-                Exit
-              </button>
-            </div>
-          ) : (
-            <button
-              className="flex h-11 items-center justify-center gap-2 rounded-lg border border-neutral-700 bg-neutral-950 px-3 text-xs font-semibold text-neutral-300 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500"
-              type="button"
-              onClick={onOpenCustomMatch}
-            >
-              <Plus size={15} />
-              Custom
-            </button>
-          )}
-        </section>
-
-        <section
-          aria-busy={isRefreshing}
-          className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900 shadow-sm md:flex-1"
-        >
-          <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-neutral-800 px-4 py-3 sm:px-5">
-            <div>
-              <h2 className="text-base font-semibold text-neutral-50 text-balance">Available games</h2>
-              <div className="mt-1 text-sm text-neutral-500 tabular-nums">
-                {matchOptions.length} {matchOptions.length === 1 ? "game" : "games"} · grouped by date and court
-              </div>
-            </div>
-          </div>
-
-          <div className="grid content-start gap-4 p-4 sm:p-5 md:min-h-0 md:flex-1 md:overflow-y-auto md:scrollbar-slim">
-            {isRefreshing && matchOptions.length === 0 ? (
-              <DashboardLoadingState message={syncMessage} />
-            ) : (
-              <>
-                {isRefreshing && <ScheduleRefreshStatus />}
-                {dateGroups.map((group, index) => (
-              <details className="group rounded-xl border border-neutral-800 bg-neutral-950" key={group.dateKey || "__pending__"} open={index === 0}>
-                <summary className="flex cursor-pointer list-none items-center gap-3 px-3 py-3 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-neutral-500">
-                  <span className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-neutral-800 bg-neutral-950 text-neutral-300">
-                    <CalendarDays size={16} />
-                  </span>
-                  <h3 className="min-w-0 flex-1 truncate text-sm font-semibold text-neutral-100">
-                    {group.dateLabel}
-                  </h3>
-                  <span className="ml-auto shrink-0 text-xs font-medium text-neutral-500 tabular-nums">
-                    {group.total} {group.total === 1 ? "game" : "games"}
-                  </span>
-                  <ChevronDown className="shrink-0 text-neutral-500 transition-transform duration-150 group-open:rotate-180" size={15} />
-                </summary>
-                <div className="grid gap-4 border-t border-neutral-800 p-3">
-                {group.locations.map((locationGroup) => (
-                  <div key={locationGroup.key} className="grid gap-3">
-                    <div className="flex items-center gap-2">
-                      <MapPin className="text-neutral-500" size={13} />
-                      <span
-                        className={cn(
-                          "truncate text-xs font-medium",
-                          locationGroup.hasLocation ? "text-neutral-300" : "text-neutral-600",
-                        )}
-                      >
-                        {locationGroup.location}
-                      </span>
-                      <span className="text-xs font-medium text-neutral-600 tabular-nums">
-                        · {locationGroup.games.length}
-                      </span>
-                    </div>
-                    <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
-                      {locationGroup.games.map((option) => (
-                        <GameCard
-                          key={option.id}
-                          nextGame={option.id === relevantGameId}
-                          option={option}
-                          selected={option.id === selectedGameId}
-                          onActivate={onActivate}
-                          onManageRoster={() => onManageRoster(option.id)}
-                          onOpenResult={() => onOpenResult(option)}
-                          onSelect={() => onGameSelect(option.id)}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                ))}
-                </div>
-              </details>
-                ))}
-
-                {matchOptions.length === 0 && (
-            <div className="rounded-xl border border-dashed border-neutral-700 bg-neutral-950 px-5 py-12 text-center">
-              <CalendarDays className="mx-auto text-neutral-600" size={24} />
-              <div className="mt-3 text-sm font-semibold text-neutral-200">No games are available yet</div>
-              <div className="mt-1 text-sm text-pretty text-neutral-500">Refresh the schedule, or create a local custom match.</div>
-              <button
-                className="mt-4 h-10 rounded-lg border border-neutral-700 bg-neutral-900 px-4 text-xs font-semibold text-neutral-200 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500"
-                type="button"
-                onClick={onRefresh}
-              >
-                Refresh schedule
-              </button>
-            </div>
-                )}
-              </>
-            )}
-          </div>
-        </section>
+        </details>
       </section>
     </main>
   );
@@ -3379,35 +3094,6 @@ function DashboardLoadingState({ message }: { message: string }) {
         ))}
       </div>
     </div>
-  );
-}
-
-function ScheduleRefreshStatus() {
-  const statusRef = useRef<HTMLDivElement>(null);
-  const inView = useInView(statusRef, { amount: 0.5 });
-  const reduceMotion = useReducedMotion();
-  const animate = inView && !reduceMotion;
-
-  return (
-    <m.div
-      className="flex items-center gap-3 rounded-lg border border-amber-400/30 bg-amber-400/5 px-3 py-2.5"
-      initial={reduceMotion ? false : { opacity: 0, y: -6 }}
-      animate={{ opacity: 1, y: 0 }}
-      ref={statusRef}
-      role="status"
-      transition={{ duration: 0.18, ease: "easeOut" }}
-    >
-      <m.span
-        aria-hidden="true"
-        className="size-2 rounded-full bg-amber-300"
-        animate={animate ? { opacity: [0.4, 1, 0.4], scale: [0.82, 1, 0.82] } : { opacity: 1, scale: 1 }}
-        transition={animate ? { duration: 1.2, ease: "easeInOut", repeat: Infinity } : { duration: 0.15 }}
-      />
-      <div className="min-w-0">
-        <div className="text-xs font-semibold text-amber-200">Updating schedule</div>
-        <div className="truncate text-xs text-neutral-500">Current games stay available while fresh data loads.</div>
-      </div>
-    </m.div>
   );
 }
 
@@ -3644,7 +3330,9 @@ function CustomTeamColumn({
 }
 
 function GameCard({
-  nextGame,
+  pending,
+  saveFeedback,
+  statsMode,
   option,
   selected,
   onActivate,
@@ -3652,7 +3340,9 @@ function GameCard({
   onOpenResult,
   onSelect,
 }: {
-  nextGame: boolean;
+  pending: boolean;
+  saveFeedback?: string;
+  statsMode: StatsMode;
   option: MatchOption;
   selected: boolean;
   onActivate: (mode: StatsMode, gameId?: number) => void;
@@ -3666,20 +3356,14 @@ function GameCard({
         "rounded-xl border bg-neutral-950 p-3 transition-colors",
         selected
           ? "border-amber-400/70 ring-1 ring-inset ring-amber-400/20"
-          : nextGame
-            ? "border-sky-400/60 ring-1 ring-inset ring-sky-400/15"
-            : "border-neutral-800 hover:border-neutral-700",
+          : "border-neutral-800 hover:border-neutral-700",
       )}
       style={matchOptionColorVars(option)}
     >
       <button className="block w-full rounded-lg text-left focus:outline-none focus:ring-2 focus:ring-amber-400/50" type="button" onClick={onSelect}>
         <div className="flex items-center justify-between gap-3">
           <div className="flex min-w-0 items-center gap-1.5">
-            {nextGame && (
-              <span className="rounded-full border border-sky-400/40 bg-sky-400/10 px-2 py-0.5 text-[11px] font-semibold text-sky-200">
-                Next
-              </span>
-            )}
+            {selected && <span className="text-xs font-semibold text-amber-300">Selected</span>}
             <span className={cn(
               "rounded-full border px-2 py-0.5 text-[11px] font-semibold",
               gameStatusClass(option.status),
@@ -3689,7 +3373,7 @@ function GameCard({
           </div>
           <span className="font-mono text-xs text-neutral-500 tabular-nums">{option.week || `#${option.id}`}</span>
         </div>
-        <h3 className="mt-2 truncate text-sm font-semibold text-neutral-50">{option.name}</h3>
+        <h3 className="sr-only">{option.name}</h3>
         <div className="mt-2 grid gap-1.5">
           <GameTeamLine
             accentColor={option.awayAccentColor}
@@ -3732,7 +3416,7 @@ function GameCard({
           </div>
         )}
       </button>
-      <div className="mt-3 grid grid-cols-2 gap-2 border-t border-neutral-800 pt-2.5">
+      <div className="mt-3 grid grid-cols-3 gap-2 border-t border-neutral-800 pt-2.5">
         <button
           className="flex h-9 items-center justify-center gap-1.5 rounded-lg border border-amber-500/40 bg-amber-500/10 text-xs font-semibold text-amber-200 transition-colors hover:bg-amber-500/20 focus:outline-none focus:ring-2 focus:ring-amber-500/50"
           type="button"
@@ -3749,21 +3433,9 @@ function GameCard({
           <Trophy size={14} />
           {option.status === "Final" || option.status === "Suspended" || option.status === "Cancelled" ? "Edit result" : "Result"}
         </button>
-        <button
-          className="h-9 rounded-lg border border-neutral-200 bg-neutral-100 text-xs font-semibold text-neutral-950 transition-colors hover:bg-white focus:outline-none focus:ring-2 focus:ring-neutral-400"
-          type="button"
-          onClick={() => onActivate("youth", option.id)}
-        >
-          Youth
-        </button>
-        <button
-          className="h-9 rounded-lg border border-neutral-700 bg-neutral-900 text-xs font-semibold text-neutral-200 transition-colors hover:bg-neutral-800 focus:outline-none focus:ring-2 focus:ring-neutral-500"
-          type="button"
-          onClick={() => onActivate("professional", option.id)}
-        >
-          Pro stats
-        </button>
+        <button className="flex h-9 items-center justify-center gap-1 rounded-lg bg-amber-300 text-xs font-semibold text-neutral-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300" type="button" onClick={() => onActivate(statsMode, option.id)}>Open stats <ChevronRight size={14} /></button>
       </div>
+      <p role="status" className={cn("mt-2 min-h-4 truncate text-xs", pending ? "text-amber-300" : "text-neutral-500")} title={saveFeedback}>{pending ? "Saved on device · waiting for Odoo" : saveFeedback || ""}</p>
     </article>
   );
 }
@@ -4037,15 +3709,12 @@ function ScoreHeader({
   home,
   homeScore,
   matchName,
-  matchOptions,
   periodLabel,
-  selectedGameId,
   selectedTeam,
   shotClock,
   statsMode,
   status,
   onBackToDashboard,
-  onGameSelect,
   onSelectTeam,
   onToggleFoulBall,
 }: {
@@ -4059,15 +3728,12 @@ function ScoreHeader({
   home: Team;
   homeScore: number;
   matchName: string;
-  matchOptions: MatchOption[];
   periodLabel: string;
-  selectedGameId?: number;
   selectedTeam: TeamId;
   shotClock: number;
   statsMode: StatsMode;
   status: string;
   onBackToDashboard: () => void;
-  onGameSelect: (gameId: number | undefined) => void;
   onSelectTeam: (team: TeamId) => void;
   onToggleFoulBall: () => void;
 }) {
@@ -4118,22 +3784,7 @@ function ScoreHeader({
           <PossessionArrow possession={foulBallTeam} />
           <span>{foulBallTeam === "away" ? "Visitor" : "Home"}</span>
         </button>
-        <label className="w-full">
-          <span className="sr-only">Select match</span>
-          <select
-            aria-label="Select match"
-            className="h-9 w-full rounded-lg border border-neutral-700 bg-neutral-900 px-2 text-xs font-bold text-neutral-100 outline-none focus:ring-2 focus:ring-neutral-500 2xl:h-8 2xl:rounded-md"
-            value={selectedGameId ?? ""}
-            onChange={(event) => onGameSelect(readSelectNumber(event.currentTarget.value))}
-          >
-            {selectedGameId ? null : <option value="">{matchName}</option>}
-            {matchOptions.map((option) => (
-              <option key={option.id} value={option.id}>
-                {option.name} - {option.awayName} at {option.homeName}
-              </option>
-            ))}
-          </select>
-        </label>
+        <button className="flex h-9 w-full items-center justify-between gap-2 rounded-lg border border-neutral-700 bg-neutral-900 px-2 text-xs text-neutral-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300" onClick={onBackToDashboard}><span className="truncate">{matchName}</span><span className="shrink-0 text-amber-300">Change game</span></button>
         <div className="mt-0.5 font-mono text-5xl font-black leading-none text-neutral-50 tabular-nums lg:text-4xl 2xl:text-5xl">
           {clock}
         </div>
@@ -5203,6 +4854,7 @@ function GameResolutionDialog({
   onFinish: (result: GameResolutionInput) => void;
   onClose: () => void;
 }) {
+  const returnFocusRef = useRef(document.activeElement instanceof HTMLElement ? document.activeElement : null);
   const [status, setStatus] = useState<GameResolutionStatus>(
     initialStatus === "Suspended" || initialStatus === "Cancelled" ? initialStatus : "Final",
   );
@@ -5232,6 +4884,7 @@ function GameResolutionDialog({
       <AlertDialog.Portal>
         <AlertDialog.Overlay className="fixed inset-0 z-40 bg-black/75" />
         <AlertDialog.Content
+          onCloseAutoFocus={event => { event.preventDefault(); if (returnFocusRef.current?.isConnected) returnFocusRef.current.focus({ preventScroll: true }); }}
           className="fixed left-1/2 top-1/2 z-50 flex max-h-[calc(100dvh-1.5rem)] w-[calc(100%-1.5rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-2xl border border-neutral-700 bg-neutral-900 text-neutral-100 shadow-2xl [font-family:Inter,ui-sans-serif,system-ui,sans-serif]"
           style={teamColorVars(away, home)}
         >
@@ -9369,10 +9022,7 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
 }
 
-function readSelectNumber(value: string) {
-  const parsed = Number(value);
-  return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
-}
+
 
 function isRateLimitLog(entry: SyncLogEntry) {
   return entry.message.includes("429") || Boolean(entry.detail?.includes("429"));

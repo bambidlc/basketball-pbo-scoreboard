@@ -485,6 +485,7 @@ export async function saveMatchAction(
 export async function saveMatchFlowState(
   client: OdooClient,
   match: LiveMatch,
+  includeScores = false,
 ): Promise<SaveMatchActionResult> {
   if (!client.enabled || !match.gameId) {
     return {
@@ -495,7 +496,7 @@ export async function saveMatchFlowState(
 
   try {
     const capabilities = await getSchemaCapabilities(client);
-    const flowMessage = await saveGameFlowFields(client, match, capabilities);
+    const flowMessage = await saveGameFlowFields(client, match, capabilities, { includeScores, strict: true });
 
     return {
       log: createLog("success", "Timer synced", flowMessage || "Game clock saved."),
@@ -1995,6 +1996,7 @@ async function saveGameFlowFields(
   client: OdooClient,
   match: LiveMatch,
   capabilities: SchemaCapabilities,
+  options: { includeScores?: boolean; strict?: boolean } = {},
 ) {
   const values = filterWritableValues({
     [GAME.awayScore]: match.awayScore,
@@ -2012,15 +2014,24 @@ async function saveGameFlowFields(
     [GAME.equalizationApplied]: match.equalizationApplied ?? false,
   }, capabilities.game);
 
+  // Timer checkpoints can be delayed in transit. They must never carry stale scores
+  // over a result that has already been confirmed by Odoo.
+  if (options.includeScores === false) {
+    delete values[GAME.awayScore];
+    delete values[GAME.homeScore];
+  }
+
   if (Object.keys(values).length === 0) {
     return "";
   }
 
   try {
-    await client.write(MODELS.game, [match.gameId!], values);
+    const written = await client.write(MODELS.game, [match.gameId!], values);
+    if (!written) throw new Error("Odoo did not confirm the game flow update.");
 
     return "Game flow saved.";
-  } catch {
+  } catch (error) {
+    if (options.strict) throw error;
     return "";
   }
 }

@@ -82,7 +82,7 @@ const vite = await createServer({
 });
 
 try {
-  const { fallbackMatch, saveMatchStatus, loadMatchOptions } = await vite.ssrLoadModule("/src/api/liveMatch.ts");
+  const { fallbackMatch, saveMatchStatus, loadMatchOptions, saveMatchFlowState } = await vite.ssrLoadModule("/src/api/liveMatch.ts");
   const makeMatch = (awayScore, homeScore) => ({
     ...fallbackMatch,
     away: { ...fallbackMatch.away, name: "Visitor Team" },
@@ -173,6 +173,17 @@ try {
     assert.equal(applyPendingResult(server, 88, pending), server);
     assert.equal(applyPendingResult(server, 77, []), server);
     assert.equal(applyPendingResult(server, 77, pending.slice(0, 1)).awayScore, 71);
+  }
+
+  {
+    const client = new MockOdooClient();
+    await saveMatchStatus(client, makeMatch(71, 68), "Final");
+    await saveMatchFlowState(client, makeMatch(0, 0));
+    assert.equal(client.game[GAME.awayScore], 71, "a delayed timer checkpoint cannot overwrite the final score");
+    assert.equal(client.game[GAME.homeScore], 68);
+    client.writeConfirmed = false;
+    const failed = await saveMatchFlowState(client, makeMatch(71, 68), true);
+    assert.equal(failed.saved, false, "a rejected flow write must not be reported as synced");
   }
 
   process.stdout.write("Game resolution contract tests passed: score/status write-back, required suspension reason, play-by-play notes, verified Odoo writes, and idempotent retries.\n");

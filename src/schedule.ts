@@ -164,6 +164,15 @@ export function findRelevantGame(
   }) ?? ordered[0];
 }
 
+// Display order never depends on a changing score/status, so saving cannot move a card.
+export function orderGamesByTipoff(options: MatchOption[]): MatchOption[] {
+  return [...options].sort((a, b) => {
+    const aTime = matchTimestamp(a.datetime) ?? Number.MAX_SAFE_INTEGER;
+    const bTime = matchTimestamp(b.datetime) ?? Number.MAX_SAFE_INTEGER;
+    return aTime - bTime || a.id - b.id;
+  });
+}
+
 export function shouldAdvanceToRelevantGame(
   selected: MatchOption | undefined,
   todayKey = currentPboDateKey(),
