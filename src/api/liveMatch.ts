@@ -45,7 +45,8 @@ export type ActionKey =
   | "admin tech"
   | "warning"
   | "substitution"
-  | "suspension";
+  | "suspension"
+  | "cancellation";
 
 export type ShotType = "2pt" | "3pt" | "free throw";
 
@@ -366,7 +367,7 @@ export async function loadMatchOptions(client: OdooClient): Promise<MatchOption[
         MODELS.gameEvent,
         [
           [GAME_EVENT.game, "in", gameIds],
-          [GAME_EVENT.actionType, "=", "suspension"],
+          [GAME_EVENT.actionType, "in", ["suspension", "cancellation"]],
         ],
         ["id", GAME_EVENT.game, GAME_EVENT.note],
         { limit: 2000, order: "id desc" },
@@ -429,7 +430,7 @@ export async function loadMatchOptions(client: OdooClient): Promise<MatchOption[
           stringValue(game[GAME.name]) ||
           stringValue(game.display_name) ||
           `Game ${id}`,
-        status: stringValue(game[GAME.status]) || "Scheduled",
+        status: stringValue(game[GAME.status]) === "Played" ? "Final" : stringValue(game[GAME.status]) || "Scheduled",
         statusNote: suspensionNoteByGameId.get(id),
         week: stringValue(game[GAME.week]),
       } satisfies MatchOption;
@@ -524,15 +525,17 @@ export async function saveMatchStatus(
   try {
     const capabilities = await getSchemaCapabilities(client);
     const trimmedNote = note?.trim();
-    if (status === "Suspended" && !trimmedNote) {
-      throw new Error("A suspension reason is required.");
+    const storedStatus = status === "Final" ? "Played" : status;
+    const reasonAction = status === "Cancelled" ? "cancellation" : "suspension";
+    if ((status === "Suspended" || status === "Cancelled") && !trimmedNote) {
+      throw new Error("A suspension or cancellation reason is required.");
     }
 
     const gameValues = filterWritableValues(
       {
         [GAME.awayScore]: match.awayScore,
         [GAME.homeScore]: match.homeScore,
-        [GAME.status]: status,
+        [GAME.status]: storedStatus,
       },
       capabilities.game,
     );
@@ -550,7 +553,7 @@ export async function saveMatchStatus(
       !verifiedGame ||
       numberValue(verifiedGame[GAME.awayScore], -1) !== match.awayScore ||
       numberValue(verifiedGame[GAME.homeScore], -1) !== match.homeScore ||
-      stringValue(verifiedGame[GAME.status]) !== status
+      stringValue(verifiedGame[GAME.status]) !== storedStatus
     ) {
       throw new Error("Odoo could not verify the saved score and status.");
     }
@@ -560,7 +563,7 @@ export async function saveMatchStatus(
     // reload and is visible in the play-by-play when the game is resumed.
     let eventId: number | undefined;
     let noteMessage = "";
-    if (status === "Suspended" && trimmedNote && capabilities.gameEvent.exists) {
+    if ((status === "Suspended" || status === "Cancelled") && trimmedNote && capabilities.gameEvent.exists) {
       const canMatchExistingReason =
         capabilities.gameEvent.fields.has(GAME_EVENT.game) &&
         capabilities.gameEvent.fields.has(GAME_EVENT.actionType) &&
@@ -570,7 +573,7 @@ export async function saveMatchStatus(
             MODELS.gameEvent,
             [
               [GAME_EVENT.game, "=", match.gameId],
-              [GAME_EVENT.actionType, "=", "suspension"],
+              [GAME_EVENT.actionType, "=", reasonAction],
               [GAME_EVENT.note, "=", trimmedNote],
             ],
             ["id"],
@@ -581,7 +584,7 @@ export async function saveMatchStatus(
       const eventValues = filterWritableValues(
         {
           [GAME_EVENT.active]: true,
-          [GAME_EVENT.actionType]: "suspension",
+          [GAME_EVENT.actionType]: reasonAction,
           [GAME_EVENT.clockSeconds]: clockToSeconds(match.clock),
           [GAME_EVENT.game]: match.gameId,
           [GAME_EVENT.name]: `${match.clock} ${status} · ${trimmedNote}`,
@@ -1513,8 +1516,8 @@ async function normalizeGameRecord(
     scorekeeper: stringValue(game[GAME.scorekeeper]) || undefined,
     scorekeeper2: stringValue(game[GAME.scorekeeper2]) || undefined,
     shotClock: numberValue(game[GAME.shotClockSeconds], fallbackMatch.shotClock),
-    status: stringValue(game[GAME.status]) || "Scheduled",
-    statusNote: events.find((event) => event.action === "suspension" && event.note)?.note,
+    status: stringValue(game[GAME.status]) === "Played" ? "Final" : stringValue(game[GAME.status]) || "Scheduled",
+    statusNote: events.find((event) => (event.action === "suspension" || event.action === "cancellation") && event.note)?.note,
     syncMessage: "Live data connected",
     syncedAt: new Date().toISOString(),
   };
@@ -2369,6 +2372,7 @@ function normalizeActionKey(value: unknown): ActionKey {
     "warning",
     "substitution",
     "suspension",
+    "cancellation",
   ];
 
   return validActions.includes(action) ? action : "made";

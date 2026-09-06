@@ -55,3 +55,14 @@ export function makeOpId(): string {
 export function trimMatchForOutbox(match: LiveMatch): LiveMatch {
   return { ...match, events: [] };
 }
+
+// Pending writes override stale reads, including reads started before a write completed.
+export function applyPendingResult<T extends { awayScore: number; homeScore: number; status: string; statusNote?: string }>(
+  value: T, gameId: number | undefined, ops: OutboxOp[],
+): T {
+  return ops.reduce((current, op) => {
+    if (op.kind !== "status" || op.match.gameId !== gameId) return current;
+    return { ...current, awayScore: op.match.awayScore, homeScore: op.match.homeScore,
+      status: op.status, statusNote: op.note || undefined };
+  }, value);
+}

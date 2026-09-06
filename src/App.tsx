@@ -75,7 +75,7 @@ import {
   shouldAdvanceToRelevantGame,
 } from "./schedule";
 import { OdooClient, getOdooConfig } from "./api/odooClient";
-import { makeOpId, trimMatchForOutbox, type OutboxOp } from "./api/outbox";
+import { applyPendingResult, makeOpId, trimMatchForOutbox, type OutboxOp } from "./api/outbox";
 import { CourtSvg } from "./components/CourtSvg";
 import { cn } from "./lib/cn";
 
@@ -99,7 +99,7 @@ type OfficialKey = "referee" | "refereeAssistant" | "referee3" | "scorekeeper" |
 type OfficialsSelection = Partial<Record<OfficialKey, string>>;
 type OfficialsSelectionStore = Record<string, OfficialsSelection>;
 type StatsMode = "professional" | "youth";
-type GameResolutionStatus = "Final" | "Suspended";
+type GameResolutionStatus = "Final" | "Suspended" | "Cancelled";
 type GameResolutionInput = {
   awayScore: number;
   homeScore: number;
@@ -447,7 +447,7 @@ function App() {
   );
   // Durable outbox of Odoo writes not yet confirmed synced (parked while offline / on
   // failure) and a live online/offline flag, both surfaced in the sync indicator.
-  const [pendingOps, setPendingOps] = useState<OutboxOp[]>(
+  const [pendingOps, setPendingOpsState] = useState<OutboxOp[]>(
     () => readStoredJson<OutboxOp[]>(STORAGE_KEYS.outbox) ?? [],
   );
   const [isOnline, setIsOnline] = useState(() =>
@@ -472,6 +472,7 @@ function App() {
   // Mirrors `pendingOps` for use inside the flush loop; `flushingRef` serializes flushes;
   // `inFlightOpIdsRef` marks ops the inline path is sending so a flush never double-sends.
   const pendingOpsRef = useRef(pendingOps);
+  const mutationRevisionRef = useRef(0);
   const flushingRef = useRef(false);
   const inFlightOpIdsRef = useRef<Set<string>>(new Set());
 
@@ -514,11 +515,14 @@ function App() {
     writeStoredJson(STORAGE_KEYS.matchOptions, matchOptions);
   }, [matchOptions]);
 
-  // Keep the outbox mirror ref + its persisted copy in lockstep with the queue state.
-  useEffect(() => {
-    pendingOpsRef.current = pendingOps;
-    writeStoredJson(STORAGE_KEYS.outbox, pendingOps);
-  }, [pendingOps]);
+  // Persist before starting network work, so an immediate reload cannot lose a save.
+  const setPendingOps = useCallback((update: (current: OutboxOp[]) => OutboxOp[]) => {
+    const next = update(pendingOpsRef.current);
+    mutationRevisionRef.current += 1;
+    pendingOpsRef.current = next;
+    writeStoredJson(STORAGE_KEYS.outbox, next);
+    setPendingOpsState(next);
+  }, []);
 
   const refreshMatch = useCallback(
     async (gameId?: number, options: RefreshOptions = {}) => {
@@ -527,6 +531,8 @@ function App() {
         return;
       }
 
+      const revisionAtStart = mutationRevisionRef.current;
+      const pendingAtStart = pendingOpsRef.current;
       const now = Date.now();
       const requestedGameId = gameId ?? selectedGameIdRef.current;
 
@@ -585,7 +591,7 @@ function App() {
         }
 
         // A custom match may have started while this load was in flight — keep it.
-        if (customModeRef.current) {
+        if (customModeRef.current || revisionAtStart !== mutationRevisionRef.current) {
           return;
         }
 
@@ -612,9 +618,9 @@ function App() {
 
           const cachedMatch = readStoredLiveMatch(targetGameId);
           const sourceMatch = result.source === "api" ? result.match : cachedMatch ?? result.match;
-          const loadedMatch = applyStoredGameDayRoster(
+          const loadedMatch = applyPendingResult(applyStoredGameDayRoster(
             applyStoredOfficials(applyStoredAttendance(applyStoredStarters(sourceMatch))),
-          );
+          ), sourceMatch.gameId, [...pendingAtStart, ...pendingOpsRef.current]);
 
           return {
             ...loadedMatch,
@@ -633,7 +639,9 @@ function App() {
         if (optionsResult) {
           matchOptionsLoadedRef.current = true;
           matchOptionsLoadedAtRef.current = Date.now();
-          setMatchOptions(optionsResult);
+          setMatchOptions(optionsResult.map((option) => applyPendingResult(
+            option, option.id, [...pendingAtStart, ...pendingOpsRef.current],
+          )));
         }
 
         const nextGameId = result.source === "api"
@@ -718,7 +726,7 @@ function App() {
   // ordering, skips ops the inline path is still sending, and drops each op only after Odoo
   // confirms it (the write path is idempotent, so a retried op never duplicates data).
   const flushOutbox = useCallback(async () => {
-    if (!apiClient.enabled || flushingRef.current) {
+    if (!apiClient.enabled || flushingRef.current || inFlightOpIdsRef.current.size > 0) {
       return;
     }
     if (typeof navigator !== "undefined" && !navigator.onLine) {
@@ -794,7 +802,11 @@ function App() {
         eventId,
         input: { ...input, match: trimMatchForOutbox(input.match) },
       };
+      const mustQueue = pendingOpsRef.current.length > 0 || flushingRef.current;
       setPendingOps((current) => [...current, op]);
+      if (mustQueue) {
+        return Promise.resolve({ saved: false, log: createLog("warning", "Saved on this device", "Waiting to sync earlier changes.") });
+      }
       inFlightOpIdsRef.current.add(op.id);
 
       return saveMatchAction(apiClient, input)
@@ -810,14 +822,16 @@ function App() {
         )
         .finally(() => {
           inFlightOpIdsRef.current.delete(op.id);
+          void flushOutbox();
         });
     },
-    [apiClient],
+    [apiClient, flushOutbox, setPendingOps],
   );
 
   // Same optimistic + durable wrapper for a game-status change (start / suspend / end).
   const dispatchSaveStatus = useCallback(
     (nextMatch: LiveMatch, status: string, note?: string, eventId?: number): Promise<SaveMatchActionResult> => {
+      persistStoredLiveMatch(nextMatch);
       if (!apiClient.enabled || !nextMatch.gameId) {
         return saveMatchStatus(apiClient, nextMatch, status, note);
       }
@@ -831,7 +845,11 @@ function App() {
         status,
         note,
       };
+      const mustQueue = pendingOpsRef.current.length > 0 || flushingRef.current;
       setPendingOps((current) => [...current, op]);
+      if (mustQueue) {
+        return Promise.resolve({ saved: false, log: createLog("warning", "Saved on this device", "Waiting to sync earlier changes.") });
+      }
       inFlightOpIdsRef.current.add(op.id);
 
       return saveMatchStatus(apiClient, nextMatch, status, note)
@@ -847,9 +865,10 @@ function App() {
         )
         .finally(() => {
           inFlightOpIdsRef.current.delete(op.id);
+          void flushOutbox();
         });
     },
-    [apiClient],
+    [apiClient, flushOutbox, setPendingOps],
   );
 
   const dispatchSaveRoster = useCallback(
@@ -865,7 +884,11 @@ function App() {
         attempts: 0,
         match: trimMatchForOutbox(nextMatch),
       };
+      const mustQueue = pendingOpsRef.current.length > 0 || flushingRef.current;
       setPendingOps((current) => [...current, op]);
+      if (mustQueue) {
+        return Promise.resolve({ saved: false, log: createLog("warning", "Saved on this device", "Waiting to sync earlier changes.") });
+      }
       inFlightOpIdsRef.current.add(op.id);
 
       if (typeof navigator !== "undefined" && !navigator.onLine) {
@@ -892,9 +915,10 @@ function App() {
         )
         .finally(() => {
           inFlightOpIdsRef.current.delete(op.id);
+          void flushOutbox();
         });
     },
-    [apiClient, reconcileRosterSync],
+    [apiClient, flushOutbox, reconcileRosterSync, setPendingOps],
   );
 
   // Reconnect handling: track the browser online/offline flag, and whenever connectivity
@@ -1197,7 +1221,7 @@ function App() {
     appendLog(
       createLog(
         result.status === "Final" ? "success" : "warning",
-        result.status === "Final" ? "Manual result saved" : "Game suspended",
+        result.status === "Final" ? "Manual result saved" : `Game ${result.status.toLowerCase()}`,
         `${option.awayName} ${result.awayScore}–${result.homeScore} ${option.homeName}${note ? ` · ${note}` : ""}`,
       ),
     );
@@ -2397,13 +2421,13 @@ function App() {
     setEndGameOpen(false);
 
     const suspensionEvent: GameEvent | undefined =
-      status === "Suspended" && reasonText
+      status !== "Final" && reasonText
         ? {
-            action: "suspension",
+            action: status === "Cancelled" ? "cancellation" : "suspension",
             icon: getEventIcon("suspension", 0),
             id: Date.now(),
             issuedByRef: true,
-            label: `Suspended · ${reasonText}`,
+            label: `${status} · ${reasonText}`,
             note: reasonText,
             period: current.period,
             player: "—",
@@ -2428,7 +2452,7 @@ function App() {
         ? createLog("success", "Game ended", `${winner} (${result.awayScore}-${result.homeScore})`)
         : createLog(
             "warning",
-            "Game suspended",
+            `Game ${status.toLowerCase()}`,
             `${reasonText} · ${result.awayScore}-${result.homeScore}`,
           ),
     );
@@ -3702,9 +3726,9 @@ function GameCard({
             <span className="truncate">{option.location || "Location pending"}</span>
           </span>
         </div>
-        {option.status === "Suspended" && option.statusNote && (
+        {(option.status === "Suspended" || option.status === "Cancelled") && option.statusNote && (
           <div className="mt-2 line-clamp-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-2.5 py-2 text-xs text-pretty text-amber-100">
-            <span className="font-semibold">Suspended:</span> {option.statusNote}
+            <span className="font-semibold">{option.status}:</span> {option.statusNote}
           </div>
         )}
       </button>
@@ -3723,7 +3747,7 @@ function GameCard({
           onClick={onOpenResult}
         >
           <Trophy size={14} />
-          {option.status === "Final" || option.status === "Suspended" ? "Edit result" : "Result"}
+          {option.status === "Final" || option.status === "Suspended" || option.status === "Cancelled" ? "Edit result" : "Result"}
         </button>
         <button
           className="h-9 rounded-lg border border-neutral-200 bg-neutral-100 text-xs font-semibold text-neutral-950 transition-colors hover:bg-white focus:outline-none focus:ring-2 focus:ring-neutral-400"
@@ -5180,7 +5204,7 @@ function GameResolutionDialog({
   onClose: () => void;
 }) {
   const [status, setStatus] = useState<GameResolutionStatus>(
-    initialStatus === "Suspended" ? "Suspended" : "Final",
+    initialStatus === "Suspended" || initialStatus === "Cancelled" ? initialStatus : "Final",
   );
   const [awayValue, setAwayValue] = useState(String(awayScore));
   const [homeValue, setHomeValue] = useState(String(homeScore));
@@ -5190,8 +5214,8 @@ function GameResolutionDialog({
   const noteText = note.trim();
   const awayError = parsedAwayScore === undefined ? "Enter a score from 0 to 999." : undefined;
   const homeError = parsedHomeScore === undefined ? "Enter a score from 0 to 999." : undefined;
-  const noteError = status === "Suspended" && noteText.length === 0
-    ? "Explain why the game is suspended."
+  const noteError = status !== "Final" && noteText.length === 0
+    ? `Explain why the game is ${status.toLowerCase()}.`
     : undefined;
   const canSubmit = !awayError && !homeError && !noteError;
   const winner =
@@ -5217,7 +5241,7 @@ function GameResolutionDialog({
                 Record game result
               </AlertDialog.Title>
               <AlertDialog.Description className="mt-0.5 text-sm text-pretty text-neutral-500">
-                Enter the official score. Suspended games also require a reason.
+                Enter the score, or suspend or cancel the game with a reason.
               </AlertDialog.Description>
             </div>
             <AlertDialog.Cancel asChild>
@@ -5232,7 +5256,7 @@ function GameResolutionDialog({
           </div>
 
           <div className="min-h-0 flex-1 overflow-y-auto p-4 scrollbar-slim">
-            <div className="grid grid-cols-2 gap-2 rounded-xl border border-neutral-800 bg-neutral-950 p-1" role="group" aria-label="Game result status">
+            <div className="grid grid-cols-3 gap-2 rounded-xl border border-neutral-800 bg-neutral-950 p-1" role="group" aria-label="Game result status">
               <button
                 aria-pressed={status === "Final"}
                 className={cn(
@@ -5261,6 +5285,12 @@ function GameResolutionDialog({
                 <Pause size={16} />
                 Suspended
               </button>
+              <button
+                aria-pressed={status === "Cancelled"}
+                className={cn("flex h-11 items-center justify-center rounded-lg text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-amber-400/60", status === "Cancelled" ? "bg-amber-300 text-neutral-950" : "text-neutral-400 hover:bg-neutral-800")}
+                type="button"
+                onClick={() => setStatus("Cancelled")}
+              >Cancelled</button>
             </div>
 
             <div className="mt-4 grid grid-cols-[minmax(0,1fr)_32px_minmax(0,1fr)] items-start gap-2">
@@ -5282,12 +5312,12 @@ function GameResolutionDialog({
                 onChange={setHomeValue}
               />
             </div>
-            <div className="mt-2 text-center text-sm font-semibold text-neutral-300">{winner}</div>
+            <div className="mt-2 text-center text-sm font-semibold text-neutral-300">{status === "Final" ? winner : "No winner recorded"}</div>
 
-            {status === "Suspended" && (
+            {status !== "Final" && (
               <div className="mt-4 border-t border-neutral-800 pt-4">
                 <label className="flex items-center justify-between gap-2 text-sm font-semibold text-neutral-200" htmlFor="game-resolution-note">
-                  <span>Why was it suspended?</span>
+                  <span>Why was it {status.toLowerCase()}?</span>
                   <span className="text-xs font-normal text-neutral-500">Required</span>
                 </label>
                 <textarea
@@ -5316,7 +5346,7 @@ function GameResolutionDialog({
                   <span className="shrink-0 text-xs tabular-nums text-neutral-600">{note.length}/500</span>
                 </div>
 
-                <div className="mt-2 flex flex-wrap gap-1.5" aria-label="Common suspension reasons">
+                <div className="mt-2 flex flex-wrap gap-1.5" aria-label="Common reasons">
                   {SUSPENSION_REASON_PRESETS.map((preset) => (
                     <button
                       className={cn(
@@ -5338,7 +5368,7 @@ function GameResolutionDialog({
 
             <div className="mt-4 rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2 text-xs text-pretty text-neutral-500">
               {isOnline
-                ? "The score and status are verified in Odoo; suspension reasons are saved in play-by-play."
+                ? "The score, status, and reason are saved automatically when connected."
                 : "You are offline. This result will stay on this device and sync automatically when connected."}
             </div>
           </div>
@@ -5369,13 +5399,13 @@ function GameResolutionDialog({
                   onFinish({
                     awayScore: parsedAwayScore,
                     homeScore: parsedHomeScore,
-                    note: status === "Suspended" ? noteText : "",
+                    note: status !== "Final" ? noteText : "",
                     status,
                   });
                 }}
               >
                 {status === "Final" ? <Trophy size={16} /> : <Pause size={16} />}
-                {status === "Final" ? "Save final result" : "Suspend game"}
+                {status === "Final" ? "Save final result" : status === "Cancelled" ? "Cancel game" : "Suspend game"}
               </button>
             </AlertDialog.Action>
           </div>

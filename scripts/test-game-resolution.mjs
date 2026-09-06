@@ -34,6 +34,7 @@ class MockOdooClient {
     if (model === "ir.model" || model === "ir.model.fields") {
       throw new Error("Optional metadata unavailable in mock");
     }
+    if (model === "x_game") return [{ ...this.game }];
     if (model !== "x_game_event") {
       return [];
     }
@@ -51,6 +52,7 @@ class MockOdooClient {
     if (!this.writeConfirmed) {
       return false;
     }
+    if (GAME.status in values) assert.ok(["Scheduled", "Live", "Played", "Suspended", "Cancelled"].includes(values[GAME.status]), "Odoo rejects unknown status values");
     Object.assign(this.game, values);
     return true;
   }
@@ -80,7 +82,7 @@ const vite = await createServer({
 });
 
 try {
-  const { fallbackMatch, saveMatchStatus } = await vite.ssrLoadModule("/src/api/liveMatch.ts");
+  const { fallbackMatch, saveMatchStatus, loadMatchOptions } = await vite.ssrLoadModule("/src/api/liveMatch.ts");
   const makeMatch = (awayScore, homeScore) => ({
     ...fallbackMatch,
     away: { ...fallbackMatch.away, name: "Visitor Team" },
@@ -96,7 +98,11 @@ try {
     assert.equal(result.saved, true);
     assert.equal(client.game[GAME.awayScore], 71);
     assert.equal(client.game[GAME.homeScore], 68);
-    assert.equal(client.game[GAME.status], "Final");
+    assert.equal(client.game[GAME.status], "Played");
+    const [reloaded] = await loadMatchOptions(client);
+    assert.equal(reloaded.status, "Final");
+    assert.equal(reloaded.awayScore, 71);
+    assert.equal(reloaded.homeScore, 68);
     assert.equal("x_studio_website_description" in client.game, false);
     assert.equal(client.eventCreates, 0, "a final result must not create a suspension event");
   }
@@ -140,6 +146,33 @@ try {
     const result = await saveMatchStatus(client, makeMatch(50, 49), "Final");
     assert.equal(result.saved, false);
     assert.match(result.log.detail, /did not confirm/i);
+  }
+
+  {
+    const client = new MockOdooClient();
+    const result = await saveMatchStatus(client, makeMatch(0, 0), "Cancelled", "No teams available");
+    assert.equal(result.saved, true);
+    assert.equal(client.game[GAME.status], "Cancelled");
+    assert.equal(client.events[0][EVENT.actionType], "cancellation");
+    assert.equal(client.events[0][EVENT.note], "No teams available");
+    await saveMatchStatus(client, makeMatch(0, 0), "Cancelled", "No teams available");
+    assert.equal(client.eventCreates, 1);
+  }
+
+  {
+    const { applyPendingResult } = await vite.ssrLoadModule("/src/api/outbox.ts");
+    const server = { id: 77, awayScore: 0, homeScore: 0, status: "Scheduled" };
+    const pending = JSON.parse(JSON.stringify([
+      { kind: "status", match: makeMatch(71, 68), status: "Final" },
+      { kind: "status", match: makeMatch(0, 0), status: "Cancelled", note: "No teams" },
+    ]));
+    const restored = applyPendingResult(server, 77, pending);
+    assert.equal(restored.status, "Cancelled");
+    assert.equal(restored.statusNote, "No teams");
+    assert.equal(restored.awayScore, 0);
+    assert.equal(applyPendingResult(server, 88, pending), server);
+    assert.equal(applyPendingResult(server, 77, []), server);
+    assert.equal(applyPendingResult(server, 77, pending.slice(0, 1)).awayScore, 71);
   }
 
   process.stdout.write("Game resolution contract tests passed: score/status write-back, required suspension reason, play-by-play notes, verified Odoo writes, and idempotent retries.\n");
