@@ -25,7 +25,7 @@ export function ScoringToolbar({ teams, sides, selected, view, onSelect, onView,
   teams: Record<TeamId, Team>; sides: CourtSides; selected: TeamId; view: ScoringView;
   onSelect: (team: TeamId) => void; onView: (view: ScoringView) => void; onSwitch: () => void;
 }) {
-  return <div className="grid gap-3 border-b border-neutral-800 bg-neutral-950 p-3 sm:grid-cols-[minmax(0,1fr)_auto]">
+  return <div className="live-scoring-toolbar grid gap-3 border-b border-neutral-800 bg-neutral-950 p-3 sm:grid-cols-[minmax(0,1fr)_auto]">
     <TeamSelector teams={teams} sides={sides} selected={selected} onSelect={onSelect} />
     <div className="flex flex-wrap items-center gap-2">
       <div className="flex rounded-lg border border-neutral-700 p-1" role="group" aria-label="Scoring view">
@@ -48,7 +48,7 @@ export function ScoringDialog({ title, description, children, onClose, wide = fa
     <div ref={setContainer} />
     {container && <Dialog.Portal container={container}>
       <Dialog.Overlay className="fixed inset-0 z-40 bg-black/75" />
-      <Dialog.Content onCloseAutoFocus={(event) => { event.preventDefault(); returnFocus?.focus(); }} className={cn("scoring-dialog fixed inset-0 z-50 m-auto flex h-fit max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] flex-col overflow-hidden rounded-xl border border-neutral-700 bg-neutral-950 text-neutral-100 shadow-2xl", wide ? "max-w-5xl" : "max-w-lg")}>
+      <Dialog.Content onCloseAutoFocus={(event) => { event.preventDefault(); returnFocus?.focus(); }} className={cn("scoring-dialog fixed inset-0 z-50 m-auto flex h-fit max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] flex-col overflow-hidden rounded-xl border border-neutral-700 bg-neutral-950 text-neutral-100 shadow-2xl", wide ? "scoring-dialog-wide max-w-5xl" : "max-w-lg")}>
         <div className="flex shrink-0 items-start justify-between gap-3 border-b border-neutral-800 p-4">
           <div className="min-w-0"><Dialog.Title className="text-lg font-bold text-balance">{title}</Dialog.Title>
             <Dialog.Description className="mt-1 text-xs text-neutral-400 text-pretty">{description}</Dialog.Description></div>
@@ -73,7 +73,7 @@ export function ScoringPlayerPicker({ teams, sides, initialTeam, title, descript
       {bothTeams && <h3 className="truncate text-sm font-bold text-balance" style={{ color: `var(--c-${side}-soft)` }}>{teams[side].name}</h3>}
       <div className={cn("mt-4 grid gap-2", bothTeams ? "grid-cols-2" : "grid-cols-3")}>
         {teams[side].players.map((player) => <button key={playerKey(player)} type="button" aria-label={`Assign to #${player.number}`} title={player.name}
-          className="flex min-h-20 min-w-0 flex-col justify-center rounded-lg border border-neutral-700 bg-neutral-900 px-2 hover:bg-neutral-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400"
+          className="flex min-h-16 min-w-0 flex-col justify-center rounded-lg border border-neutral-700 bg-neutral-900 px-2 hover:bg-neutral-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400"
           onClick={() => onPick(side, player)}><span className="font-mono text-2xl font-black tabular-nums" style={{ color: `var(--c-${side}-soft)` }}>#{player.number}</span><span className="text-[10px] text-neutral-400 tabular-nums">{player.points} pt · {player.fouls} f</span></button>)}
       </div>
       {teams[side].players.length === 0 && <p className="mt-3 text-sm text-neutral-400 text-pretty">No players on court. Set the lineup in Pre-game.</p>}
@@ -83,20 +83,20 @@ export function ScoringPlayerPicker({ teams, sides, initialTeam, title, descript
   </ScoringDialog>;
 }
 
-export function QuickScorePanel({ team, side, onShot, foulOnShot }: {
-  team: Team; side: TeamId; onShot: (value: 2 | 3, made: boolean) => void; foulOnShot: boolean;
+export function QuickScorePanel({ hasPlayers, onShot, foulOnShot }: {
+  hasPlayers: boolean; onShot: (value: 2 | 3, made: boolean) => void; foulOnShot: boolean;
 }) {
-  return <section aria-label="Scoring without court" className="flex min-w-0 flex-col justify-center bg-neutral-950 p-4 sm:p-6">
-    <div className="mb-5"><p className="text-xs font-semibold text-neutral-400">Quick scoring · {team.label}</p>
-      <h2 className="mt-1 truncate text-xl font-bold text-balance" style={{ color: `var(--c-${side}-soft)` }}>{team.name}</h2>
-      <p className="mt-2 text-sm text-neutral-400 text-pretty">Choose the shot, then tap the shooter’s number.</p></div>
+  return <section aria-label="Scoring without court" className="live-quick-score flex min-w-0 flex-col justify-center bg-neutral-950 p-3">
+    <div className="mb-3"><p className="text-xs font-semibold text-neutral-400">Quick scoring · both teams</p>
+      <h2 className="mt-1 text-base font-bold text-balance">Record points</h2>
+      <p className="mt-2 text-sm text-neutral-400 text-pretty">Choose the shot, then pick any player.</p></div>
     <div className="grid grid-cols-2 gap-3">
-      {([2, 3] as const).flatMap((value) => [true, false].map((made) => <button key={`${value}-${made}`} type="button" disabled={team.players.length === 0}
-        className={cn("flex min-h-24 flex-col items-center justify-center gap-1 rounded-xl border font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-300 disabled:cursor-not-allowed disabled:opacity-40 sm:min-h-28", made ? "border-lime-500/40 bg-lime-500/10 text-lime-200 hover:bg-lime-500/20" : "border-neutral-700 bg-neutral-900 text-neutral-300 hover:bg-neutral-800")}
+      {([2, 3] as const).flatMap((value) => [true, false].map((made) => <button key={`${value}-${made}`} type="button" disabled={!hasPlayers}
+        className={cn("flex min-h-16 flex-col items-center justify-center gap-1 rounded-xl border font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-300 disabled:cursor-not-allowed disabled:opacity-40", made ? "border-lime-500/40 bg-lime-500/10 text-lime-200 hover:bg-lime-500/20" : "border-neutral-700 bg-neutral-900 text-neutral-300 hover:bg-neutral-800")}
         onClick={() => onShot(value, made)}><span className="font-mono text-3xl font-black tabular-nums">{value}<span className="ml-1 text-sm">PT</span></span>
         <span className="flex items-center gap-1.5 text-xs">{made ? <Target size={15} /> : <CircleX size={15} />}{made ? "Made" : "Missed"}</span></button>))}
     </div>
     {foulOnShot && <p className="mt-3 text-xs font-semibold text-amber-300">Foul on shot enabled</p>}
-    {team.players.length === 0 && <p className="mt-3 text-sm text-neutral-400">Set the lineup in Pre-game to start scoring.</p>}
+    {!hasPlayers && <p className="mt-3 text-sm text-neutral-400">Set the lineup in Pre-game to start scoring.</p>}
   </section>;
 }

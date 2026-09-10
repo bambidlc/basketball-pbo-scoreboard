@@ -74,7 +74,7 @@ import { OdooClient, getOdooConfig } from "./api/odooClient";
 import { applyPendingResult, makeOpId, trimMatchForOutbox, type OutboxOp } from "./api/outbox";
 import { ScheduleBrowser } from "./components/ScheduleBrowser";
 import { CourtSvg } from "./components/CourtSvg";
-import { QuickScorePanel, ScoringPlayerPicker, ScoringToolbar } from "./components/ScoringControls";
+import { QuickScorePanel, ScoringDialog, ScoringPlayerPicker, ScoringToolbar } from "./components/ScoringControls";
 import { SubstitutionDialog } from "./components/SubstitutionDialog";
 import { BENCH_ORDER, courtOrder, lineupReview, nextEventId, playerKey as getPlayerKey, swappedCourts, type CourtSides, type LineupDrafts, type ScoringView } from "./scoring";
 import { cn } from "./lib/cn";
@@ -2697,11 +2697,11 @@ function App() {
   return (
     <LazyMotion features={loadMotionFeatures}>
     <main
-      className="min-h-dvh bg-neutral-950 p-2 text-neutral-100 [font-family:Inter,ui-sans-serif,system-ui,sans-serif] sm:p-3 2xl:h-dvh 2xl:overflow-hidden"
+      className="live-app min-h-dvh bg-neutral-950 p-2 text-neutral-100 [font-family:Inter,ui-sans-serif,system-ui,sans-serif] sm:p-3 2xl:h-dvh 2xl:overflow-hidden"
       style={teamColorVars(match.away, match.home)}
     >
-      <section className="mx-auto max-w-[1640px] overflow-hidden rounded-xl border border-neutral-800 bg-neutral-800 shadow-xl shadow-black/40 2xl:h-full">
-        <div className="grid gap-px bg-neutral-800 md:grid-cols-2 lg:grid-cols-[240px_minmax(0,1fr)_240px] xl:grid-cols-[260px_minmax(0,1fr)_260px] 2xl:h-full 2xl:min-h-0 2xl:grid-cols-[200px_minmax(0,1fr)_200px_350px] 2xl:grid-rows-[auto_minmax(0,1fr)_182px]">
+      <section className="live-shell mx-auto max-w-[1640px] overflow-hidden rounded-xl border border-neutral-800 bg-neutral-800 shadow-xl shadow-black/40 2xl:h-full">
+        <div className="live-grid grid gap-px bg-neutral-800 md:grid-cols-2 lg:grid-cols-[240px_minmax(0,1fr)_240px] xl:grid-cols-[260px_minmax(0,1fr)_260px] 2xl:h-full 2xl:min-h-0 2xl:grid-cols-[200px_minmax(0,1fr)_200px_350px] 2xl:grid-rows-[auto_minmax(0,1fr)_182px]">
           <ScoreHeader
             courtSides={courtSides}
             away={match.away}
@@ -2724,21 +2724,21 @@ function App() {
             onToggleFoulBall={toggleFoulBall}
           />
 
-          <section aria-label="Live scoring" className="order-2 flex min-h-0 min-w-0 flex-col bg-neutral-950 md:col-span-2 lg:col-span-3 lg:col-start-1 lg:row-start-2">
+          <section aria-label="Live scoring" className="live-scoring order-2 flex min-h-0 min-w-0 flex-col bg-neutral-950 md:col-span-2 lg:col-span-3 lg:col-start-1 lg:row-start-2">
             <ScoringToolbar teams={{ away: match.away, home: match.home }} sides={courtSides}
               selected={selectedTeam} view={scoringView} onSelect={setSelectedTeam}
               onView={setScoringView} onSwitch={switchCourtSides} />
-            <div className="grid min-h-0 flex-1 gap-px bg-neutral-800 md:grid-cols-2 lg:grid-cols-[200px_minmax(0,1fr)_200px] 2xl:overflow-y-auto">
+            <div className="live-floor grid min-h-0 flex-1 gap-px bg-neutral-800 md:grid-cols-2 lg:grid-cols-[200px_minmax(0,1fr)_200px] 2xl:overflow-y-auto">
               {courtOrder(courtSides).map((side, index) => <RosterPanel key={side} side={side} team={match[side]}
                 position={index === 0 ? "left" : "right"} selectedTeam={selectedTeam === side}
                 selectedPlayerKey={selectedPlayers[side]} onSelectPlayer={selectPlayer} onSelectTeam={() => setSelectedTeam(side)} onSubstitute={openSubstitution} />)}
-              <div className="order-1 min-h-0 min-w-0 bg-neutral-950 md:col-span-2 lg:col-span-1 lg:col-start-2 lg:row-start-1">
+              <div className="live-surface order-1 min-h-0 min-w-0 bg-neutral-950 md:col-span-2 lg:col-span-1 lg:col-start-2 lg:row-start-1">
                 {scoringView === "court" ? <CourtPanel key={courtSides.left}
                   courtSides={courtSides} currentPlayer={currentPlayer} events={match.events}
                   foulOnShot={foulOnShot} selectedTeam={selectedTeam}
                   teams={{ away: match.away, home: match.home }}
                   onCourtShot={recordCourtShot} onSelectPlayer={selectPlayer} />
-                  : <QuickScorePanel team={match[selectedTeam]} side={selectedTeam} foulOnShot={foulOnShot}
+                  : <QuickScorePanel hasPlayers={match.away.players.length + match.home.players.length > 0} foulOnShot={foulOnShot}
                     onShot={(value, made) => setQuickShot({ value, made })} />}
               </div>
             </div>
@@ -2807,7 +2807,7 @@ function App() {
           onApply={handleApplyLineup} onClose={closeSubstitution} />
       )}
       {quickShot && (
-        <ScoringPlayerPicker title={`${quickShot.value}PT ${quickShot.made ? "Made" : "Missed"}`}
+        <ScoringPlayerPicker bothTeams title={`${quickShot.value}PT ${quickShot.made ? "Made" : "Missed"}`}
           description="Tap the shooter to record this shot." teams={{ away: match.away, home: match.home }}
           sides={courtSides} initialTeam={selectedTeam} onClose={() => setQuickShot(undefined)} onPick={recordQuickShot} />
       )}
@@ -3751,7 +3751,7 @@ function ScoreHeader({
   const teams = { away, home };
   const scores = { away: awayScore, home: homeScore };
   return (
-    <header className="order-1 grid items-stretch bg-neutral-950 md:col-span-2 md:grid-cols-[minmax(0,1fr)_minmax(224px,260px)_minmax(0,1fr)] lg:col-span-3 lg:col-start-1 lg:row-start-1 2xl:items-center 2xl:grid-cols-[minmax(0,1fr)_290px_minmax(0,1fr)]">
+    <header className="live-score-header order-1 grid items-stretch bg-neutral-950 md:col-span-2 md:grid-cols-[minmax(0,1fr)_minmax(224px,260px)_minmax(0,1fr)] lg:col-span-3 lg:col-start-1 lg:row-start-1 2xl:items-center 2xl:grid-cols-[minmax(0,1fr)_290px_minmax(0,1fr)]">
       <TeamHeaderBlock
         align="right"
         score={scores[courtSides.left]}
@@ -3761,7 +3761,7 @@ function ScoreHeader({
         onClick={() => onSelectTeam(courtSides.left)}
       />
 
-      <div className="flex flex-col items-center justify-center gap-2 border-y border-neutral-800 px-3 py-3 text-center md:border-x md:border-y-0 lg:gap-1 lg:py-2 2xl:gap-0.5 2xl:py-1">
+      <div className="live-clock-header flex flex-col items-center justify-center gap-2 border-y border-neutral-800 px-3 py-3 text-center md:border-x md:border-y-0 lg:gap-1 lg:py-2 2xl:gap-0.5 2xl:py-1">
         <div className="flex w-full items-center justify-between gap-2">
           <button
             aria-label="Back to dashboard"
@@ -3802,6 +3802,7 @@ function ScoreHeader({
         <div className="mt-0.5 font-mono text-5xl font-black leading-none text-neutral-50 tabular-nums lg:text-4xl 2xl:text-5xl">
           {clock}
         </div>
+        <div className="live-period-tags flex flex-wrap items-center justify-center gap-1">
         <div className="rounded-full bg-amber-400/10 px-3 py-0.5 text-[11px] font-black uppercase tracking-wide text-amber-300">
           {periodLabel}
         </div>
@@ -3813,6 +3814,7 @@ function ScoreHeader({
             EQ +{equalizationPoints} {(equalizationTeam ? (equalizationTeam === "away" ? away : home).label : "")}
           </div>
         ) : null}
+        </div>
         <div className="flex max-w-full items-center gap-1.5 text-[10px] font-black uppercase tracking-wide text-neutral-500 lg:hidden">
           <Activity size={12} />
           <span className="truncate">{status}</span>
@@ -3854,7 +3856,7 @@ function TeamHeaderBlock({
   return (
     <button
       className={cn(
-        "relative flex items-center gap-3 px-3 py-3 text-left transition-colors hover:bg-neutral-900/70 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-neutral-500 sm:gap-4 sm:px-4 lg:py-2 2xl:py-1.5",
+        "live-team-header relative flex items-center gap-3 px-3 py-3 text-left transition-colors hover:bg-neutral-900/70 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-neutral-500 sm:gap-4 sm:px-4 lg:py-2 2xl:py-1.5",
         align === "right" ? "justify-start sm:justify-end sm:text-right" : "justify-start",
       )}
       style={selected ? { backgroundColor: cTint, boxShadow: `inset 0 0 0 1px ${cRing}` } : undefined}
@@ -3916,7 +3918,7 @@ function TeamHeaderBlock({
 
 function ScoreNumber({ value }: { value: number }) {
   return (
-    <span className="font-mono text-5xl font-black leading-none text-neutral-100 tabular-nums lg:text-5xl">
+    <span className="live-score-number font-mono text-5xl font-black leading-none text-neutral-100 tabular-nums lg:text-5xl">
       {value}
     </span>
   );
@@ -3962,8 +3964,6 @@ function CourtPanel({
   const markers = events.filter((event) => event.shotLocation).slice(0, 8);
   const pendingTeamId = pendingShot ? courtSides[pendingShot.side] : undefined;
   const pendingTeam = pendingTeamId ? teams[pendingTeamId] : undefined;
-  // Open the popup on the OPPOSITE side from the tap so it never covers the spot you marked.
-  const popupSideClass = pendingShot?.side === "right" ? "left-3" : "right-3";
 
   function handlePointerDown(event: PointerEvent<SVGSVGElement>) {
     const location = svgPointToShotLocation(event);
@@ -4058,7 +4058,7 @@ function CourtPanel({
   }
 
   return (
-    <section className="relative h-full min-h-80 overflow-hidden bg-neutral-950">
+    <section className="live-court relative h-full min-h-80 overflow-hidden bg-neutral-950">
       <div className="absolute left-3 top-3 z-10 rounded-xl border border-neutral-800 bg-neutral-950/85 px-3 py-2 shadow-lg shadow-black/40 backdrop-blur">
         <div className="text-[10px] font-black uppercase tracking-wide text-neutral-500">Selected</div>
         <div className="mt-0.5 max-w-[200px] truncate font-mono text-sm font-bold tabular-nums text-neutral-50">
@@ -4066,33 +4066,10 @@ function CourtPanel({
         </div>
       </div>
       {pendingShot && pendingTeam && pendingTeamId && (
-        <div
-          className={cn(
-            "absolute top-16 z-20 flex max-h-[calc(100%-5rem)] w-[270px] max-w-[calc(100%-1.5rem)] flex-col overflow-y-auto scrollbar-slim rounded-xl border border-neutral-700 bg-neutral-950/95 p-3 shadow-2xl shadow-black/50 backdrop-blur",
-            popupSideClass,
-          )}
-        >
-          <div className="flex items-center justify-between gap-3">
-            <div className="min-w-0">
-              <div className="text-[10px] font-black uppercase tracking-wide text-neutral-500">
-                {pendingMade === undefined ? "Choose result" : "Pick number"}
-              </div>
-              <div className="mt-0.5 truncate text-base font-black text-neutral-50">
-                {pendingShot.value}PT {pendingShot.zone}
-              </div>
-            </div>
-            <div
-              className="rounded-full border px-2.5 py-1 text-[10px] font-black uppercase tracking-wide"
-              style={{
-                borderColor: `var(--c-${pendingTeamId}-ring)`,
-                backgroundColor: `var(--c-${pendingTeamId}-tint)`,
-                color: `var(--c-${pendingTeamId}-soft)`,
-              }}
-            >
-              {pendingTeam.name}
-            </div>
-          </div>
-
+        <ScoringDialog title={`${pendingShot.value}PT · ${pendingTeam.name}`}
+          description={pendingMade === undefined ? "Choose the shot result." : "Tap the shooter’s number to record the shot."}
+          onClose={cancelPendingShot}>
+          <div className="p-3">
           {pendingMade === undefined ? (
             /* Step 1 — choose the event (made or missed) before picking the player. */
             <div className="mt-3">
@@ -4169,7 +4146,8 @@ function CourtPanel({
               </div>
             </div>
           )}
-        </div>
+          </div>
+        </ScoringDialog>
       )}
       <CourtSvg
         aria-label="Tap a side of the court to assign a shot to that team's player"
@@ -4286,13 +4264,13 @@ function RosterPanel({ side, team, position, selectedTeam, selectedPlayerKey, on
   side: TeamId; team: Team; position: CourtSide; selectedTeam: boolean; selectedPlayerKey?: string;
   onSelectPlayer: (team: TeamId, player: Player) => void; onSelectTeam: () => void; onSubstitute: () => void;
 }) {
-  return <aside aria-label={`${team.label} active players`} className={cn("min-h-0 min-w-0 bg-neutral-950 lg:row-start-1", position === "left" ? "order-2 lg:col-start-1" : "order-3 lg:col-start-3")}>
+  return <aside aria-label={`${team.label} active players`} className={cn("live-roster min-h-0 min-w-0 bg-neutral-950 lg:row-start-1", position === "left" ? "order-2 lg:col-start-1" : "order-3 lg:col-start-3")}>
     <button type="button" aria-pressed={selectedTeam} onClick={onSelectTeam} className={cn("flex w-full items-center gap-2 border-b border-neutral-800 px-3 py-3 text-left hover:bg-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-neutral-400", selectedTeam && "bg-neutral-900")}>
       <ClubLogo compact side={side} team={team} />
       <span className="min-w-0 flex-1"><span className="block truncate text-sm font-bold" style={{ color: `var(--c-${side}-soft)` }}>{team.name}</span><span className="block text-[11px] text-neutral-400">On court · {position} side</span></span>
       <span className="font-mono text-xs tabular-nums text-neutral-400">{team.players.length}/5</span>
     </button>
-    <div className="grid grid-cols-5 lg:block">
+    <div className="live-player-list grid grid-cols-5 lg:block">
       {team.players.map((player) => <PlayerRow side={side} compact key={getPlayerKey(player)} player={player}
         selected={selectedTeam && selectedPlayerKey === getPlayerKey(player)} onClick={() => onSelectPlayer(side, player)} />)}
     </div>
@@ -4320,7 +4298,7 @@ function PlayerRow({
   const cBase = `var(--c-${side})`;
   return (
     <div
-      className="w-full border-b border-neutral-800 bg-neutral-950 text-neutral-100 transition-colors"
+      className="live-player-row w-full border-b border-neutral-800 bg-neutral-950 text-neutral-100 transition-colors"
       style={{
         ...(player.active ? { borderLeftWidth: "4px", borderLeftColor: cBase } : null),
         ...(selected ? { backgroundColor: `var(--c-${side}-tint)`, boxShadow: `inset 0 0 0 1px var(--c-${side}-ring)` } : null),
@@ -6592,14 +6570,28 @@ function BottomPanel({
   onEditEvent: (eventId: number) => void;
   onUndoEvent: (eventId: number) => void;
 }) {
+  const [history, setHistory] = useState({ page: 0, newestId: events[0]?.id });
+  const historyPage = history.newestId === events[0]?.id ? history.page : 0;
+  const setHistoryPage = (page: number) => setHistory({ page, newestId: events[0]?.id });
+  const pageCount = Math.max(1, Math.ceil(events.length / 2));
+  const page = Math.min(historyPage, pageCount - 1);
+  const visibleEvents = events.slice(page * 2, page * 2 + 2);
   return (
-    <section className="order-6 grid gap-px overflow-hidden bg-neutral-800 md:col-span-2 md:grid-cols-2 lg:col-span-3 lg:col-start-1 lg:row-start-4 lg:grid-cols-[minmax(300px,1.6fr)_minmax(220px,1fr)] 2xl:row-start-3 2xl:min-h-0">
-      <div className="min-h-0 overflow-hidden bg-neutral-950 p-3 md:col-span-2 lg:col-span-1 2xl:p-2">
-        <PanelTitle>{`Event Feed (${events.length})`}</PanelTitle>
-        <div className="mt-2 max-h-72 overflow-y-auto rounded-lg border border-neutral-800 md:max-h-56 2xl:mt-1 2xl:max-h-[132px] 2xl:rounded-md">
-          {events.map((event) => (
+    <section className="live-bottom order-6 grid gap-px overflow-hidden bg-neutral-800 md:col-span-2 md:grid-cols-2 lg:col-span-3 lg:col-start-1 lg:row-start-4 lg:grid-cols-[minmax(300px,1.6fr)_minmax(220px,1fr)] 2xl:row-start-3 2xl:min-h-0">
+      <div className="live-events min-h-0 overflow-hidden bg-neutral-950 p-3 md:col-span-2 lg:col-span-1 2xl:p-2">
+        <div className="live-event-heading flex items-center justify-between gap-2">
+          <PanelTitle>{`Event Feed (${events.length})`}</PanelTitle>
+          <nav aria-label="Event history" className="flex items-center gap-2 text-[10px] text-neutral-400">
+            <button type="button" aria-label="Newer events" disabled={page === 0} onClick={() => setHistoryPage(page - 1)} className="size-7 rounded border border-neutral-700 disabled:opacity-30 focus-visible:ring-2 focus-visible:ring-neutral-400">‹</button>
+            <span className="tabular-nums">{page + 1}/{pageCount}</span>
+            <button type="button" aria-label="Older events" disabled={page + 1 >= pageCount} onClick={() => setHistoryPage(page + 1)} className="size-7 rounded border border-neutral-700 disabled:opacity-30 focus-visible:ring-2 focus-visible:ring-neutral-400">›</button>
+            {page > 0 && <button type="button" onClick={() => setHistoryPage(0)} className="h-7 rounded border border-neutral-700 px-2 focus-visible:ring-2 focus-visible:ring-neutral-400">Latest</button>}
+          </nav>
+        </div>
+        <div className="live-event-list mt-2 max-h-72 overflow-y-auto rounded-lg border border-neutral-800 md:max-h-56 2xl:mt-1 2xl:max-h-[132px] 2xl:rounded-md">
+          {visibleEvents.map((event) => (
             <div
-              className="grid min-h-11 grid-cols-[26px_48px_minmax(72px,1fr)_minmax(0,1.3fr)_56px_32px_32px] items-center gap-1 border-b border-neutral-800/70 bg-neutral-900/40 px-2 last:border-b-0 2xl:min-h-8"
+              className="live-event-row grid min-h-11 grid-cols-[26px_48px_minmax(72px,1fr)_minmax(0,1.3fr)_56px_32px_32px] items-center gap-1 border-b border-neutral-800/70 bg-neutral-900/40 px-2 last:border-b-0 2xl:min-h-8"
               key={event.id}
             >
               <ClipboardList className={eventIconClass[event.icon]} size={16} />
@@ -6643,7 +6635,7 @@ function BottomPanel({
         </div>
       </div>
 
-      <div className="min-h-0 overflow-hidden bg-neutral-950 p-3 2xl:overflow-y-auto 2xl:p-2 2xl:scrollbar-slim">
+      <div className="live-summary min-h-0 overflow-hidden bg-neutral-950 p-3 2xl:overflow-y-auto 2xl:p-2 2xl:scrollbar-slim">
         <PanelTitle>Game Summary</PanelTitle>
         <div className="mt-2 space-y-1.5 2xl:mt-1.5 2xl:space-y-1">
           {summary.map((item) => (
@@ -6781,7 +6773,7 @@ function ActionPanel({
   }
 
   return (
-    <aside className="order-5 flex min-h-0 flex-col bg-neutral-950 p-3 md:col-span-2 lg:col-span-3 lg:col-start-1 lg:row-start-3 2xl:col-span-1 2xl:col-start-4 2xl:row-span-3 2xl:row-start-1 2xl:h-full 2xl:overflow-y-auto 2xl:p-1.5">
+    <aside className="live-console order-5 flex min-h-0 flex-col bg-neutral-950 p-3 md:col-span-2 lg:col-span-3 lg:col-start-1 lg:row-start-3 2xl:col-span-1 2xl:col-start-4 2xl:row-span-3 2xl:row-start-1 2xl:h-full 2xl:overflow-y-auto 2xl:p-1.5">
       <div className="mb-3 flex items-center justify-between gap-3 2xl:mb-1.5">
         <div className="min-w-0">
           <h2 className="text-base font-black uppercase tracking-wide text-neutral-100 text-balance 2xl:text-sm">Scorer Console</h2>
@@ -6828,7 +6820,7 @@ function ActionPanel({
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-1 2xl:gap-1.5">
+      <div className="live-console-grid grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-1 2xl:gap-1.5">
         <div className="flex flex-col gap-3 2xl:gap-1.5">
           <div className="rounded-xl border border-neutral-800 bg-neutral-900 p-3 shadow-sm shadow-black/20 2xl:rounded-md 2xl:p-1.5">
             <div className="flex items-center justify-between gap-3">
@@ -6958,7 +6950,7 @@ function ActionPanel({
           </div>
 
           {/* Period length/count is set on the dashboard; hide it only in the fixed desktop console to save height. */}
-          <div className="2xl:hidden">
+          <div className="live-period-setup 2xl:hidden">
             <PeriodSettingsControls settings={periodSettings} onChange={onPeriodSettingsChange} />
           </div>
         </div>
@@ -6996,7 +6988,7 @@ function ActionPanel({
             </button>
           </div>
 
-          <div className="grid grid-cols-2 gap-2 lg:grid-cols-3 lg:gap-1.5">
+          <div className="live-stat-actions grid grid-cols-2 gap-2 lg:grid-cols-3 lg:gap-1.5">
             {visibleActions.map((action) => {
               const Icon = action.icon;
               // "Warning" opens the 6-type picker; "P. Foul" opens the foul popup (who was
