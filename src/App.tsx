@@ -333,6 +333,8 @@ const STORAGE_KEYS = {
   outbox: "pbo:outbox",
   courtSides: "pbo:courtSides",
   scoringView: "pbo:scoringView",
+  consoleVisible: "pbo:consoleVisible",
+  feedVisible: "pbo:feedVisible",
   openingJumpWinner: "pbo:openingJumpWinner",
   possessionArrow: "pbo:possessionArrow",
   overtimeSeconds: "pbo:overtimeSeconds",
@@ -415,6 +417,8 @@ function App() {
   const [scoringView, setScoringView] = useState<ScoringView>(() => readStoredText(STORAGE_KEYS.scoringView) === "buttons" ? "buttons" : "court");
   const [quickShot, setQuickShot] = useState<{ value: 2 | 3; made: boolean } | undefined>();
   const [quickStat, setQuickStat] = useState<ActionKey | undefined>();
+  const [consoleVisible, setConsoleVisible] = useState(() => readStoredBoolean(STORAGE_KEYS.consoleVisible, true));
+  const [feedVisible, setFeedVisible] = useState(() => readStoredBoolean(STORAGE_KEYS.feedVisible, true));
   const [foulOnShot, setFoulOnShot] = useState(() => readStoredBoolean(STORAGE_KEYS.foulOnShot, false));
   const [timeoutDurationSeconds, setTimeoutDurationSeconds] = useState(
     () => readStoredPositiveNumber(STORAGE_KEYS.timeoutSeconds) ?? DEFAULT_TIMEOUT_SECONDS,
@@ -2706,7 +2710,7 @@ function App() {
       style={teamColorVars(match.away, match.home)}
     >
       <section className="live-shell mx-auto max-w-[1640px] overflow-hidden rounded-xl border border-neutral-800 bg-neutral-800 shadow-xl shadow-black/40 2xl:h-full">
-        <div className="live-grid grid gap-px bg-neutral-800 md:grid-cols-2 lg:grid-cols-[240px_minmax(0,1fr)_240px] xl:grid-cols-[260px_minmax(0,1fr)_260px] 2xl:h-full 2xl:min-h-0 2xl:grid-cols-[200px_minmax(0,1fr)_200px_350px] 2xl:grid-rows-[auto_minmax(0,1fr)_182px]">
+        <div data-console-visible={consoleVisible} data-feed-visible={feedVisible} className="live-grid grid gap-px bg-neutral-800 md:grid-cols-2 lg:grid-cols-[240px_minmax(0,1fr)_240px] xl:grid-cols-[260px_minmax(0,1fr)_260px] 2xl:h-full 2xl:min-h-0 2xl:grid-cols-[200px_minmax(0,1fr)_200px_350px] 2xl:grid-rows-[auto_minmax(0,1fr)_182px]">
           <ScoreHeader
             courtSides={courtSides}
             away={match.away}
@@ -2732,7 +2736,10 @@ function App() {
           <section aria-label="Live scoring" className="live-scoring order-2 flex min-h-0 min-w-0 flex-col bg-neutral-950 md:col-span-2 lg:col-span-3 lg:col-start-1 lg:row-start-2">
             <ScoringToolbar teams={{ away: match.away, home: match.home }} sides={courtSides}
               selected={selectedTeam} view={scoringView} onSelect={setSelectedTeam}
-              onView={setScoringView} onSwitch={switchCourtSides} />
+              onView={setScoringView} onSwitch={switchCourtSides}
+              consoleVisible={consoleVisible} feedVisible={feedVisible}
+              onToggleConsole={() => { setConsoleVisible(!consoleVisible); writeStoredBoolean(STORAGE_KEYS.consoleVisible, !consoleVisible); }}
+              onToggleFeed={() => { setFeedVisible(!feedVisible); writeStoredBoolean(STORAGE_KEYS.feedVisible, !feedVisible); }} />
             <div className="live-floor grid min-h-0 flex-1 gap-px bg-neutral-800 md:grid-cols-2 lg:grid-cols-[200px_minmax(0,1fr)_200px] 2xl:overflow-y-auto">
               {courtOrder(courtSides).map((side, index) => <RosterPanel key={side} side={side} team={match[side]}
                 position={index === 0 ? "left" : "right"} selectedTeam={selectedTeam === side}

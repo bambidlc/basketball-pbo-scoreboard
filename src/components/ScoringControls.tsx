@@ -21,9 +21,10 @@ export function TeamSelector({ teams, sides, selected, onSelect }: {
   </div>;
 }
 
-export function ScoringToolbar({ teams, sides, selected, view, onSelect, onView, onSwitch }: {
+export function ScoringToolbar({ teams, sides, selected, view, onSelect, onView, onSwitch, consoleVisible, feedVisible, onToggleConsole, onToggleFeed }: {
   teams: Record<TeamId, Team>; sides: CourtSides; selected: TeamId; view: ScoringView;
   onSelect: (team: TeamId) => void; onView: (view: ScoringView) => void; onSwitch: () => void;
+  consoleVisible: boolean; feedVisible: boolean; onToggleConsole: () => void; onToggleFeed: () => void;
 }) {
   return <div className="live-scoring-toolbar grid gap-3 border-b border-neutral-800 bg-neutral-950 p-3 sm:grid-cols-[minmax(0,1fr)_auto]">
     <TeamSelector teams={teams} sides={sides} selected={selected} onSelect={onSelect} />
@@ -35,6 +36,15 @@ export function ScoringToolbar({ teams, sides, selected, view, onSelect, onView,
       </div>
       <button className={cn(control, "flex items-center gap-2 border-neutral-700 bg-neutral-900 text-neutral-200 hover:bg-neutral-800")}
         aria-label="Switch court sides" type="button" onClick={onSwitch}><Shuffle size={16} />Switch courts</button>
+      <div role="group" aria-label="Visible panels" className="flex gap-1">
+        {([{ label: "Console", name: "scorer console", visible: consoleVisible, toggle: onToggleConsole },
+          { label: "Feed", name: "event feed and summary", visible: feedVisible, toggle: onToggleFeed }]).map((panel) =>
+          <button key={panel.label} type="button" aria-pressed={panel.visible}
+            aria-label={`${panel.visible ? "Hide" : "Show"} ${panel.name}`} title={`${panel.visible ? "Hide" : "Show"} ${panel.name}`}
+            onClick={panel.toggle} className={cn(control, "px-2", panel.visible ? "border-neutral-500 bg-neutral-800 text-neutral-100" : "border-neutral-700 text-neutral-400 hover:text-neutral-100")}>
+            {panel.label}
+          </button>)}
+      </div>
     </div>
   </div>;
 }
