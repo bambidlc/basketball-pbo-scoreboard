@@ -22,6 +22,7 @@ import {
 import { OdooClient, type OdooRecord } from "./odooClient";
 import { resolveClubColor } from "./colorPalette";
 import { currentOdooDateTimeKey } from "../schedule";
+import { shotLocationFromCoordinates } from "../scoring";
 
 export type TeamId = "away" | "home";
 
@@ -1975,7 +1976,7 @@ async function saveGameEvent(
       [GAME_EVENT.shotValue]: input.shotValue ?? 0,
       [GAME_EVENT.shotX]: input.shotLocation?.x ?? 0,
       [GAME_EVENT.shotY]: input.shotLocation?.y ?? 0,
-      [GAME_EVENT.shotZone]: input.shotLocation?.zone ?? input.shotType ?? "",
+      [GAME_EVENT.shotZone]: input.shotLocation?.zone ?? "",
       [GAME_EVENT.team]: input.match[input.selectedTeam].id ?? false,
       [GAME_EVENT.issuedByRef]: input.issuedByRef ?? false,
     }, capabilities.gameEvent);
@@ -2312,16 +2313,7 @@ function normalizeGameEvent(
     points,
     score: stringValue(record[GAME_EVENT.scoreAfter]),
     serverEventId: id,
-    shotLocation:
-      x || y || zone
-        ? {
-            side: x <= 380 ? "left" : "right",
-            value: shotValue === 3 ? 3 : 2,
-            x,
-            y,
-            zone,
-          }
-        : undefined,
+    shotLocation: shotLocationFromCoordinates(x, y, zone, shotValue),
     shotType,
     team,
     time: secondsToClock(numberValue(record[GAME_EVENT.clockSeconds])),

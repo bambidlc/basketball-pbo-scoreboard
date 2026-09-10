@@ -74,13 +74,15 @@ import { OdooClient, getOdooConfig } from "./api/odooClient";
 import { applyPendingResult, makeOpId, trimMatchForOutbox, type OutboxOp } from "./api/outbox";
 import { ScheduleBrowser } from "./components/ScheduleBrowser";
 import { CourtSvg } from "./components/CourtSvg";
+import { QuickScorePanel, ScoringPlayerPicker, ScoringToolbar } from "./components/ScoringControls";
+import { SubstitutionDialog } from "./components/SubstitutionDialog";
+import { BENCH_ORDER, courtOrder, lineupReview, nextEventId, playerKey as getPlayerKey, swappedCourts, type CourtSides, type LineupDrafts, type ScoringView } from "./scoring";
 import { cn } from "./lib/cn";
 
 const loadMotionFeatures = () => import("./motionFeatures").then((module) => module.default);
 
 type ConnectionStatus = "connected" | "error" | "local" | "syncing";
 type CourtSide = ShotLocation["side"];
-type CourtSides = Record<CourtSide, TeamId>;
 type PlayerSelection = Partial<Record<TeamId, string>>;
 type ScreenMode = "dashboard" | "live";
 type StarterSelection = Partial<Record<TeamId, string[]>>;
@@ -207,9 +209,6 @@ const WARNING_TYPES: WarningType[] = [
   { key: "tecnica-directa", label: "Técnica directa", hint: "Direct technical — al coach", target: "coach" },
 ];
 
-// Quick-pick reasons for substitutions (free text is always available too).
-const SUB_REASON_PRESETS = ["Foul trouble", "Rest", "Tactical", "Injury", "Discipline"] as const;
-
 // Quick-pick reasons for suspending a game (free text is always available too).
 const SUSPENSION_REASON_PRESETS = ["Injury", "Safety", "Power / lights", "Weather", "Facility", "Brawl"] as const;
 
@@ -333,6 +332,7 @@ const STORAGE_KEYS = {
   gameDayRosters: "pbo:gameDayRosters:v1",
   outbox: "pbo:outbox",
   courtSides: "pbo:courtSides",
+  scoringView: "pbo:scoringView",
   openingJumpWinner: "pbo:openingJumpWinner",
   possessionArrow: "pbo:possessionArrow",
   overtimeSeconds: "pbo:overtimeSeconds",
@@ -412,6 +412,8 @@ function App() {
     readStoredJson<PlayerSelection>(STORAGE_KEYS.selectedPlayers) ?? {},
   );
   const [courtSides, setCourtSides] = useState<CourtSides>(() => readStoredCourtSides(DEFAULT_COURT_SIDES));
+  const [scoringView, setScoringView] = useState<ScoringView>(() => readStoredText(STORAGE_KEYS.scoringView) === "buttons" ? "buttons" : "court");
+  const [quickShot, setQuickShot] = useState<{ value: 2 | 3; made: boolean } | undefined>();
   const [foulOnShot, setFoulOnShot] = useState(() => readStoredBoolean(STORAGE_KEYS.foulOnShot, false));
   const [timeoutDurationSeconds, setTimeoutDurationSeconds] = useState(
     () => readStoredPositiveNumber(STORAGE_KEYS.timeoutSeconds) ?? DEFAULT_TIMEOUT_SECONDS,
@@ -419,7 +421,7 @@ function App() {
   const [timeoutClockSeconds, setTimeoutClockSeconds] = useState(0);
   const [timeoutTeam, setTimeoutTeam] = useState<TeamId | undefined>(undefined);
   const [isClockRunning, setIsClockRunning] = useState(false);
-  const [substitutionTeam, setSubstitutionTeam] = useState<TeamId | undefined>(undefined);
+  const [substitutionOpen, setSubstitutionOpen] = useState(false);
   const [boxScoreOpen, setBoxScoreOpen] = useState(false);
   const [warningOpen, setWarningOpen] = useState(false);
   const [foulPrompt, setFoulPrompt] = useState<{ player: Player; team: TeamId } | undefined>(undefined);
@@ -1118,7 +1120,11 @@ function App() {
     writeStoredJson(STORAGE_KEYS.syncLog, syncLog.slice(0, SYNC_LOG_LIMIT));
   }, [syncLog]);
 
-  const currentRoster = useMemo(() => getRoster(match[selectedTeam]), [match, selectedTeam]);
+  useEffect(() => {
+    writeStoredText(STORAGE_KEYS.scoringView, scoringView);
+  }, [scoringView]);
+
+  const currentRoster = useMemo(() => match[selectedTeam].players, [match, selectedTeam]);
   const currentPlayer = useMemo(
     () => resolveSelectedPlayer(currentRoster, selectedPlayers[selectedTeam]),
     [currentRoster, selectedPlayers, selectedTeam],
@@ -1479,11 +1485,8 @@ function App() {
   }
 
   function switchCourtSides() {
-    setCourtSides((current) => ({
-      left: current.right,
-      right: current.left,
-    }));
-    appendLog(createLog("info", "Court sides switched", "Left and right basket assignments were flipped."));
+    setCourtSides(swappedCourts);
+    appendLog(createLog("info", "Court sides switched", "Scores, player controls and possession now follow the court sides. Benches stay in place."));
   }
 
   // The running game clock hit 0 — end the quarter: advance to the next period, which fires
@@ -1937,6 +1940,22 @@ function App() {
     );
   }
 
+  function recordQuickShot(team: TeamId, player: Player) {
+    if (!quickShot) return;
+    const { value, made } = quickShot;
+    selectPlayer(team, player);
+    commitAction({
+      action: made ? `made ${value}pt` : `missed ${value}pt`,
+      label: `${value}PT ${made ? "Made" : "Missed"}${foulOnShot ? " + Foul" : ""}`,
+      points: made ? value : 0,
+      shotMade: made,
+      shotValue: value,
+      shotType: value === 3 ? "3pt" : "2pt",
+      foulOnShot,
+    }, { team, player });
+    setQuickShot(undefined);
+  }
+
   // Pressing FT Made / FT Miss opens a picker of the players currently on court; the chosen
   // shooter (and their team) records the free throw via the explicit-actor path.
   function recordFreeThrow(made: boolean) {
@@ -1970,7 +1989,7 @@ function App() {
         "warning",
         statsMode === "youth" ? "Youth mode blocked" : "Action blocked",
         statsMode === "youth"
-          ? "Youth mode uses the court for points and the console for fouls/free throws."
+          ? "Youth mode records points, fouls and free throws."
           : "This action is not available.",
       ));
       return;
@@ -2123,7 +2142,7 @@ function App() {
     const committer = foulPrompt.player;
     const committerTeam = foulPrompt.team;
     const opponentTeam = oppositeTeam(committerTeam);
-    const baseId = Date.now();
+    const baseId = nextEventId(matchRef.current.events);
 
     const fouledNote = result.fouledPlayer ? ` · falta a ${formatPlayer(result.fouledPlayer)}` : "";
     const ftNote =
@@ -2161,11 +2180,11 @@ function App() {
   }
 
   function openSubstitution() {
-    setSubstitutionTeam(selectedTeam);
+    setSubstitutionOpen(true);
   }
 
   function closeSubstitution() {
-    setSubstitutionTeam(undefined);
+    setSubstitutionOpen(false);
   }
 
   function openBoxScore() {
@@ -2197,11 +2216,8 @@ function App() {
       (player) => nextSet.has(getPlayerKey(player)) && !onCourtSet.has(getPlayerKey(player)),
     );
 
-    // No net change, or a selection we cannot pair into clean swaps — just close the dialog.
-    if (outgoing.length === 0 || outgoing.length !== incoming.length) {
-      setSubstitutionTeam(undefined);
-      return;
-    }
+    // Each team is validated before a combined change reaches this path.
+    if (outgoing.length === 0 || outgoing.length !== incoming.length) return;
 
     // Keep the on-court list in a stable roster order rather than tap order.
     const orderedKeys = [...nextSet].sort(
@@ -2209,7 +2225,7 @@ function App() {
     );
 
     // Date.now() can repeat across a tight loop, so stamp each event from a single base id.
-    const baseId = Date.now();
+    const baseId = nextEventId(matchRef.current.events);
     const pairs = outgoing.map((outPlayer, index) => ({ outPlayer, inPlayer: incoming[index] }));
     const events: GameEvent[] = pairs.map((pair, index) => ({
       action: "substitution",
@@ -2258,7 +2274,6 @@ function App() {
       setSelectedPlayers(nextSelectedPlayers);
     }
 
-    setSubstitutionTeam(undefined);
     const summary =
       pairs.length === 1
         ? `${formatPlayer(pairs[0].inPlayer)} in / ${formatPlayer(pairs[0].outPlayer)} out`
@@ -2311,12 +2326,14 @@ function App() {
     });
   }
 
-  function handleApplyLineup(nextKeys: string[], reason?: string) {
-    if (!substitutionTeam) {
-      return;
+  function handleApplyLineup(drafts: LineupDrafts) {
+    // Validate both teams before changing either one; matchRef chains both commits.
+    const current = matchRef.current;
+    if (BENCH_ORDER.some((side) => lineupReview(current[side], drafts[side], current.period).error)) return;
+    for (const side of BENCH_ORDER) {
+      commitLineupChange(side, drafts[side].keys, drafts[side].reason);
     }
-
-    commitLineupChange(substitutionTeam, nextKeys, reason);
+    setSubstitutionOpen(false);
   }
 
   function openWarning() {
@@ -2686,6 +2703,7 @@ function App() {
       <section className="mx-auto max-w-[1640px] overflow-hidden rounded-xl border border-neutral-800 bg-neutral-800 shadow-xl shadow-black/40 2xl:h-full">
         <div className="grid gap-px bg-neutral-800 md:grid-cols-2 lg:grid-cols-[240px_minmax(0,1fr)_240px] xl:grid-cols-[260px_minmax(0,1fr)_260px] 2xl:h-full 2xl:min-h-0 2xl:grid-cols-[200px_minmax(0,1fr)_200px_350px] 2xl:grid-rows-[auto_minmax(0,1fr)_182px]">
           <ScoreHeader
+            courtSides={courtSides}
             away={match.away}
             awayScore={match.awayScore}
             clock={match.clock}
@@ -2706,35 +2724,25 @@ function App() {
             onToggleFoulBall={toggleFoulBall}
           />
 
-          <CourtPanel
-            courtSides={courtSides}
-            currentPlayer={currentPlayer}
-            events={match.events}
-            foulOnShot={foulOnShot}
-            selectedTeam={selectedTeam}
-            teams={{ away: match.away, home: match.home }}
-            onCourtShot={recordCourtShot}
-            onSelectPlayer={selectPlayer}
-            onSwitchCourtSides={switchCourtSides}
-          />
-
-          <RosterPanel
-            side="away"
-            team={match.away}
-            selectedPlayerKey={selectedPlayers.away}
-            selectedTeam={selectedTeam === "away"}
-            onSelectPlayer={selectPlayer}
-            onSelectTeam={() => setSelectedTeam("away")}
-          />
-
-          <RosterPanel
-            side="home"
-            team={match.home}
-            selectedPlayerKey={selectedPlayers.home}
-            selectedTeam={selectedTeam === "home"}
-            onSelectPlayer={selectPlayer}
-            onSelectTeam={() => setSelectedTeam("home")}
-          />
+          <section aria-label="Live scoring" className="order-2 flex min-h-0 min-w-0 flex-col bg-neutral-950 md:col-span-2 lg:col-span-3 lg:col-start-1 lg:row-start-2">
+            <ScoringToolbar teams={{ away: match.away, home: match.home }} sides={courtSides}
+              selected={selectedTeam} view={scoringView} onSelect={setSelectedTeam}
+              onView={setScoringView} onSwitch={switchCourtSides} />
+            <div className="grid min-h-0 flex-1 gap-px bg-neutral-800 md:grid-cols-2 lg:grid-cols-[200px_minmax(0,1fr)_200px] 2xl:overflow-y-auto">
+              {courtOrder(courtSides).map((side, index) => <RosterPanel key={side} side={side} team={match[side]}
+                position={index === 0 ? "left" : "right"} selectedTeam={selectedTeam === side}
+                selectedPlayerKey={selectedPlayers[side]} onSelectPlayer={selectPlayer} onSelectTeam={() => setSelectedTeam(side)} onSubstitute={openSubstitution} />)}
+              <div className="order-1 min-h-0 min-w-0 bg-neutral-950 md:col-span-2 lg:col-span-1 lg:col-start-2 lg:row-start-1">
+                {scoringView === "court" ? <CourtPanel key={courtSides.left}
+                  courtSides={courtSides} currentPlayer={currentPlayer} events={match.events}
+                  foulOnShot={foulOnShot} selectedTeam={selectedTeam}
+                  teams={{ away: match.away, home: match.home }}
+                  onCourtShot={recordCourtShot} onSelectPlayer={selectPlayer} />
+                  : <QuickScorePanel team={match[selectedTeam]} side={selectedTeam} foulOnShot={foulOnShot}
+                    onShot={(value, made) => setQuickShot({ value, made })} />}
+              </div>
+            </div>
+          </section>
 
           <BottomPanel
             events={match.events}
@@ -2745,6 +2753,7 @@ function App() {
           />
 
           <ActionPanel
+            courtSides={courtSides}
             canRecordShot={Boolean(currentPlayer)}
             clock={match.clock}
             connectionStatus={connectionStatus}
@@ -2793,19 +2802,19 @@ function App() {
         </div>
       </section>
 
-      {substitutionTeam && (
-        <SubstitutionDialog
-          key={substitutionTeam}
-          period={match.period}
-          side={substitutionTeam}
-          team={match[substitutionTeam]}
-          onApply={handleApplyLineup}
-          onClose={closeSubstitution}
-        />
+      {substitutionOpen && (
+        <SubstitutionDialog period={match.period} teams={{ away: match.away, home: match.home }}
+          onApply={handleApplyLineup} onClose={closeSubstitution} />
+      )}
+      {quickShot && (
+        <ScoringPlayerPicker title={`${quickShot.value}PT ${quickShot.made ? "Made" : "Missed"}`}
+          description="Tap the shooter to record this shot." teams={{ away: match.away, home: match.home }}
+          sides={courtSides} initialTeam={selectedTeam} onClose={() => setQuickShot(undefined)} onPick={recordQuickShot} />
       )}
 
       {boxScoreOpen && (
         <BoxScoreDialog
+          courtSides={courtSides}
           initialTeam={selectedTeam}
           match={match}
           mode={statsMode}
@@ -2835,16 +2844,15 @@ function App() {
       )}
 
       {freeThrowPrompt && (
-        <FreeThrowDialog
-          made={freeThrowPrompt.made}
-          teams={{ away: match.away, home: match.home }}
-          onClose={closeFreeThrow}
-          onPick={(team, player) => commitFreeThrowFor(team, player, freeThrowPrompt.made)}
-        />
+        <ScoringPlayerPicker title={freeThrowPrompt.made ? "Free Throw Made" : "Free Throw Missed"}
+          bothTeams description="Tap the shooter to record this free throw." teams={{ away: match.away, home: match.home }}
+          sides={courtSides} initialTeam={selectedTeam} onClose={closeFreeThrow}
+          onPick={(team, player) => { selectPlayer(team, player); commitFreeThrowFor(team, player, freeThrowPrompt.made); }} />
       )}
 
       {techOpen && (
         <TechDialog
+          courtSides={courtSides}
           teams={{ away: match.away, home: match.home }}
           onClose={closeTech}
           onPlayerTech={recordPlayerTech}
@@ -2901,6 +2909,7 @@ function App() {
 
       {jumpBallOpen && (
         <JumpBallDialog
+          courtSides={courtSides}
           arrowTeam={possessionArrow}
           teams={{ away: match.away, home: match.home }}
           onClose={() => setJumpBallOpen(false)}
@@ -3699,6 +3708,7 @@ function ClubLogo({
 }
 
 function ScoreHeader({
+  courtSides,
   away,
   awayScore,
   clock,
@@ -3718,6 +3728,7 @@ function ScoreHeader({
   onSelectTeam,
   onToggleFoulBall,
 }: {
+  courtSides: CourtSides;
   away: Team;
   awayScore: number;
   clock: string;
@@ -3737,14 +3748,17 @@ function ScoreHeader({
   onSelectTeam: (team: TeamId) => void;
   onToggleFoulBall: () => void;
 }) {
+  const teams = { away, home };
+  const scores = { away: awayScore, home: homeScore };
   return (
     <header className="order-1 grid items-stretch bg-neutral-950 md:col-span-2 md:grid-cols-[minmax(0,1fr)_minmax(224px,260px)_minmax(0,1fr)] lg:col-span-3 lg:col-start-1 lg:row-start-1 2xl:items-center 2xl:grid-cols-[minmax(0,1fr)_290px_minmax(0,1fr)]">
       <TeamHeaderBlock
         align="right"
-        score={awayScore}
-        selected={selectedTeam === "away"}
-        team={away}
-        onClick={() => onSelectTeam("away")}
+        score={scores[courtSides.left]}
+        selected={selectedTeam === courtSides.left}
+        team={teams[courtSides.left]}
+        side={courtSides.left}
+        onClick={() => onSelectTeam(courtSides.left)}
       />
 
       <div className="flex flex-col items-center justify-center gap-2 border-y border-neutral-800 px-3 py-3 text-center md:border-x md:border-y-0 lg:gap-1 lg:py-2 2xl:gap-0.5 2xl:py-1">
@@ -3781,7 +3795,7 @@ function ScoreHeader({
           onClick={onToggleFoulBall}
         >
           <span className="text-neutral-300">Possession</span>
-          <PossessionArrow possession={foulBallTeam} />
+          <PossessionArrow possession={foulBallTeam} courtSides={courtSides} />
           <span>{foulBallTeam === "away" ? "Visitor" : "Home"}</span>
         </button>
         <button className="flex h-9 w-full items-center justify-between gap-2 rounded-lg border border-neutral-700 bg-neutral-900 px-2 text-xs text-neutral-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300" onClick={onBackToDashboard}><span className="truncate">{matchName}</span><span className="shrink-0 text-amber-300">Change game</span></button>
@@ -3807,29 +3821,31 @@ function ScoreHeader({
 
       <TeamHeaderBlock
         align="left"
-        score={homeScore}
-        selected={selectedTeam === "home"}
-        team={home}
-        onClick={() => onSelectTeam("home")}
+        score={scores[courtSides.right]}
+        selected={selectedTeam === courtSides.right}
+        team={teams[courtSides.right]}
+        side={courtSides.right}
+        onClick={() => onSelectTeam(courtSides.right)}
       />
     </header>
   );
 }
 
 function TeamHeaderBlock({
+  side,
   align,
   score,
   selected,
   team,
   onClick,
 }: {
+  side: TeamId;
   align: "left" | "right";
   score: number;
   selected: boolean;
   team: Team;
   onClick: () => void;
 }) {
-  const side: TeamId = align === "right" ? "away" : "home";
   const cBase = `var(--c-${side})`;
   const cSoft = `var(--c-${side}-soft)`;
   const cTint = `var(--c-${side}-tint)`;
@@ -3906,16 +3922,16 @@ function ScoreNumber({ value }: { value: number }) {
   );
 }
 
-function PossessionArrow({ possession }: { possession: TeamId }) {
+function PossessionArrow({ possession, courtSides }: { possession: TeamId; courtSides: CourtSides }) {
   return (
     <span
       aria-label={`${possession} ball`}
       className={cn(
         "inline-block h-0 w-0 border-y-[5px] border-y-transparent",
-        possession === "away"
-          ? "border-r-[9px] border-r-red-500"
-          : "border-l-[9px] border-l-blue-400",
+        courtSides.left === possession ? "border-r-[9px]" : "border-l-[9px]",
+
       )}
+      style={courtSides.left === possession ? { borderRightColor: `var(--c-${possession})` } : { borderLeftColor: `var(--c-${possession})` }}
       role="img"
     />
   );
@@ -3929,7 +3945,6 @@ function CourtPanel({
   selectedTeam,
   onCourtShot,
   onSelectPlayer,
-  onSwitchCourtSides,
   teams,
 }: {
   courtSides: CourtSides;
@@ -3939,7 +3954,6 @@ function CourtPanel({
   selectedTeam: TeamId;
   onCourtShot: (location: ShotLocation, made: boolean, player: Player) => void;
   onSelectPlayer: (team: TeamId, player: Player) => void;
-  onSwitchCourtSides: () => void;
   teams: Record<TeamId, Team>;
 }) {
   const [pendingShot, setPendingShot] = useState<ShotLocation | undefined>(undefined);
@@ -4044,22 +4058,13 @@ function CourtPanel({
   }
 
   return (
-    <section className="relative order-2 self-stretch overflow-hidden bg-neutral-950 md:col-span-2 lg:col-span-1 lg:col-start-2 lg:row-start-2 lg:min-h-0">
+    <section className="relative h-full min-h-80 overflow-hidden bg-neutral-950">
       <div className="absolute left-3 top-3 z-10 rounded-xl border border-neutral-800 bg-neutral-950/85 px-3 py-2 shadow-lg shadow-black/40 backdrop-blur">
         <div className="text-[10px] font-black uppercase tracking-wide text-neutral-500">Selected</div>
         <div className="mt-0.5 max-w-[200px] truncate font-mono text-sm font-bold tabular-nums text-neutral-50">
           {currentPlayer ? `#${currentPlayer.number}` : "Tap a side"}
         </div>
       </div>
-      <button
-        aria-label="Switch court sides"
-        className="absolute right-3 top-3 z-10 flex h-10 items-center gap-2 rounded-xl border border-neutral-800 bg-neutral-950/85 px-3 text-xs font-black uppercase tracking-wide text-neutral-300 shadow-lg shadow-black/40 backdrop-blur transition-colors hover:bg-neutral-900 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500 disabled:cursor-not-allowed disabled:opacity-50 lg:h-9"
-        type="button"
-        onClick={onSwitchCourtSides}
-      >
-        <Shuffle size={16} />
-        <span className="hidden sm:inline">Switch Courts</span>
-      </button>
       {pendingShot && pendingTeam && pendingTeamId && (
         <div
           className={cn(
@@ -4198,7 +4203,8 @@ function CourtPanel({
           </g>
         )}
         {markers.map((event, index) => {
-          const marker = event.shotLocation!;
+          const original = event.shotLocation!;
+          const marker = courtSides[original.side] === event.team ? original : { ...original, x: 760 - original.x };
           return (
             <g key={event.id} opacity={index === 0 ? 1 : 0.42}>
               <circle
@@ -4276,113 +4282,26 @@ function CourtShooterGrid({
   );
 }
 
-function RosterPanel({
-  side,
-  team,
-  selectedPlayerKey,
-  selectedTeam,
-  onSelectPlayer,
-  onSelectTeam,
-}: {
-  side: TeamId;
-  team: Team;
-  selectedPlayerKey?: string;
-  selectedTeam: boolean;
-  onSelectPlayer: (team: TeamId, player: Player) => void;
-  onSelectTeam: () => void;
+function RosterPanel({ side, team, position, selectedTeam, selectedPlayerKey, onSelectPlayer, onSelectTeam, onSubstitute }: {
+  side: TeamId; team: Team; position: CourtSide; selectedTeam: boolean; selectedPlayerKey?: string;
+  onSelectPlayer: (team: TeamId, player: Player) => void; onSelectTeam: () => void; onSubstitute: () => void;
 }) {
-  const isAway = side === "away";
-  const cBase = `var(--c-${side})`;
-  const cSoft = `var(--c-${side}-soft)`;
-  const starterCount = team.players.length;
-  const [benchCollapsed, setBenchCollapsed] = useState(true);
-
-  return (
-    <aside
-      className={cn(
-        "order-3 flex min-h-0 flex-col self-stretch overflow-hidden bg-neutral-950 lg:row-start-2",
-        isAway ? "lg:col-start-1" : "order-4 lg:col-start-3",
-      )}
-    >
-      <button
-        className={cn(
-          "relative flex h-14 items-center gap-3 border-b border-neutral-800 px-3 pl-4 text-left transition-colors hover:bg-neutral-900/70 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-neutral-500 2xl:h-12",
-          selectedTeam && "bg-neutral-900",
-        )}
-        type="button"
-        onClick={onSelectTeam}
-      >
-        <span aria-hidden className="pointer-events-none absolute inset-y-0 left-0 w-1" style={{ backgroundColor: cBase }} />
-        <ClubLogo compact side={side} team={team} />
-        <span className="text-[11px] font-black uppercase tracking-wide" style={{ color: cSoft }}>{team.label}</span>
-        <span className="min-w-0 flex-1">
-          <span className="block truncate text-sm font-bold text-neutral-200">{team.name}</span>
-          <span className="block truncate text-[10px] font-semibold text-neutral-500">
-            {team.coach ? `Coach · ${team.coach}` : "Coach not set"}
-          </span>
-        </span>
-        <span className="shrink-0 rounded-full border border-neutral-700 bg-neutral-900 px-2 py-0.5 font-mono text-[11px] font-black tabular-nums text-neutral-400">
-          {starterCount}/5
-        </span>
-      </button>
-      {/* On Court: pinned (all 5 visible) when the bench is collapsed; yields/scrolls only when the bench is open. */}
-      <div className="flex shrink-0 items-center justify-between border-b border-neutral-800 bg-neutral-900/60 px-4 py-1 text-[10px] font-black uppercase tracking-wide text-neutral-500">
-        <span>On Court</span>
-        <span className="font-mono tabular-nums text-neutral-400">{starterCount}/5</span>
-      </div>
-      <div className={cn("overflow-y-auto scrollbar-slim", benchCollapsed ? "shrink-0" : "min-h-0 shrink")}>
-        {team.players.length > 0 ? (
-          team.players.map((player) => (
-            <PlayerRow
-              side={side}
-              compact
-              key={getPlayerKey(player)}
-              player={player}
-              selected={selectedTeam && selectedPlayerKey === getPlayerKey(player)}
-              onClick={() => onSelectPlayer(side, player)}
-            />
-          ))
-        ) : (
-          <div className="px-4 py-4 text-center text-[11px] font-semibold text-neutral-500">
-            No starters selected.
-          </div>
-        )}
-      </div>
-      {/* Bench: tap the header to collapse/expand; expanded it takes the remaining space and scrolls. */}
-      <button
-        aria-expanded={!benchCollapsed}
-        className="flex shrink-0 items-center justify-between gap-2 border-y border-neutral-800 bg-neutral-900/95 px-4 py-1 text-[11px] font-black uppercase tracking-wide text-neutral-500 transition-colors hover:bg-neutral-800 hover:text-neutral-300 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-neutral-500"
-        type="button"
-        onClick={() => setBenchCollapsed((current) => !current)}
-      >
-        <span className="flex items-center gap-1.5">
-          {benchCollapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
-          Bench
-        </span>
-        <span className="font-mono tabular-nums text-neutral-400">{team.bench.length}</span>
-      </button>
-      {!benchCollapsed && (
-        <div className="min-h-[140px] flex-1 overflow-y-auto scrollbar-slim">
-          {team.bench.length > 0 ? (
-            team.bench.map((player) => (
-              <PlayerRow
-                side={side}
-                compact
-                key={getPlayerKey(player)}
-                player={player}
-                selected={selectedTeam && selectedPlayerKey === getPlayerKey(player)}
-                onClick={() => onSelectPlayer(side, player)}
-              />
-            ))
-          ) : (
-            <div className="px-4 py-4 text-center text-[11px] font-semibold text-neutral-500">
-              No bench players.
-            </div>
-          )}
-        </div>
-      )}
-    </aside>
-  );
+  return <aside aria-label={`${team.label} active players`} className={cn("min-h-0 min-w-0 bg-neutral-950 lg:row-start-1", position === "left" ? "order-2 lg:col-start-1" : "order-3 lg:col-start-3")}>
+    <button type="button" aria-pressed={selectedTeam} onClick={onSelectTeam} className={cn("flex w-full items-center gap-2 border-b border-neutral-800 px-3 py-3 text-left hover:bg-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-neutral-400", selectedTeam && "bg-neutral-900")}>
+      <ClubLogo compact side={side} team={team} />
+      <span className="min-w-0 flex-1"><span className="block truncate text-sm font-bold" style={{ color: `var(--c-${side}-soft)` }}>{team.name}</span><span className="block text-[11px] text-neutral-400">On court · {position} side</span></span>
+      <span className="font-mono text-xs tabular-nums text-neutral-400">{team.players.length}/5</span>
+    </button>
+    <div className="grid grid-cols-5 lg:block">
+      {team.players.map((player) => <PlayerRow side={side} compact key={getPlayerKey(player)} player={player}
+        selected={selectedTeam && selectedPlayerKey === getPlayerKey(player)} onClick={() => onSelectPlayer(side, player)} />)}
+    </div>
+    {team.players.length === 0 && <p className="p-4 text-xs text-neutral-400">Set the lineup in Pre-game.</p>}
+    <button type="button" onClick={onSubstitute} aria-label={`Open ${team.label} bench substitutions`} className="flex min-h-11 w-full items-center justify-between gap-2 border-y border-neutral-800 px-3 text-xs font-semibold text-neutral-400 hover:bg-neutral-900 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-neutral-400">
+      <span className="flex items-center gap-1.5"><Shuffle size={14} />Substitutions</span><span className="font-mono tabular-nums">{team.bench.length} bench</span>
+    </button>
+    {team.coach && <p className="truncate px-3 py-2 text-[11px] text-neutral-500" title={team.coach}>Coach · {team.coach}</p>}
+  </aside>;
 }
 
 function PlayerRow({
@@ -4409,19 +4328,21 @@ function PlayerRow({
     >
       <button
         className={cn(
-          "grid w-full min-w-0 grid-cols-[44px_1fr_24px] items-center bg-transparent pr-2 text-left transition-colors hover:bg-neutral-900/70 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-neutral-500",
-          compact ? "h-12 2xl:h-10" : "h-16 2xl:h-12",
+          "grid w-full min-w-0 grid-cols-1 items-center bg-transparent text-center transition-colors hover:bg-neutral-900/70 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-neutral-500 lg:grid-cols-[44px_1fr_24px] lg:pr-2 lg:text-left",
+          compact ? "h-20 lg:h-12" : "h-20 lg:h-16",
         )}
         title={player.name}
+        aria-label={`Select #${player.number}`}
+        aria-pressed={selected}
         type="button"
         onClick={onClick}
       >
-        <div className={cn("pl-2.5 font-mono text-2xl font-black tabular-nums 2xl:text-xl", player.active ? "text-neutral-50" : "text-neutral-400")}>
+        <div className={cn("font-mono text-2xl font-black tabular-nums lg:pl-2.5 2xl:text-xl", player.active ? "text-neutral-50" : "text-neutral-400")}>
           {player.number}
         </div>
         <div className="min-w-0">
           {/* Fouls first (fouling out matters most during play), then points. Numbers only. */}
-          <div className="flex items-center gap-1 text-[11px] font-black uppercase tracking-wide text-neutral-500 tabular-nums">
+          <div className="flex flex-wrap items-center justify-center gap-0.5 text-[9px] font-bold uppercase text-neutral-500 tabular-nums lg:justify-start lg:gap-1 lg:text-[11px]">
             <span className={cn(player.fouls >= 5 ? "text-red-400" : player.fouls >= 4 ? "text-amber-400" : "text-neutral-300")}>{player.fouls}</span>
             <span>F</span>
             <span className="text-neutral-700">·</span>
@@ -4429,7 +4350,7 @@ function PlayerRow({
             <span>PTS</span>
           </div>
         </div>
-        <div className="flex items-center justify-center">
+        <div className="hidden items-center justify-center lg:flex">
           {selected ? (
             <span className="flex size-5 items-center justify-center rounded-full" style={{ backgroundColor: cBase }}>
               <Check className="text-white" size={13} />
@@ -4439,294 +4360,6 @@ function PlayerRow({
           )}
         </div>
       </button>
-    </div>
-  );
-}
-
-function SubstitutionDialog({
-  period,
-  side,
-  team,
-  onApply,
-  onClose,
-}: {
-  period: number;
-  side: TeamId;
-  team: Team;
-  onApply: (nextKeys: string[], reason?: string) => void;
-  onClose: () => void;
-}) {
-  const cBase = `var(--c-${side})`;
-  const cSoft = `var(--c-${side}-soft)`;
-  const roster = useMemo(() => getRoster(team), [team]);
-  const onCourtKeys = useMemo(() => team.players.map(getPlayerKey), [team]);
-  const onCourtSet = useMemo(() => new Set(onCourtKeys), [onCourtKeys]);
-  // Eligible = present players, plus anyone already on the floor (so they can still be taken
-  // out even if flagged absent). Jersey numbers only — names live in the attendance dialog.
-  const eligible = useMemo(
-    () => roster.filter((player) => player.present !== false || onCourtSet.has(getPlayerKey(player))),
-    [roster, onCourtSet],
-  );
-  const numberByKey = useMemo(
-    () => new Map(roster.map((player) => [getPlayerKey(player), player.number])),
-    [roster],
-  );
-  const targetCount = Math.min(5, eligible.length);
-  // Start with the floor EMPTY — the coach picks the five from scratch each time, and the
-  // "On" badges still show who is currently out there for reference.
-  const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
-  const [reason, setReason] = useState("");
-
-  const selectedSet = new Set(selectedKeys);
-  const atCapacity = selectedKeys.length >= targetCount;
-  const incoming = selectedKeys.filter((key) => !onCourtSet.has(key));
-  const outgoing = onCourtKeys.filter((key) => !selectedSet.has(key));
-  const changed = incoming.length > 0 || outgoing.length > 0;
-  // A sub during the 1st quarter must record a reason; later quarters keep it optional.
-  const reasonRequired = period === 1;
-  const reasonOk = !reasonRequired || reason.trim().length > 0;
-  const lineupReady = selectedKeys.length === targetCount && changed && incoming.length === outgoing.length;
-  const canApply = lineupReady && reasonOk;
-  const dirty = selectedKeys.length > 0 || reason.trim().length > 0;
-
-  function toggle(key: string) {
-    setSelectedKeys((current) => {
-      if (current.includes(key)) {
-        return current.filter((value) => value !== key);
-      }
-      if (current.length >= targetCount) {
-        return current;
-      }
-      return [...current, key];
-    });
-  }
-
-  return (
-    <div
-      aria-modal="true"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
-      role="dialog"
-      onClick={onClose}
-    >
-      <div
-        className="flex max-h-[92vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-neutral-700 bg-neutral-900 shadow-2xl shadow-black/60"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <div className="flex items-center justify-between gap-3 border-b border-neutral-800 px-4 py-3">
-          <div className="flex min-w-0 items-center gap-3">
-            <span aria-hidden className="h-9 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: cBase }} />
-            <div className="min-w-0">
-              <div className="text-[10px] font-black uppercase tracking-widest" style={{ color: cSoft }}>
-                Substitution · {team.label}
-              </div>
-              <h2 className="truncate text-lg font-black text-neutral-50">{team.name}</h2>
-            </div>
-          </div>
-          <div className="flex shrink-0 items-center gap-3">
-            <span
-              className={cn(
-                "rounded-full border px-2.5 py-1 font-mono text-sm font-black tabular-nums",
-                selectedKeys.length === targetCount
-                  ? "border-lime-500/50 bg-lime-500/10 text-lime-200"
-                  : "border-neutral-700 bg-neutral-950 text-neutral-300",
-              )}
-            >
-              {selectedKeys.length}/{targetCount}
-            </span>
-            <button
-              aria-label="Close substitution"
-              className="flex size-9 items-center justify-center rounded-lg border border-neutral-800 bg-neutral-950 text-neutral-400 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500"
-              type="button"
-              onClick={onClose}
-            >
-              <CircleX size={18} />
-            </button>
-          </div>
-        </div>
-
-        <div className="border-b border-neutral-800 px-4 py-2 text-xs font-semibold text-neutral-400">
-          Tap to pick the five on the floor — we work out who comes in and who goes out.
-        </div>
-
-        <div className="min-h-0 flex-1 overflow-y-auto scrollbar-slim p-3">
-          {eligible.length === 0 ? (
-            <div className="px-2 py-8 text-center text-sm font-semibold text-neutral-500">
-              No present players. Mark attendance in the pre-game dialog first.
-            </div>
-          ) : (
-            <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
-              {eligible.map((player) => {
-                const key = getPlayerKey(player);
-                const selected = selectedSet.has(key);
-                const wasOnCourt = onCourtSet.has(key);
-                const lockedOut = !selected && atCapacity;
-                return (
-                  <button
-                    aria-pressed={selected}
-                    className={cn(
-                      "relative flex flex-col items-center justify-center gap-0.5 rounded-xl border bg-neutral-950 px-2 py-3 transition-colors focus:outline-none focus:ring-2 focus:ring-neutral-500",
-                      selected
-                        ? "border-lime-500/60 bg-lime-500/10"
-                        : "border-neutral-800 hover:bg-neutral-800",
-                      lockedOut && "cursor-not-allowed opacity-40 hover:bg-neutral-950",
-                    )}
-                    disabled={lockedOut}
-                    key={key}
-                    title={lockedOut ? "Deselect one player first" : undefined}
-                    type="button"
-                    onClick={() => toggle(key)}
-                  >
-                    {wasOnCourt && (
-                      <span
-                        className="absolute left-1.5 top-1.5 rounded px-1 py-0.5 text-[8px] font-black uppercase leading-none tracking-wide"
-                        style={{ backgroundColor: `var(--c-${side}-tint)`, color: cSoft }}
-                      >
-                        On
-                      </span>
-                    )}
-                    <span
-                      className={cn(
-                        "absolute right-1.5 top-1.5 flex size-4 items-center justify-center rounded-full transition-opacity",
-                        selected ? "opacity-100" : "opacity-0",
-                      )}
-                      style={{ backgroundColor: "#84cc16" }}
-                    >
-                      <Check className="text-neutral-950" size={11} />
-                    </span>
-                    <span className="font-mono text-2xl font-black tabular-nums text-neutral-50">{player.number}</span>
-                    <span className="text-[10px] font-black uppercase tracking-wide text-neutral-500 tabular-nums">
-                      <span className="text-neutral-300">{player.points}</span> pt ·{" "}
-                      <span className={cn(player.fouls >= 4 ? "text-amber-400" : "text-neutral-300")}>{player.fouls}</span> f
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          )}
-        </div>
-
-        <div className="grid gap-px border-t border-neutral-800 bg-neutral-800 sm:grid-cols-2">
-          <LineupDiffStrip
-            accent="lime"
-            label="Coming in"
-            numbers={incoming.map((key) => numberByKey.get(key) ?? "?")}
-          />
-          <LineupDiffStrip
-            accent="red"
-            label="Going out"
-            numbers={outgoing.map((key) => numberByKey.get(key) ?? "?")}
-          />
-        </div>
-
-        <div className="border-t border-neutral-800 px-4 py-3">
-          <label className="mb-1.5 flex items-center gap-2 text-[11px] font-black uppercase tracking-wide text-neutral-400" htmlFor="sub-reason">
-            Reason / note
-            {reasonRequired ? (
-              <span className="text-amber-400">· required in Q1</span>
-            ) : (
-              <span className="text-neutral-600">· optional</span>
-            )}
-          </label>
-          <input
-            className={cn(
-              "h-10 w-full rounded-lg border bg-neutral-950 px-3 text-sm font-semibold text-neutral-100 outline-none transition-colors focus:ring-2",
-              reasonRequired && !reasonOk
-                ? "border-amber-500/60 focus:ring-amber-500/50"
-                : "border-neutral-800 focus:ring-neutral-500",
-            )}
-            id="sub-reason"
-            placeholder={reasonRequired ? "Why the change? (required this quarter)" : "Optional note — e.g. foul trouble, rest, tactical"}
-            value={reason}
-            onChange={(event) => setReason(event.currentTarget.value)}
-          />
-          <div className="mt-2 flex flex-wrap gap-1.5">
-            {SUB_REASON_PRESETS.map((preset) => (
-              <button
-                className={cn(
-                  "rounded-full border px-2.5 py-1 text-[11px] font-bold transition-colors focus:outline-none focus:ring-2 focus:ring-neutral-500",
-                  reason === preset
-                    ? "border-lime-500/50 bg-lime-500/10 text-lime-200"
-                    : "border-neutral-800 bg-neutral-950 text-neutral-300 hover:bg-neutral-800 hover:text-neutral-100",
-                )}
-                key={preset}
-                type="button"
-                onClick={() => setReason(preset)}
-              >
-                {preset}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="flex items-center justify-between gap-3 border-t border-neutral-800 px-4 py-3">
-          <button
-            className="text-xs font-black uppercase tracking-wide text-neutral-500 transition-colors hover:text-neutral-200 disabled:cursor-not-allowed disabled:opacity-40"
-            disabled={!dirty}
-            type="button"
-            onClick={() => {
-              setSelectedKeys([]);
-              setReason("");
-            }}
-          >
-            Clear
-          </button>
-          <div className="flex shrink-0 items-center gap-2">
-            <button
-              className="h-10 rounded-lg border border-neutral-800 bg-neutral-950 px-4 text-xs font-black uppercase tracking-wide text-neutral-300 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500"
-              type="button"
-              onClick={onClose}
-            >
-              Cancel
-            </button>
-            <button
-              className="flex h-10 items-center gap-2 rounded-lg border border-lime-500/40 bg-lime-500/15 px-4 text-xs font-black uppercase tracking-wide text-lime-200 transition-colors hover:bg-lime-500/25 focus:outline-none focus:ring-2 focus:ring-lime-500/50 disabled:cursor-not-allowed disabled:opacity-40"
-              disabled={!canApply}
-              title={lineupReady && !reasonOk ? "Add a reason — required in the 1st quarter" : undefined}
-              type="button"
-              onClick={() => onApply(selectedKeys, reason)}
-            >
-              <Shuffle size={16} />
-              {incoming.length > 1 ? `Apply (${incoming.length})` : "Apply Lineup"}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function LineupDiffStrip({
-  accent,
-  label,
-  numbers,
-}: {
-  accent: "lime" | "red";
-  label: string;
-  numbers: string[];
-}) {
-  const chipClass =
-    accent === "lime"
-      ? "border-lime-500/50 bg-lime-500/10 text-lime-200"
-      : "border-red-500/50 bg-red-500/10 text-red-200";
-  const dotClass = accent === "lime" ? "text-lime-400" : "text-red-400";
-
-  return (
-    <div className="flex items-center gap-2 bg-neutral-900 px-4 py-2.5">
-      <span className={cn("text-[10px] font-black uppercase tracking-wide", dotClass)}>{label}</span>
-      <div className="flex min-h-[26px] flex-1 flex-wrap items-center gap-1.5">
-        {numbers.length === 0 ? (
-          <span className="text-xs font-semibold text-neutral-600">—</span>
-        ) : (
-          numbers.map((number, index) => (
-            <span
-              className={cn("rounded-md border px-2 py-0.5 font-mono text-sm font-black tabular-nums", chipClass)}
-              key={`${number}-${index}`}
-            >
-              #{number}
-            </span>
-          ))
-        )}
-      </div>
     </div>
   );
 }
@@ -5342,96 +4975,14 @@ function FoulDialog({
   );
 }
 
-function FreeThrowDialog({
-  made,
-  teams,
-  onClose,
-  onPick,
-}: {
-  made: boolean;
-  teams: Record<TeamId, Team>;
-  onClose: () => void;
-  onPick: (team: TeamId, player: Player) => void;
-}) {
-  return (
-    <div
-      aria-modal="true"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
-      role="dialog"
-      onClick={onClose}
-    >
-      <div
-        className="flex max-h-[92vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-neutral-700 bg-neutral-900 shadow-2xl shadow-black/60"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <div className="flex items-center justify-between gap-3 border-b border-neutral-800 px-4 py-3">
-          <div className="flex min-w-0 items-center gap-2.5">
-            {made ? <Plus className="shrink-0 text-lime-400" size={20} /> : <CircleX className="shrink-0 text-red-400" size={20} />}
-            <div className="min-w-0">
-              <div className="text-[10px] font-black uppercase tracking-widest text-neutral-500">Tiro libre</div>
-              <h2 className={cn("truncate text-lg font-black", made ? "text-lime-200" : "text-red-200")}>
-                {made ? "Anotado" : "Fallado"}
-              </h2>
-            </div>
-          </div>
-          <button
-            aria-label="Close free throw"
-            className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-neutral-800 bg-neutral-950 text-neutral-400 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500"
-            type="button"
-            onClick={onClose}
-          >
-            <CircleX size={18} />
-          </button>
-        </div>
-
-        <div className="border-b border-neutral-800 px-4 py-2 text-xs font-semibold text-neutral-400">
-          Elige el tirador — solo jugadores en cancha.
-        </div>
-
-        <div className="grid min-h-0 flex-1 gap-px overflow-y-auto scrollbar-slim bg-neutral-800 sm:grid-cols-2">
-          {(["away", "home"] as TeamId[]).map((side) => {
-            const team = teams[side];
-            return (
-              <div className="bg-neutral-900 p-3" key={side}>
-                <div className="mb-2 flex items-center gap-2">
-                  <span aria-hidden className="h-4 w-1 rounded-full" style={{ backgroundColor: `var(--c-${side})` }} />
-                  <span className="text-[10px] font-black uppercase tracking-wide" style={{ color: `var(--c-${side}-soft)` }}>
-                    {team.label}
-                  </span>
-                  <span className="min-w-0 truncate text-[11px] font-bold text-neutral-400">{team.name}</span>
-                </div>
-                <CourtShooterGrid
-                  accent={side}
-                  emptyLabel="Nadie en cancha."
-                  label="En cancha"
-                  players={team.players}
-                  onPick={(player) => onPick(side, player)}
-                />
-              </div>
-            );
-          })}
-        </div>
-
-        <div className="flex justify-end border-t border-neutral-800 px-4 py-3">
-          <button
-            className="h-10 rounded-lg border border-neutral-800 bg-neutral-950 px-4 text-xs font-black uppercase tracking-wide text-neutral-300 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500"
-            type="button"
-            onClick={onClose}
-          >
-            Cancel
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function TechDialog({
+  courtSides,
   teams,
   onClose,
   onPlayerTech,
   onAdminTech,
 }: {
+  courtSides: CourtSides;
   teams: Record<TeamId, Team>;
   onClose: () => void;
   onPlayerTech: (team: TeamId, player: Player) => void;
@@ -5477,8 +5028,8 @@ function TechDialog({
             </div>
             <p className="mt-1 text-[11px] font-semibold text-neutral-500">Técnica a un jugador en cancha — suma falta personal y de equipo.</p>
           </div>
-          <div className="grid gap-px bg-neutral-800 sm:grid-cols-2">
-            {(["away", "home"] as TeamId[]).map((side) => {
+          <div className="grid grid-cols-2 gap-px bg-neutral-800">
+            {courtOrder(courtSides).map((side) => {
               const team = teams[side];
               return (
                 <div className="bg-neutral-900 p-3" key={side}>
@@ -5511,7 +5062,7 @@ function TechDialog({
             </div>
             <p className="mb-2 text-[11px] font-semibold text-neutral-500">Técnica al coach o a la banca del equipo.</p>
             <div className="grid grid-cols-2 gap-2">
-              {(["away", "home"] as TeamId[]).map((side) => (
+              {courtOrder(courtSides).map((side) => (
                 <button
                   className="flex h-11 items-center justify-center gap-2 rounded-lg border bg-neutral-950 text-xs font-black uppercase tracking-wide transition-colors hover:bg-neutral-800 focus:outline-none focus:ring-2 focus:ring-neutral-500"
                   key={side}
@@ -6074,12 +5625,14 @@ function jerseyNumber(player: Player) {
 }
 
 function BoxScoreDialog({
+  courtSides,
   initialTeam,
   match,
   mode,
   periodCount,
   onClose,
 }: {
+  courtSides: CourtSides;
   initialTeam: TeamId;
   match: LiveMatch;
   mode: StatsMode;
@@ -6192,7 +5745,7 @@ function BoxScoreDialog({
 
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-neutral-800 px-3 py-2">
           <div className="flex items-center gap-1 rounded-lg border border-neutral-800 bg-neutral-950 p-0.5">
-            {(["away", "home"] as TeamId[]).map((sideKey) => (
+            {courtOrder(courtSides).map((sideKey) => (
               <button
                 className={cn(
                   "rounded-md px-3 py-1.5 text-xs font-black uppercase tracking-wide transition-colors focus:outline-none",
@@ -6550,11 +6103,13 @@ function BoxScoreCompare({
 }
 
 function JumpBallDialog({
+  courtSides,
   arrowTeam,
   teams,
   onClose,
   onChoose,
 }: {
+  courtSides: CourtSides;
   arrowTeam: TeamId;
   teams: Record<TeamId, Team>;
   onClose: () => void;
@@ -6592,7 +6147,7 @@ function JumpBallDialog({
         </div>
 
         <div className="grid gap-px bg-neutral-800 sm:grid-cols-2">
-          {(["away", "home"] as TeamId[]).map((id) => (
+          {courtOrder(courtSides).map((id) => (
             <button
               className="flex flex-col items-center justify-center gap-1.5 bg-neutral-900 px-4 py-6 transition-colors hover:bg-neutral-800 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-neutral-500/60"
               key={id}
@@ -7107,6 +6662,7 @@ function BottomPanel({
 }
 
 function ActionPanel({
+  courtSides,
   canRecordShot,
   clock,
   connectionStatus,
@@ -7152,6 +6708,7 @@ function ActionPanel({
   onStopTimeoutClock,
   onToggleClock,
 }: {
+  courtSides: CourtSides;
   canRecordShot: boolean;
   clock: string;
   connectionStatus: ConnectionStatus;
@@ -7518,6 +7075,7 @@ function ActionPanel({
           </label>
 
           <TimeoutPanel
+            courtSides={courtSides}
             durationSeconds={timeoutDurationSeconds}
             remainingSeconds={timeoutClockSeconds}
             teams={teams}
@@ -7563,6 +7121,7 @@ function TimerButton({
 }
 
 function TimeoutPanel({
+  courtSides,
   durationSeconds,
   remainingSeconds,
   teams,
@@ -7571,6 +7130,7 @@ function TimeoutPanel({
   onAdjustTimeout,
   onStopClock,
 }: {
+  courtSides: CourtSides;
   durationSeconds: number;
   remainingSeconds: number;
   teams: Record<TeamId, Team>;
@@ -7609,7 +7169,7 @@ function TimeoutPanel({
         </button>
       </div>
       <div className="grid gap-1.5 2xl:gap-1">
-        {(["away", "home"] as TeamId[]).map((teamId) => (
+        {courtOrder(courtSides).map((teamId) => (
           <div
             className="grid grid-cols-[44px_minmax(0,1fr)_auto_auto_auto] items-center gap-2 rounded-lg border border-neutral-800 bg-neutral-950 px-2 py-1.5 2xl:gap-1 2xl:rounded-none 2xl:border-0 2xl:bg-transparent 2xl:p-0"
             key={teamId}
@@ -8183,10 +7743,6 @@ function mergeEventHistory(currentEvents: GameEvent[], loadedEvents: GameEvent[]
 
 function resolveSelectedPlayer(roster: Player[], selectedKey?: string) {
   return roster.find((player) => getPlayerKey(player) === selectedKey) ?? roster.find((player) => player.active) ?? roster[0];
-}
-
-function getPlayerKey(player: Player) {
-  return player.localId ? `local:${player.localId}` : player.id ? `id:${player.id}` : `local:${player.number}:${player.name}`;
 }
 
 function formatPlayer(player: Player) {
