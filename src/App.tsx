@@ -430,6 +430,8 @@ function App() {
   const [boxScoreOpen, setBoxScoreOpen] = useState(false);
   const [warningOpen, setWarningOpen] = useState(false);
   const [foulPrompt, setFoulPrompt] = useState<{ player: Player; team: TeamId } | undefined>(undefined);
+  const [foulPlayerOpen, setFoulPlayerOpen] = useState(false);
+  const [warningTarget, setWarningTarget] = useState<WarningType | undefined>();
   const [freeThrowPrompt, setFreeThrowPrompt] = useState<{ made: boolean } | undefined>(undefined);
   const [techOpen, setTechOpen] = useState(false);
   const [endGameOpen, setEndGameOpen] = useState(false);
@@ -2000,16 +2002,7 @@ function App() {
       return;
     }
 
-    if (scoringView === "buttons") {
-      setQuickStat(action);
-      return;
-    }
-    commitAction({
-      action,
-      issuedByRef: action === "tech foul" || action === "warning",
-      label: titleCase(action),
-      points: 0,
-    });
+    setQuickStat(action);
   }
 
   function openTech() {
@@ -2129,11 +2122,7 @@ function App() {
   }
 
   function openFoul() {
-    if (!currentPlayer) {
-      appendLog(createLog("warning", "Foul skipped", "Select the fouling player first."));
-      return;
-    }
-    setFoulPrompt({ player: currentPlayer, team: selectedTeam });
+    setFoulPlayerOpen(true);
   }
 
   function closeFoul() {
@@ -2353,13 +2342,9 @@ function App() {
     setWarningOpen(false);
   }
 
-  // Referee warnings (6 types). None count as a foul or change the score — they are logged
-  // ref-issued events. Player-targeted types attach the currently selected player's number
-  // when one is picked; coach/public/team types stand on their own.
-  function commitWarning(type: WarningType) {
+  // Warnings do not change fouls or scores. Choose the type, then its player or team.
+  function commitWarning(type: WarningType, team: TeamId, player?: Player) {
     const current = matchRef.current;
-    const targetsPlayer = type.target === "player";
-    const player = targetsPlayer ? currentPlayer : undefined;
     const label = `Warning · ${type.label}${player ? ` ${formatPlayer(player)}` : ""}`;
     const event: GameEvent = {
       action: "warning",
@@ -2371,7 +2356,7 @@ function App() {
       player: player ? formatPlayer(player) : "—",
       playerId: player?.id,
       points: 0,
-      team: selectedTeam,
+      team,
       time: current.clock,
     };
     const undoItem: UndoItem = {
@@ -2382,7 +2367,7 @@ function App() {
       playerKey: player ? getPlayerKey(player) : "",
       previousPossession: current.possession,
       previousShotClock: current.shotClock,
-      selectedTeam,
+      selectedTeam: team,
     };
     const nextMatch = { ...current, events: [event, ...current.events] };
 
@@ -2390,7 +2375,8 @@ function App() {
     setMatch(nextMatch);
     setUndoStack((stack) => [undoItem, ...stack].slice(0, UNDO_LIMIT));
     setWarningOpen(false);
-    appendLog(createLog("info", "Warning", `${nextMatch[selectedTeam].name}: ${type.label}`));
+    setWarningTarget(undefined);
+    appendLog(createLog("info", "Warning", `${nextMatch[team].name}: ${type.label}`));
 
     void dispatchSaveAction({
       action: "warning",
@@ -2402,7 +2388,7 @@ function App() {
       note: type.label,
       player: player ?? WARNING_PLACEHOLDER_PLAYER,
       points: 0,
-      selectedTeam,
+      selectedTeam: team,
     }, event.id).then((result) => {
       if (result.eventId) {
         setUndoStack((stack) =>
@@ -2850,10 +2836,32 @@ function App() {
           side={selectedTeam}
           team={match[selectedTeam]}
           onClose={closeWarning}
-          onSelect={commitWarning}
+          onSelect={(type) => { setWarningOpen(false); setWarningTarget(type); }}
         />
       )}
 
+      {warningTarget && (warningTarget.target === "player" ?
+        <ScoringPlayerPicker bothTeams title={`Warning · ${warningTarget.label}`}
+          description="Choose the player receiving this warning." teams={{ away: match.away, home: match.home }}
+          sides={courtSides} initialTeam={selectedTeam} onClose={() => setWarningTarget(undefined)}
+          onPick={(team, player) => commitWarning(warningTarget, team, player)} /> :
+        <ScoringDialog title={`Warning · ${warningTarget.label}`} description="Choose the team receiving this warning." onClose={() => setWarningTarget(undefined)}>
+          <div className="grid grid-cols-2 gap-3 p-4">
+            {courtOrder(courtSides).map((team) => <button key={team} type="button"
+              className="min-h-16 rounded-lg border border-neutral-700 bg-neutral-900 p-3 font-bold focus-visible:ring-2 focus-visible:ring-neutral-400"
+              onClick={() => commitWarning(warningTarget, team)}>{match[team].name}</button>)}
+          </div>
+        </ScoringDialog>
+      )}
+      {foulPlayerOpen && (
+        <ScoringPlayerPicker bothTeams title="Personal foul" description="Choose the player who committed the foul."
+          teams={{ away: match.away, home: match.home }} sides={courtSides} initialTeam={selectedTeam}
+          onClose={() => setFoulPlayerOpen(false)} onPick={(team, player) => {
+            setFoulPlayerOpen(false);
+            selectPlayer(team, player);
+            setFoulPrompt({ team, player });
+          }} />
+      )}
       {foulPrompt && (
         <FoulDialog
           committer={foulPrompt.player}
@@ -4424,7 +4432,7 @@ function WarningDialog({
         </div>
 
         <div className="border-b border-neutral-800 px-4 py-2 text-xs font-semibold text-neutral-400">
-          Pick the warning type — logged against {team.name} as a referee warning. No foul, no score change.
+          Choose the warning type, then its player or team. No foul, no score change.
         </div>
 
         <div className="grid min-h-0 flex-1 gap-2 overflow-y-auto scrollbar-slim p-3 sm:grid-cols-2">
@@ -7015,7 +7023,7 @@ function ActionPanel({
               const Icon = action.icon;
               // "Warning" opens the 6-type picker; "P. Foul" opens the foul popup (who was
               // fouled + free throws); "Tech" opens the tech popup (player tech = foul, or
-              // administrative). Every other action records directly.
+              // administrative). Other player events open the player picker.
               const isWarning = action.key === "warning";
               const isFoul = action.key === "personal foul";
               const isTech = action.key === "tech foul";
