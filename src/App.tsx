@@ -414,6 +414,7 @@ function App() {
   const [courtSides, setCourtSides] = useState<CourtSides>(() => readStoredCourtSides(DEFAULT_COURT_SIDES));
   const [scoringView, setScoringView] = useState<ScoringView>(() => readStoredText(STORAGE_KEYS.scoringView) === "buttons" ? "buttons" : "court");
   const [quickShot, setQuickShot] = useState<{ value: 2 | 3; made: boolean } | undefined>();
+  const [quickStat, setQuickStat] = useState<ActionKey | undefined>();
   const [foulOnShot, setFoulOnShot] = useState(() => readStoredBoolean(STORAGE_KEYS.foulOnShot, false));
   const [timeoutDurationSeconds, setTimeoutDurationSeconds] = useState(
     () => readStoredPositiveNumber(STORAGE_KEYS.timeoutSeconds) ?? DEFAULT_TIMEOUT_SECONDS,
@@ -1995,6 +1996,10 @@ function App() {
       return;
     }
 
+    if (scoringView === "buttons") {
+      setQuickStat(action);
+      return;
+    }
     commitAction({
       action,
       issuedByRef: action === "tech foul" || action === "warning",
@@ -2810,6 +2815,16 @@ function App() {
         <ScoringPlayerPicker bothTeams title={`${quickShot.value}PT ${quickShot.made ? "Made" : "Missed"}`}
           description="Tap the shooter to record this shot." teams={{ away: match.away, home: match.home }}
           sides={courtSides} initialTeam={selectedTeam} onClose={() => setQuickShot(undefined)} onPick={recordQuickShot} />
+      )}
+      {quickStat && (
+        <ScoringPlayerPicker bothTeams title={titleCase(quickStat)}
+          description="Tap the player to record this event." teams={{ away: match.away, home: match.home }}
+          sides={courtSides} initialTeam={selectedTeam} onClose={() => setQuickStat(undefined)}
+          onPick={(team, player) => {
+            selectPlayer(team, player);
+            commitAction({ action: quickStat, label: titleCase(quickStat), points: 0 }, { team, player });
+            setQuickStat(undefined);
+          }} />
       )}
 
       {boxScoreOpen && (
