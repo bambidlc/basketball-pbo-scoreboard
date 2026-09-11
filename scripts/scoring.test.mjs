@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { BENCH_ORDER, courtOrder, lineupReview, nextEventId, playerKey, shotLocationFromCoordinates, swappedCourts } from "../src/scoring.ts";
+import { applyPlayerDiscipline, technicalSuspensionNote, isPlayerUnavailable, formatGameCategory, BENCH_ORDER, courtOrder, lineupReview, nextEventId, playerKey, shotLocationFromCoordinates, swappedCourts } from "../src/scoring.ts";
 
 const player = (id, extras = {}) => ({ id, name: `Player ${id}`, number: String(id), present: true, fouls: 0, ...extras });
 const team = () => ({ players: [1, 2, 3, 4, 5].map((id) => player(id)), bench: [player(6), player(7)] });
@@ -71,4 +71,49 @@ test("court-free and legacy free-throw events never gain a fictitious shot-chart
   assert.deepEqual(shotLocationFromCoordinates(610, 200, "Paint", 2), {
     x: 610, y: 200, zone: "Paint", side: "right", value: 2,
   });
+});
+
+const disciplineMatch = (events = [], extras = {}) => ({
+  away: { players: [player(1, { techFouls: 0, ...extras })], bench: [] },
+  home: { players: [player(2, { number: "1", techFouls: 0 })], bench: [] }, events,
+});
+const techEvent = (id, note) => ({ id, action: "tech foul", team: "away", playerId: 1, player: "#1", note });
+
+test("first technical stays eligible; second automatically suspends for this game", () => {
+  assert.equal(technicalSuspensionNote(player(1, { techFouls: 0 }), false, ""), undefined);
+  assert.equal(isPlayerUnavailable(applyPlayerDiscipline(disciplineMatch([techEvent(1)])).away.players[0]), false);
+  const match = applyPlayerDiscipline(disciplineMatch([techEvent(2), techEvent(1)]));
+  assert.equal(match.away.players[0].suspensionReason, "Dos faltas técnicas");
+  assert.equal(isPlayerUnavailable(match.home.players[0]), false);
+  assert.match(technicalSuspensionNote(player(1, { techFouls: 1 }), false, ""), /Dos faltas técnicas/);
+});
+
+test("manual suspension requires a reason and survives a serialized reload", () => {
+  assert.throws(() => technicalSuspensionNote(player(1, { techFouls: 0 }), true, "  "), /motivo/);
+  const note = technicalSuspensionNote(player(1, { techFouls: 0 }), true, " Conducta antideportiva ");
+  const match = applyPlayerDiscipline(JSON.parse(JSON.stringify(disciplineMatch([techEvent(1, note)]))));
+  assert.equal(match.away.players[0].suspensionReason, "Conducta antideportiva");
+  assert.equal(isPlayerUnavailable(match.away.players[0]), true);
+  assert.equal(isPlayerUnavailable(match.home.players[0]), false);
+});
+
+test("undoing suspension or second technical restores eligibility without leaking into another game", () => {
+  const match = applyPlayerDiscipline(disciplineMatch([techEvent(1), techEvent(2)]));
+  assert.equal(isPlayerUnavailable(applyPlayerDiscipline({ ...match, away: { ...match.away, players: [{ ...match.away.players[0], techFouls: 1 }] }, events: [techEvent(1)] }).away.players[0]), false);
+  assert.equal(applyPlayerDiscipline({ ...match, away: { ...match.away, players: [{ ...match.away.players[0], techFouls: 0 }] }, events: [] }).away.players[0].suspensionReason, undefined);
+});
+
+test("suspended players can leave but cannot enter a lineup", () => {
+  const side = team();
+  side.players[0].suspensionReason = "Dos faltas técnicas";
+  side.bench[0].techFouls = 2;
+  assert.ok(lineupReview(side, draft([1, 2, 3, 4, 5]), 2).error);
+  assert.ok(lineupReview(side, draft([2, 3, 4, 5, 6]), 2).error);
+  assert.equal(lineupReview(side, draft([2, 3, 4, 5, 7]), 2).error, undefined);
+});
+
+test("game categories use both teams without guessing missing age groups", () => {
+  assert.equal(formatGameCategory("12u", "12U"), "Categoría 12U");
+  assert.equal(formatGameCategory("12U", "13U"), "Categoría 12U / 13U");
+  assert.equal(formatGameCategory(), "Categoría por confirmar");
 });

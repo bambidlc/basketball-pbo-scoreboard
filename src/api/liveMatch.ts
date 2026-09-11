@@ -22,7 +22,7 @@ import {
 import { OdooClient, type OdooRecord } from "./odooClient";
 import { resolveClubColor } from "./colorPalette";
 import { currentOdooDateTimeKey } from "../schedule";
-import { shotLocationFromCoordinates } from "../scoring";
+import { applyPlayerDiscipline, shotLocationFromCoordinates } from "../scoring";
 
 export type TeamId = "away" | "home";
 
@@ -67,6 +67,7 @@ export type Player = {
   defensiveRebounds: number;
   fouls: number;
   techFouls: number;
+  suspensionReason?: string;
   freeThrowsAttempted: number;
   freeThrowsMade: number;
   id?: number;
@@ -179,6 +180,8 @@ export type LoadMatchResult = {
 };
 
 export type MatchOption = {
+  awayCategory?: string;
+  homeCategory?: string;
   awayAccentColor?: string;
   awayColor?: string;
   awayLogoUrl?: string;
@@ -407,6 +410,8 @@ export async function loadMatchOptions(client: OdooClient): Promise<MatchOption[
       const homeIdentity = homeTeamId ? clubIdentityByTeamId.get(homeTeamId) : undefined;
 
       return {
+        awayCategory: stringValue(teams.find(team => numberValue(team.id) === awayTeamId)?.[TEAM.category]) || undefined,
+        homeCategory: stringValue(teams.find(team => numberValue(team.id) === homeTeamId)?.[TEAM.category]) || undefined,
         awayAccentColor: awayIdentity?.accentColor,
         awayColor: awayIdentity?.color,
         awayLogoUrl: awayIdentity?.logoUrl,
@@ -1356,11 +1361,16 @@ async function loadGameEvents(
       { limit: 300, order: "create_date desc" },
     );
 
-    return events
+    // Keep disciplinary decisions even after they leave the recent play-by-play window.
+    const technicals = await client.searchRead<OdooRecord>(MODELS.gameEvent,
+      [[GAME_EVENT.game, "=", gameId], [GAME_EVENT.actionType, "=", "tech foul"]],
+      eventFields, { limit: 0, order: "id desc" });
+    return [...new Map([...events, ...technicals].map(event => [event.id, event])).values()]
+      .sort((a, b) => numberValue(b.id) - numberValue(a.id))
       .map((event) => normalizeGameEvent(event, awayTeamId, homeTeamId))
       .filter((event): event is GameEvent => Boolean(event));
   } catch {
-    return [];
+    throw new Error("No se pudo verificar el historial de faltas y suspensiones del partido. Intenta actualizar otra vez.");
   }
 }
 
@@ -1493,7 +1503,7 @@ async function normalizeGameRecord(
         ]
       : events;
 
-  return {
+  return applyPlayerDiscipline({
     away,
     awayScore: numberValue(game[GAME.awayScore]),
     clock: secondsToClock(clockSeconds),
@@ -1522,7 +1532,7 @@ async function normalizeGameRecord(
     statusNote: events.find((event) => (event.action === "suspension" || event.action === "cancellation") && event.note)?.note,
     syncMessage: "Live data connected",
     syncedAt: new Date().toISOString(),
-  };
+  });
 }
 
 function normalizeTeam(

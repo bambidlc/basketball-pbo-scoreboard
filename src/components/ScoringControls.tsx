@@ -3,7 +3,7 @@ import { CircleX, ClipboardList, Map, Shuffle, Target } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import type { Player, Team, TeamId } from "../api/liveMatch";
 import { cn } from "../lib/cn";
-import { courtOrder, playerKey, type CourtSides, type ScoringView } from "../scoring";
+import { isPlayerUnavailable, courtOrder, playerKey, type CourtSides, type ScoringView } from "../scoring";
 
 const control = "min-h-11 rounded-lg border px-3 text-xs font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400 disabled:cursor-not-allowed disabled:opacity-40";
 
@@ -82,7 +82,7 @@ export function ScoringPlayerPicker({ teams, sides, initialTeam, title, descript
       {(bothTeams ? courtOrder(sides) : [team]).map((side) => <section key={side} aria-label={`${teams[side].name} shooters`}>
       {bothTeams && <h3 className="truncate text-sm font-bold text-balance" style={{ color: `var(--c-${side}-soft)` }}>{teams[side].name}</h3>}
       <div className={cn("mt-4 grid gap-2", bothTeams ? "grid-cols-2" : "grid-cols-3")}>
-        {teams[side].players.map((player) => <button key={playerKey(player)} type="button" aria-label={`Assign to #${player.number}`} title={player.name}
+        {teams[side].players.map((player) => <button key={playerKey(player)} type="button" aria-label={`Assign to #${player.number}`} title={player.name} disabled={isPlayerUnavailable(player)}
           className="flex min-h-16 min-w-0 flex-col justify-center rounded-lg border border-neutral-700 bg-neutral-900 px-2 hover:bg-neutral-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400"
           onClick={() => onPick(side, player)}><span className="font-mono text-2xl font-black tabular-nums" style={{ color: `var(--c-${side}-soft)` }}>#{player.number}</span><span className="text-[10px] text-neutral-400 tabular-nums">{player.points} pt · {player.fouls} f</span></button>)}
       </div>

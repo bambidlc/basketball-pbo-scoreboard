@@ -2,7 +2,7 @@ import { Check, Shuffle } from "lucide-react";
 import { useState } from "react";
 import type { Team, TeamId } from "../api/liveMatch";
 import { cn } from "../lib/cn";
-import { BENCH_ORDER, lineupReview, playerKey, type LineupDraft, type LineupDrafts } from "../scoring";
+import { BENCH_ORDER, isPlayerUnavailable, lineupReview, playerKey, type LineupDraft, type LineupDrafts } from "../scoring";
 import { ScoringDialog } from "./ScoringControls";
 
 const reasons = ["Foul trouble", "Rest", "Tactical", "Injury", "Discipline"];
@@ -56,13 +56,13 @@ function LineupEditor({ side, team, period, bench, draft, onChange }: {
       {eligible.map((player) => {
         const key = playerKey(player);
         const picked = selected.has(key);
-        const fouledOut = player.fouls >= 5;
+        const fouledOut = isPlayerUnavailable(player);
         const disabled = !picked && (selected.size >= target || fouledOut);
         return <button key={key} type="button" aria-pressed={picked} disabled={disabled}
           aria-label={`${picked ? "Take out" : "Bring in"} #${player.number}`}
           onClick={() => onChange({ ...draft, keys: picked ? draft.keys.filter((value) => value !== key) : [...draft.keys, key] })}
           className={cn("relative flex min-h-20 min-w-0 flex-col items-center justify-center rounded-lg border p-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400 disabled:cursor-not-allowed disabled:opacity-40", picked ? "border-neutral-400 bg-neutral-800" : "border-neutral-800 bg-neutral-900 hover:bg-neutral-800")}>
-          <span className="flex min-h-4 items-center gap-1 text-[9px] font-semibold text-neutral-400">{picked && <Check size={11} />}{fouledOut ? "5 fouls" : current.has(key) ? "On court" : "Bench"}</span>
+          <span className="flex min-h-4 items-center gap-1 text-[9px] font-semibold text-neutral-400">{picked && <Check size={11} />}{player.suspensionReason || player.techFouls >= 2 ? "Suspendido" : fouledOut ? "5 fouls" : current.has(key) ? "On court" : "Bench"}</span>
           <span className="font-mono text-2xl font-black tabular-nums">{player.number}</span>
           <span className="text-[10px] text-neutral-400 tabular-nums">{player.points} pt · {player.fouls} f</span>
         </button>;

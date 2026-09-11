@@ -76,7 +76,7 @@ import { ScheduleBrowser } from "./components/ScheduleBrowser";
 import { CourtSvg } from "./components/CourtSvg";
 import { QuickScorePanel, ScoringDialog, ScoringPlayerPicker, ScoringToolbar } from "./components/ScoringControls";
 import { SubstitutionDialog } from "./components/SubstitutionDialog";
-import { BENCH_ORDER, courtOrder, lineupReview, nextEventId, playerKey as getPlayerKey, swappedCourts, type CourtSides, type LineupDrafts, type ScoringView } from "./scoring";
+import { applyPlayerDiscipline, isPlayerUnavailable, technicalSuspensionNote, formatGameCategory, BENCH_ORDER, courtOrder, lineupReview, nextEventId, playerKey as getPlayerKey, swappedCourts, type CourtSides, type LineupDrafts, type ScoringView } from "./scoring";
 import { cn } from "./lib/cn";
 
 const loadMotionFeatures = () => import("./motionFeatures").then((module) => module.default);
@@ -114,6 +114,7 @@ type PeriodSettings = {
 };
 
 type ActionDetail = {
+  note?: string;
   action: ActionKey;
   foulOnShot?: boolean;
   freeThrowsAttempted?: number;
@@ -187,7 +188,7 @@ const statActions: Array<{
   { key: "warning", label: "Warning", icon: TriangleAlert, color: "text-amber-300" },
 ];
 
-type WarningTarget = "team" | "player" | "coach" | "public";
+type WarningTarget = "team" | "player" | "coach" | "public" | "bench";
 
 type WarningType = {
   key: string;
@@ -196,7 +197,7 @@ type WarningType = {
   target: WarningTarget;
 };
 
-// The six referee warning types. None count as a foul (the separate "Tech" action is for
+// Referee warning types. None count as a foul (the separate "Tech" action is for
 // technical fouls that do). "Técnica" splits into indirecta (a jugador) and directa (al
 // coach). Player-targeted types pick up the selected player's number when one is chosen.
 const WARNING_TYPES: WarningType[] = [
@@ -204,7 +205,8 @@ const WARNING_TYPES: WarningType[] = [
   { key: "jugador", label: "A jugador", hint: "Warning to a player", target: "player" },
   { key: "coach", label: "Al coach", hint: "Warning to the coach", target: "coach" },
   { key: "publico", label: "Al público", hint: "Warning to the crowd", target: "public" },
-  { key: "no-ventaja", label: "De no ventaja", hint: "No-advantage warning", target: "team" },
+  { key: "ventaja", label: "De ventaja", hint: "Advantage warning", target: "team" },
+  { key: "banca", label: "A la banca", hint: "Warning to the bench", target: "bench" },
   { key: "tecnica-indirecta", label: "Técnica indirecta", hint: "Indirect technical — a jugador", target: "player" },
   { key: "tecnica-directa", label: "Técnica directa", hint: "Direct technical — al coach", target: "coach" },
 ];
@@ -434,6 +436,7 @@ function App() {
   const [warningTarget, setWarningTarget] = useState<WarningType | undefined>();
   const [freeThrowPrompt, setFreeThrowPrompt] = useState<{ made: boolean } | undefined>(undefined);
   const [techOpen, setTechOpen] = useState(false);
+  const [techPlayerPrompt, setTechPlayerPrompt] = useState<{ team: TeamId; player: Player }>();
   const [endGameOpen, setEndGameOpen] = useState(false);
   const [quickResultOption, setQuickResultOption] = useState<MatchOption | undefined>(undefined);
   // When the scorer advances the period, show a summary of the period that just ended.
@@ -634,7 +637,7 @@ function App() {
             applyStoredOfficials(applyStoredAttendance(applyStoredStarters(sourceMatch))),
           ), sourceMatch.gameId, [...pendingAtStart, ...pendingOpsRef.current]);
 
-          return {
+          return applyPlayerDiscipline({
             ...loadedMatch,
             syncMessage: scheduleError
               ? `Schedule refresh failed: ${scheduleError}`
@@ -644,8 +647,8 @@ function App() {
                   current.gameId === loadedMatch.gameId ? current.events : [],
                   loadedMatch.events,
                 )
-              : current.events,
-          };
+              : loadedMatch.events,
+          });
         });
 
         if (optionsResult) {
@@ -1590,6 +1593,10 @@ function App() {
     }
 
     const current = matchRef.current;
+    for (const team of BENCH_ORDER) {
+      const player = current[team].players.find(isPlayerUnavailable);
+      if (player) { setFoulOutPrompt({ team, player }); return; }
+    }
     if (clockToSeconds(current.clock) <= 0) {
       const nextMatch = {
         ...current,
@@ -1775,10 +1782,11 @@ function App() {
     actor?: { player: Player; team: TeamId },
     eventId?: number,
   ) {
-    const actingPlayer = actor?.player ?? currentPlayer;
+    const selectedActor = actor?.player ?? currentPlayer;
+    const actingPlayer = selectedActor && findPlayerByKey(matchRef.current[actor?.team ?? selectedTeam], getPlayerKey(selectedActor));
     const actingTeam = actor?.team ?? selectedTeam;
 
-    if (!actingPlayer) {
+    if (!actingPlayer || isPlayerUnavailable(actingPlayer)) {
       appendLog(createLog("warning", "Action skipped", "Select a player before logging actions."));
       return;
     }
@@ -1811,6 +1819,7 @@ function App() {
       icon: getEventIcon(committedDetail.action, committedDetail.points),
       id: eventId ?? Date.now(),
       issuedByRef: committedDetail.issuedByRef,
+      note: committedDetail.note,
       label: committedDetail.label,
       period: baseMatch.period,
       player: formatPlayer(actingPlayer),
@@ -1836,7 +1845,7 @@ function App() {
     const opponentTurnoverKey = committedDetail.opponentTurnoverPlayer
       ? getPlayerKey(committedDetail.opponentTurnoverPlayer)
       : undefined;
-    const nextMatch = updateMatchAfterAction(
+    const nextMatch = applyPlayerDiscipline(updateMatchAfterAction(
       baseMatch,
       actingTeam,
       actingPlayer,
@@ -1844,7 +1853,7 @@ function App() {
       event,
       nextAwayScore,
       nextHomeScore,
-    );
+    ));
 
     matchRef.current = nextMatch;
     setMatch(nextMatch);
@@ -2015,30 +2024,36 @@ function App() {
 
   // A technical on a player counts as a foul (player + team), recorded on the picked on-court
   // player via the explicit-actor path.
-  function recordPlayerTech(team: TeamId, player: Player) {
+  function recordPlayerTech(team: TeamId, player: Player, suspend: boolean, reason: string) {
+    const fresh = findPlayerByKey(matchRef.current[team], getPlayerKey(player));
+    if (!fresh || isPlayerUnavailable(fresh)) return;
+    const note = technicalSuspensionNote(fresh, suspend, reason);
     commitAction(
       {
         action: "tech foul",
         issuedByRef: true,
-        label: `Tech · #${player.number}`,
+        label: `Tech · #${player.number}${note ? ` · ${note}` : ""}`,
+        note,
         points: 0,
       },
       { player, team },
     );
     setTechOpen(false);
+    setTechPlayerPrompt(undefined);
     checkFoulOut(team, getPlayerKey(player));
   }
 
   // A 5th personal/tech foul means the player must leave — open the replacement popup.
   function checkFoulOut(team: TeamId, playerKey: string) {
     const updated = findPlayerByKey(matchRef.current[team], playerKey);
-    if (updated && updated.fouls >= 5) {
+    if (updated && isPlayerUnavailable(updated) && matchRef.current[team].players.some(p => getPlayerKey(p) === playerKey)) {
+      setIsClockRunning(false);
       setFoulOutPrompt({ player: updated, team });
     }
   }
 
   function replaceFouledOut(replacement: Player) {
-    if (!foulOutPrompt) {
+    if (!foulOutPrompt || isPlayerUnavailable(replacement) || replacement.present === false) {
       return;
     }
     const team = foulOutPrompt.team;
@@ -2047,7 +2062,7 @@ function App() {
     const nextKeys = matchRef.current[team].players
       .map(getPlayerKey)
       .map((key) => (key === fouledKey ? replacementKey : key));
-    commitLineupChange(team, nextKeys, `Salió por 5 faltas #${foulOutPrompt.player.number}`);
+    commitLineupChange(team, nextKeys, `#${foulOutPrompt.player.number} salió: ${foulOutPrompt.player.suspensionReason || "5 faltas"}`);
     setFoulOutPrompt(undefined);
   }
 
@@ -2215,7 +2230,7 @@ function App() {
     );
 
     // Each team is validated before a combined change reaches this path.
-    if (outgoing.length === 0 || outgoing.length !== incoming.length) return;
+    if (outgoing.length === 0 || outgoing.length !== incoming.length || incoming.some(isPlayerUnavailable)) return;
 
     // Keep the on-court list in a stable roster order rather than tap order.
     const orderedKeys = [...nextSet].sort(
@@ -2551,8 +2566,13 @@ function App() {
       return;
     }
 
+    const returning = undoItem.detail.subOutKey && findPlayerByKey(matchRef.current[undoItem.selectedTeam], undoItem.detail.subOutKey);
+    if (returning && isPlayerUnavailable(returning)) {
+      appendLog(createLog("warning", "Undo blocked", "Corrige primero la falta o suspensión antes de regresar al jugador."));
+      return;
+    }
     canceledEventIdsRef.current.add(eventId);
-    const nextMatch = revertMatchAfterAction(matchRef.current, undoItem);
+    const nextMatch = applyPlayerDiscipline(revertMatchAfterAction(matchRef.current, undoItem));
     const correctedPlayer = findPlayerByKey(nextMatch[undoItem.selectedTeam], undoItem.playerKey);
     const correctedOpponent = undoItem.detail.opponentTurnoverTeam && undoItem.detail.opponentTurnoverPlayer
       ? findPlayerByKey(
@@ -2880,12 +2900,16 @@ function App() {
           onPick={(team, player) => { selectPlayer(team, player); commitFreeThrowFor(team, player, freeThrowPrompt.made); }} />
       )}
 
+      {techPlayerPrompt && <PlayerTechnicalDialog player={techPlayerPrompt.player}
+        onClose={() => setTechPlayerPrompt(undefined)}
+        onConfirm={(suspend, reason) => recordPlayerTech(techPlayerPrompt.team, techPlayerPrompt.player, suspend, reason)} />}
+
       {techOpen && (
         <TechDialog
           courtSides={courtSides}
           teams={{ away: match.away, home: match.home }}
           onClose={closeTech}
-          onPlayerTech={recordPlayerTech}
+          onPlayerTech={(team, player) => { setTechOpen(false); setTechPlayerPrompt({ team, player }); }}
           onAdminTech={recordAdminTech}
         />
       )}
@@ -3413,6 +3437,7 @@ function GameCard({
           <span className="font-mono text-xs text-neutral-500 tabular-nums">{option.week || `#${option.id}`}</span>
         </div>
         <h3 className="sr-only">{option.name}</h3>
+        <div className="mb-2 text-xs font-bold text-amber-300">{formatGameCategory(option.awayCategory, option.homeCategory)}</div>
         <div className="mt-2 grid gap-1.5">
           <GameTeamLine
             accentColor={option.awayAccentColor}
@@ -3802,7 +3827,8 @@ function ScoreHeader({
             <ArrowLeft size={16} />
           </button>
           <div className="min-w-0 rounded-full border border-neutral-700 bg-neutral-900 px-3 py-1 text-[10px] font-black uppercase tracking-wide text-neutral-300">
-            <span className="block truncate">{statsMode}</span>
+            <span className="block truncate">{formatGameCategory(away.category, home.category)}</span>
+            <span className="block truncate text-neutral-500">{statsMode}</span>
           </div>
           {/* The shot clock is not used in youth games; keep the slot (invisible) so the mode pill stays centered. */}
           <div
@@ -4377,6 +4403,7 @@ const WARNING_TARGET_LABEL: Record<WarningTarget, string> = {
   player: "Jugador",
   coach: "Coach",
   public: "Público",
+  bench: "Banca",
 };
 
 const WARNING_TARGET_CLASS: Record<WarningTarget, string> = {
@@ -4384,6 +4411,7 @@ const WARNING_TARGET_CLASS: Record<WarningTarget, string> = {
   player: "border-sky-500/50 text-sky-300",
   coach: "border-amber-500/50 text-amber-300",
   public: "border-violet-500/50 text-violet-300",
+  bench: "border-amber-500/50 text-amber-300",
 };
 
 function WarningDialog({
@@ -4983,6 +5011,31 @@ function FoulDialog({
   );
 }
 
+function PlayerTechnicalDialog({ player, onClose, onConfirm }: {
+  player: Player; onClose: () => void; onConfirm: (suspend: boolean, reason: string) => void;
+}) {
+  const automatic = player.techFouls >= 1;
+  const [suspend, setSuspend] = useState(automatic);
+  const [reason, setReason] = useState(automatic ? "Dos faltas técnicas" : "");
+  return <ScoringDialog title={`Técnica · #${player.number} ${player.name}`}
+    description={automatic ? "Segunda técnica: suspensión automática por el resto del partido." : "Registra la técnica y, si corresponde, suspende al jugador por este partido."} onClose={onClose}>
+    <form className="space-y-4 p-4" onSubmit={event => { event.preventDefault(); onConfirm(suspend, reason); }}>
+      <label className="flex min-h-11 items-center gap-3 text-sm font-bold">
+        <input type="checkbox" checked={suspend} disabled={automatic} onChange={event => setSuspend(event.target.checked)} />
+        Suspender por el resto del partido
+      </label>
+      {suspend && <label className="block text-sm font-bold">Motivo de suspensión
+        <textarea required value={reason} onChange={event => setReason(event.target.value)} maxLength={500}
+          className="mt-2 min-h-24 w-full rounded-lg border border-neutral-600 bg-neutral-900 p-3 text-sm" />
+      </label>}
+      <p className="text-xs text-neutral-400">{suspend ? "El jugador no podrá volver a entrar. Después de registrar, elige su reemplazo si está en cancha." : "Suma una falta personal y de equipo."}</p>
+      <button type="submit" disabled={suspend && !reason.trim()} className="min-h-11 w-full rounded-lg bg-amber-400 px-4 font-bold text-neutral-950 disabled:opacity-40">
+        {suspend ? "Registrar técnica y sustituir" : "Registrar técnica"}
+      </button>
+    </form>
+  </ScoringDialog>;
+}
+
 function TechDialog({
   courtSides,
   teams,
@@ -5034,7 +5087,7 @@ function TechDialog({
                 Cuenta como falta
               </span>
             </div>
-            <p className="mt-1 text-[11px] font-semibold text-neutral-500">Técnica a un jugador en cancha — suma falta personal y de equipo.</p>
+            <p className="mt-1 text-[11px] font-semibold text-neutral-500">Técnica a un jugador — suma falta personal y de equipo.</p>
           </div>
           <div className="grid grid-cols-2 gap-px bg-neutral-800">
             {courtOrder(courtSides).map((side) => {
@@ -5052,7 +5105,7 @@ function TechDialog({
                     accent={side}
                     emptyLabel="Nadie en cancha."
                     label="En cancha"
-                    players={team.players}
+                    players={getRoster(team).filter(player => player.present !== false && !isPlayerUnavailable(player))}
                     onPick={(player) => onPlayerTech(side, player)}
                   />
                 </div>
@@ -5273,7 +5326,7 @@ function EndPeriodStat({ label, value, warn }: { label: string; value: string; w
 function eligiblePlayers(team: Team): Player[] {
   const onCourt = new Set(team.players.map(getPlayerKey));
   return getRoster(team).filter(
-    (player) => player.present !== false || onCourt.has(getPlayerKey(player)),
+    (player) => !isPlayerUnavailable(player) && (player.present !== false || onCourt.has(getPlayerKey(player))),
   );
 }
 
@@ -5290,7 +5343,7 @@ function FoulOutDialog({
   onReplace: (replacement: Player) => void;
   onClose: () => void;
 }) {
-  const bench = team.bench.filter((candidate) => candidate.present !== false);
+  const bench = team.bench.filter((candidate) => candidate.present !== false && !isPlayerUnavailable(candidate));
 
   return (
     <div
@@ -5307,7 +5360,7 @@ function FoulOutDialog({
           <div className="flex min-w-0 items-center gap-2.5">
             <OctagonAlert className="shrink-0 text-red-400" size={20} />
             <div className="min-w-0">
-              <div className="text-[10px] font-black uppercase tracking-widest text-red-400">5 faltas · {team.label}</div>
+              <div className="text-[10px] font-black uppercase tracking-widest text-red-400">{player.suspensionReason ? "Suspendido por el partido" : "5 faltas"} · {team.label}</div>
               <h2 className="truncate text-lg font-black text-neutral-50">
                 <span style={{ color: `var(--c-${side}-soft)` }}>#{player.number}</span> debe salir
               </h2>
@@ -5324,7 +5377,7 @@ function FoulOutDialog({
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto scrollbar-slim p-3">
-          <div className="mb-2 text-xs font-semibold text-neutral-400">Elige el reemplazo (banca).</div>
+          <div className="mb-2 text-xs font-semibold text-neutral-400">{player.suspensionReason && <p className="mb-2 text-red-300">{player.suspensionReason}</p>}Elige el reemplazo (banca).</div>
           {bench.length === 0 ? (
             <div className="rounded-lg border border-dashed border-neutral-800 px-2 py-6 text-center text-[11px] font-semibold text-neutral-500">
               Sin jugadores en banca.
@@ -5345,7 +5398,7 @@ function FoulOutDialog({
             type="button"
             onClick={onClose}
           >
-            Sin cambio
+            Cerrar · reloj detenido
           </button>
         </div>
       </div>
@@ -5366,8 +5419,8 @@ function PeriodStartersDialog({
 }) {
   const awayTarget = Math.min(5, eligiblePlayers(teams.away).length);
   const homeTarget = Math.min(5, eligiblePlayers(teams.home).length);
-  const [awayKeys, setAwayKeys] = useState<string[]>(() => teams.away.players.map(getPlayerKey));
-  const [homeKeys, setHomeKeys] = useState<string[]>(() => teams.home.players.map(getPlayerKey));
+  const [awayKeys, setAwayKeys] = useState<string[]>(() => teams.away.players.filter(p => !isPlayerUnavailable(p)).map(getPlayerKey));
+  const [homeKeys, setHomeKeys] = useState<string[]>(() => teams.home.players.filter(p => !isPlayerUnavailable(p)).map(getPlayerKey));
 
   const canApply = awayKeys.length === awayTarget && homeKeys.length === homeTarget;
 
@@ -8075,7 +8128,7 @@ function withStarterKeys(match: LiveMatch, team: TeamId, starterKeys: string[]):
   const side = match[team];
   const roster = getRoster(side);
   const playersByKey = new Map(roster.map((player) => [getPlayerKey(player), player]));
-  const uniqueStarterKeys = [...new Set(starterKeys)].slice(0, 5);
+  const uniqueStarterKeys = [...new Set(starterKeys)].filter(key => { const player = playersByKey.get(key); return player && !isPlayerUnavailable(player); }).slice(0, 5);
   const starterSet = new Set(uniqueStarterKeys);
   const starters = uniqueStarterKeys
     .map((key) => playersByKey.get(key))
