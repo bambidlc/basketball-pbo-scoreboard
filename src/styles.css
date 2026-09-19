@@ -103,6 +103,7 @@ input[type="number"] {
 .live-grid[data-feed-visible="false"] { --feed-row: 0px; }
 .live-grid[data-console-visible="false"] > .live-console,
 .live-grid[data-feed-visible="false"] > .live-bottom { display: none; }
+.live-compact-shot-clock { display: none; }
 @media (min-width: 768px) and (min-height: 600px) {
   .scoring-dialog-wide > div:first-child, .scoring-dialog-wide > div:last-child { padding: 8px 12px; }
   .scoring-dialog-wide section { padding: 8px; }
@@ -124,19 +125,20 @@ input[type="number"] {
   .live-grid { height: 100%; min-height: 0; grid-template-columns: minmax(0, 1fr); grid-template-rows: 84px minmax(0, 1fr) var(--console-row, 244px) var(--feed-row, 92px); }
   .live-score-header, .live-scoring, .live-console, .live-bottom { grid-column: 1; grid-row-end: auto; min-width: 0; min-height: 0; }
   .live-score-header { grid-row: 1; grid-template-columns: minmax(0, 1fr) 260px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); align-items: stretch; }
-  .live-clock-header { display: grid; min-height: 0; grid-template-columns: 1fr 1fr; grid-template-rows: 28px 18px 24px; gap: 2px 6px; padding: 4px 8px; }
-  .live-clock-header > div:first-child { grid-column: 1; grid-row: 1; gap: 4px; }
-  .live-clock-header > div:first-child > button { width: 28px; height: 28px; }
-  .live-clock-header > div:first-child > div { padding: 2px 5px; }
-  .live-clock-header > button[aria-label="Possession arrow"] { grid-column: 1 / -1; grid-row: 3; height: 24px; }
-  .live-clock-header > button:not([aria-label]) { grid-column: 1; grid-row: 2; height: 18px; font-size: 10px; padding: 0 4px; }
-  .live-clock-header > button:not([aria-label]) > span:first-child { display: none; }
-  .live-clock-header > .font-mono { grid-column: 2; grid-row: 1; font-size: 28px; margin: 0; }
-  .live-clock-header > .rounded-full { grid-column: 2; grid-row: 2; padding: 0 4px; font-size: 10px; }
-  .live-clock-header > .live-period-tags { grid-column: 2; grid-row: 2; flex-wrap: nowrap; gap: 2px; }
+  .live-clock-header { display: grid; min-width: 0; min-height: 0; grid-template-columns: minmax(0, 1fr) minmax(106px, 1fr); grid-template-rows: 40px 32px; gap: 4px 8px; padding: 4px 8px; }
+  .live-clock-meta { grid-column: 1; grid-row: 1; min-width: 0; gap: 4px; }
+  .live-clock-meta > button { width: 36px; height: 36px; }
+  .live-clock-category { padding: 2px 4px; border: 0; border-radius: 4px; font-size: 9px; }
+  .live-clock-category > span { line-height: 14px; }
+  .live-shot-clock { display: none; }
+  .live-compact-shot-clock { display: block; }
+  .live-clock-header > .live-game-clock { grid-column: 2; grid-row: 1; min-width: 0; font-size: 34px; margin: 0; white-space: nowrap; align-self: center; }
+  .live-clock-header > button[aria-label="Possession arrow"] { grid-column: 1; grid-row: 2; height: 32px; gap: 4px; padding: 0 3px; font-size: 10px; }
+  .live-clock-header > button[aria-label="Possession arrow"] > span:first-child { display: none; }
+  .live-clock-header > .live-period-tags { grid-column: 2; grid-row: 2; min-width: 0; flex-wrap: wrap; gap: 1px; align-content: center; }
   .live-period-tags > div { white-space: nowrap; }
-  .live-clock-header > .live-period-tags > div { padding: 0 3px; font-size: 9px; line-height: 16px; }
-  .live-clock-header > div:last-child:not(.rounded-full) { display: none; }
+  .live-clock-header > .live-period-tags > div { padding: 0 3px; font-size: 9px; line-height: 14px; }
+  .live-clock-header > .live-change-game, .live-clock-header > .live-clock-status { display: none; }
   .live-team-header { gap: 8px; padding: 2px 8px; min-height: 0; height: 100%; }
   .live-team-header > div.min-w-0 > div:first-child { line-height: 14px; }
   .live-team-header > div.min-w-0 > div:nth-child(2) { font-size: 16px; line-height: 20px; }
@@ -227,9 +229,7 @@ input[type="number"] {
 
 /* Short landscape tablets keep jerseys in strips instead of shrinking five rows. */
 @media (min-width: 768px) and (min-height: 600px) and (max-height: 679px) {
-  .live-grid { grid-template-rows: 76px minmax(0, 1fr) var(--console-row, 244px) var(--feed-row, 92px); }
-  .live-clock-header { padding: 1px 6px; grid-template-rows: 26px 18px 22px; }
-  .live-clock-header > button[aria-label="Possession arrow"] { height: 22px; }
+  .live-grid { grid-template-rows: 84px minmax(0, 1fr) var(--console-row, 244px) var(--feed-row, 92px); }
   .live-team-header > div.min-w-0 > div:last-child span { line-height: 14px; }
   .live-floor { grid-template-columns: minmax(170px, 1fr) minmax(0, 1.6fr) minmax(170px, 1fr); }
   .live-roster > button:first-child { min-height: 28px; padding: 1px 5px; }

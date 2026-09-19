@@ -33,8 +33,8 @@ export type OdooRecord = Record<string, unknown> & { id?: number };
 
 const DEFAULT_POLL_MS = 60000;
 const MIN_POLL_MS = 30000;
-const DEFAULT_REQUEST_DELAY_MS = 750;
-const DEFAULT_MAX_RETRIES = 3;
+const DEFAULT_REQUEST_DELAY_MS = 0;
+const DEFAULT_MAX_RETRIES = 1;
 
 export function getOdooConfig(): OdooClientConfig {
   const proxyPath = stripTrailingSlash(import.meta.env.VITE_ODOO_PROXY_PATH ?? "");
@@ -76,6 +76,10 @@ export class OdooClient {
   private legacyAuth?: Promise<number>;
   private nextRequestAt = 0;
   private requestChain: Promise<unknown> = Promise.resolve();
+  private activeReads = 0;
+  private readWaiters: Array<() => void> = [];
+  private pendingReads = new Map<string, Promise<unknown>>();
+  private writeRevision = 0;
 
   constructor(private readonly config: OdooClientConfig) {}
 
@@ -93,6 +97,10 @@ export class OdooClient {
 
   get mode() {
     return this.config.mode;
+  }
+
+  clubLogoUrl(id: number) {
+    return `${this.config.baseUrl}/web/image/x_club/${id}/x_studio_image/96x96`;
   }
 
   async read<TRecord extends OdooRecord>(
@@ -192,6 +200,7 @@ export class OdooClient {
           headers,
           method: "POST",
         },
+        method === "read" || method === "search_read",
       );
     } catch (error) {
       if (isOdooHttpError(error, 404) && this.canUseLegacyFallback()) {
@@ -226,7 +235,7 @@ export class OdooClient {
       this.config.database,
       this.config.username,
       this.config.apiKey,
-    ]);
+    ]).catch((error) => { this.legacyAuth = undefined; throw error; });
 
     return this.legacyAuth;
   }
@@ -251,7 +260,7 @@ export class OdooClient {
         "Content-Type": "application/json",
       },
       method: "POST",
-    });
+    }, service === "common" || ["read", "search_read"].includes(String(args[4])));
 
     if (payload.error) {
       throw new Error(payload.error?.data?.message ?? payload.error?.message ?? "API request failed");
@@ -264,42 +273,70 @@ export class OdooClient {
     return payload.result;
   }
 
-  private async requestJson<TResult>(url: string, init: RequestInit): Promise<TResult> {
-    const run = this.requestChain.then(() => this.requestJsonWithRetry<TResult>(url, init));
-    this.requestChain = run.catch(() => undefined);
-
-    return run;
+  private async requestJson<TResult>(url: string, init: RequestInit, readOnly = false): Promise<TResult> {
+    if (!readOnly) {
+      this.writeRevision += 1;
+      const run = this.requestChain.then(() => this.requestJsonWithRetry<TResult>(url, init, false));
+      this.requestChain = run.catch(() => undefined);
+      return run;
+    }
+    // Coalesce identical in-flight reads, but never across a mutation. Two read lanes
+    // leave writes independent of slow schedule/roster downloads without flooding Odoo.
+    const key = JSON.stringify([this.writeRevision, url, init.body]);
+    const existing = this.pendingReads.get(key);
+    if (existing) return existing as Promise<TResult>;
+    const writesBeforeRead = this.requestChain;
+    const run = (async () => {
+      await writesBeforeRead;
+      if (this.activeReads >= 2) await new Promise<void>((resolve) => this.readWaiters.push(resolve));
+      else this.activeReads += 1;
+      try {
+        return await this.requestJsonWithRetry<TResult>(url, init, true);
+      } finally {
+        const next = this.readWaiters.shift();
+        if (next) next();
+        else this.activeReads -= 1;
+      }
+    })();
+    this.pendingReads.set(key, run);
+    try { return await run; }
+    finally { this.pendingReads.delete(key); }
   }
 
   private async requestJsonWithRetry<TResult>(
     url: string,
     init: RequestInit,
+    readOnly: boolean,
   ): Promise<TResult> {
     let lastError: unknown;
 
     for (let attempt = 0; attempt <= this.config.maxRetries; attempt += 1) {
-      await this.waitForRequestSlot(attempt);
+      await this.waitForRequestSlot();
 
       try {
-        // A stalled request must release the serialized connection so queued results
-        // can retry instead of waiting indefinitely behind a broken connection.
-        const response = await fetch(url, { ...init, signal: AbortSignal.timeout(20000) });
+        // Bound stalled reads so reconnects do not leave the roster waiting forever.
+        const response = await fetch(url, { ...init, signal: AbortSignal.timeout(readOnly ? 12000 : 20000) });
         const payload = (await response.json().catch(() => null)) as unknown;
 
         if (response.ok) {
+          if (payload === null) throw new Error("Incomplete API response. Changes remain queued for verification.");
           return payload as TResult;
         }
 
         const error = new OdooHttpError(getHttpError(payload, response.status), response.status);
+        if (response.status === 429) {
+          this.nextRequestAt = Math.max(this.nextRequestAt, Date.now() + getRetryDelayMs(response, attempt));
+        }
 
         if (response.status !== 429 || attempt === this.config.maxRetries) {
           throw error;
         }
 
         lastError = error;
-        await sleep(getRetryDelayMs(response, attempt));
       } catch (error) {
-        if (isOdooHttpError(error) || attempt === this.config.maxRetries) {
+        // A lost mutation response may already have committed. Let the outbox's
+        // identity-aware recovery verify it; never blindly repeat a create here.
+        if (!readOnly || isOdooHttpError(error) || attempt === this.config.maxRetries) {
           throw error;
         }
 
@@ -311,19 +348,10 @@ export class OdooClient {
     throw lastError instanceof Error ? lastError : new Error("API request failed");
   }
 
-  private async waitForRequestSlot(attempt: number) {
-    const now = Date.now();
-    const delay = Math.max(0, this.nextRequestAt - now);
-
-    if (delay > 0) {
-      await sleep(delay);
+  private async waitForRequestSlot() {
+    while (Date.now() < this.nextRequestAt) {
+      await sleep(this.nextRequestAt - Date.now());
     }
-
-    const attemptDelay = attempt > 0 ? Math.min(5000, 1000 * attempt) : 0;
-    if (attemptDelay > 0) {
-      await sleep(attemptDelay);
-    }
-
     this.nextRequestAt = Date.now() + this.config.requestDelayMs;
   }
 
@@ -416,7 +444,7 @@ function getRetryDelayMs(response: Response | undefined, attempt: number) {
 }
 
 function sleep(ms: number) {
-  return new Promise((resolve) => window.setTimeout(resolve, ms));
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 class OdooHttpError extends Error {

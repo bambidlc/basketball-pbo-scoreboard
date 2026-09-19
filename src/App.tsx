@@ -581,9 +581,16 @@ function App() {
         );
         let optionsResult: MatchOption[] | undefined;
         let scheduleError: string | undefined;
+        // A known game's roster can load while the season schedule refreshes.
+        const requestedMatch = requestedGameId ? loadLiveMatch(apiClient, requestedGameId) : undefined;
         if (shouldLoadOptions) {
           try {
             optionsResult = await loadMatchOptions(apiClient);
+            if (!customModeRef.current && revisionAtStart === mutationRevisionRef.current) {
+              matchOptionsLoadedRef.current = true;
+              matchOptionsLoadedAtRef.current = Date.now();
+              setMatchOptions(optionsResult.map((option) => applyPendingResult(option, option.id, pendingOpsRef.current)));
+            }
           } catch (error) {
             scheduleError = readableError(error);
           }
@@ -598,7 +605,8 @@ function App() {
           }
         }
 
-        const result = await loadLiveMatch(apiClient, targetGameId);
+        const result = requestedMatch && targetGameId === requestedGameId
+          ? await requestedMatch : await loadLiveMatch(apiClient, targetGameId);
         const rateLimited = isRateLimitLog(result.log) || Boolean(scheduleError?.includes("429"));
 
         if (rateLimited) {
@@ -1339,6 +1347,7 @@ function App() {
   }
 
   function toggleStarter(team: TeamId, player: Player) {
+    mutationRevisionRef.current += 1;
     const playerKey = getPlayerKey(player);
     const side = matchRef.current[team];
     const isStarter = side.players.some((candidate) => getPlayerKey(candidate) === playerKey);
@@ -1371,6 +1380,7 @@ function App() {
   }
 
   function togglePresent(team: TeamId, player: Player) {
+    mutationRevisionRef.current += 1;
     const playerKey = getPlayerKey(player);
     const side = matchRef.current[team];
     const flip = (candidate: Player): Player =>
@@ -1392,6 +1402,7 @@ function App() {
   }
 
   function setTeamCoach(team: TeamId, value: string) {
+    mutationRevisionRef.current += 1;
     const nextMatch = {
       ...matchRef.current,
       [team]: { ...matchRef.current[team], coach: value },
@@ -1402,8 +1413,9 @@ function App() {
   }
 
   function addRosterPlayer(team: TeamId) {
+    mutationRevisionRef.current += 1;
     const side = matchRef.current[team];
-    if (getRoster(side).length >= 30) {
+    if (getRoster(side).filter((player) => !player.removedFromRoster).length >= 30) {
       appendLog(createLog("warning", "Roster limit reached", "A game-day roster can contain up to 30 players."));
       return;
     }
@@ -1430,6 +1442,7 @@ function App() {
   }
 
   function updateRosterPlayer(team: TeamId, player: Player, values: Pick<Player, "name" | "number">) {
+    mutationRevisionRef.current += 1;
     const key = getPlayerKey(player);
     const side = matchRef.current[team];
     const update = (candidate: Player): Player =>
@@ -1448,10 +1461,16 @@ function App() {
   }
 
   function removeRosterPlayer(team: TeamId, player: Player) {
+    mutationRevisionRef.current += 1;
     const key = getPlayerKey(player);
     const side = matchRef.current[team];
     const players = side.players.filter((candidate) => getPlayerKey(candidate) !== key);
     const bench = side.bench.filter((candidate) => getPlayerKey(candidate) !== key);
+    // Keep registered players available to history and attendance. Removal applies
+    // only to this game's lineup and is reversible from the roster dialog.
+    if (player.id && player.id > 0) {
+      bench.push({ ...player, active: false, starter: false, present: Boolean(player.removedFromRoster), removedFromRoster: !player.removedFromRoster });
+    }
     const presentCount = [...players, ...bench].filter((candidate) => candidate.present ?? true).length;
     const nextMatch = { ...matchRef.current, [team]: { ...side, bench, players, presentCount } };
     matchRef.current = nextMatch;
@@ -1460,6 +1479,7 @@ function App() {
   }
 
   function setOfficial(field: OfficialKey, value: string) {
+    mutationRevisionRef.current += 1;
     const nextMatch = { ...matchRef.current, [field]: value };
     matchRef.current = nextMatch;
     setMatch(nextMatch);
@@ -1483,15 +1503,16 @@ function App() {
     writeStoredGameDayRoster(matchRef.current);
     appendLog(createLog("info", "Saving game-day roster", "Players, coaches, attendance, starters and officials."));
     setIsRosterSaving(true);
-    const result = await dispatchSaveRoster(matchRef.current);
+    // dispatchSaveRoster persists to the durable outbox before returning its promise.
+    // Scoring can continue immediately while the server verifies the queued snapshot.
+    const saving = dispatchSaveRoster(matchRef.current);
+    preGameOpenRef.current = false;
+    setPreGameOpen(false);
+    const result = await saving;
     appendLog(result.log);
     setConnectionStatus(result.log.level === "error" ? "error" : result.saved ? "connected" : "local");
     setIsRosterSaving(false);
 
-    if (result.log.level !== "error" || !isOnline) {
-      preGameOpenRef.current = false;
-      setPreGameOpen(false);
-    }
   }
 
   function switchCourtSides() {
@@ -2678,6 +2699,7 @@ function App() {
         )}
         {preGameOpen && (
           <PreGameDialog
+            isLoading={isRefreshing && !getRoster(match.away).length && !getRoster(match.home).length}
             isOnline={isOnline}
             isSaving={isRosterSaving}
             match={match}
@@ -2973,6 +2995,7 @@ function App() {
 
       {preGameOpen && (
         <PreGameDialog
+          isLoading={isRefreshing && !getRoster(match.away).length && !getRoster(match.home).length}
           isOnline={isOnline}
           isSaving={isRosterSaving}
           match={match}
@@ -3748,6 +3771,9 @@ function ClubLogo({
           alt={`${team.name} club logo`}
           className="size-full object-contain p-0.5"
           decoding="async"
+          loading="lazy"
+          width={96}
+          height={96}
           src={team.logoUrl}
         />
       ) : (
@@ -3817,7 +3843,7 @@ function ScoreHeader({
       />
 
       <div className="live-clock-header flex flex-col items-center justify-center gap-2 border-y border-neutral-800 px-3 py-3 text-center md:border-x md:border-y-0 lg:gap-1 lg:py-2 2xl:gap-0.5 2xl:py-1">
-        <div className="flex w-full items-center justify-between gap-2">
+        <div className="live-clock-meta flex w-full items-center justify-between gap-2">
           <button
             aria-label="Back to dashboard"
             className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-neutral-800 bg-neutral-900 text-neutral-300 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500 2xl:size-7 2xl:rounded-md"
@@ -3826,7 +3852,7 @@ function ScoreHeader({
           >
             <ArrowLeft size={16} />
           </button>
-          <div className="min-w-0 rounded-full border border-neutral-700 bg-neutral-900 px-3 py-1 text-[10px] font-black uppercase tracking-wide text-neutral-300">
+          <div className="live-clock-category min-w-0 rounded-full border border-neutral-700 bg-neutral-900 px-3 py-1 text-[10px] font-black uppercase tracking-wide text-neutral-300">
             <span className="block truncate">{formatGameCategory(away.category, home.category)}</span>
             <span className="block truncate text-neutral-500">{statsMode}</span>
           </div>
@@ -3834,7 +3860,7 @@ function ScoreHeader({
           <div
             aria-hidden={statsMode === "youth"}
             className={cn(
-              "flex shrink-0 items-center gap-1.5 rounded-lg border border-neutral-700 bg-neutral-900 px-2.5 py-1 2xl:rounded-md",
+              "live-shot-clock flex shrink-0 items-center gap-1.5 rounded-lg border border-neutral-700 bg-neutral-900 px-2.5 py-1 2xl:rounded-md",
               statsMode === "youth" && "invisible",
             )}
           >
@@ -3854,11 +3880,12 @@ function ScoreHeader({
           <PossessionArrow possession={foulBallTeam} courtSides={courtSides} />
           <span>{foulBallTeam === "away" ? "Visitor" : "Home"}</span>
         </button>
-        <button className="flex h-9 w-full items-center justify-between gap-2 rounded-lg border border-neutral-700 bg-neutral-900 px-2 text-xs text-neutral-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300" onClick={onBackToDashboard}><span className="truncate">{matchName}</span><span className="shrink-0 text-amber-300">Change game</span></button>
-        <div className="mt-0.5 font-mono text-5xl font-black leading-none text-neutral-50 tabular-nums lg:text-4xl 2xl:text-5xl">
+        <button aria-label="Change game" className="live-change-game flex h-9 w-full items-center justify-between gap-2 rounded-lg border border-neutral-700 bg-neutral-900 px-2 text-xs text-neutral-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300" onClick={onBackToDashboard}><span className="truncate">{matchName}</span><span className="shrink-0 text-amber-300">Change game</span></button>
+        <div aria-label="Game clock" role="timer" className="live-game-clock mt-0.5 font-mono text-5xl font-black leading-none text-neutral-50 tabular-nums lg:text-4xl 2xl:text-5xl">
           {clock}
         </div>
         <div className="live-period-tags flex flex-wrap items-center justify-center gap-1">
+        {statsMode !== "youth" && <div className="live-compact-shot-clock font-mono font-bold text-neutral-200" aria-label="Shot clock">SC {shotClock}</div>}
         <div className="rounded-full bg-amber-400/10 px-3 py-0.5 text-[11px] font-black uppercase tracking-wide text-amber-300">
           {periodLabel}
         </div>
@@ -3871,7 +3898,7 @@ function ScoreHeader({
           </div>
         ) : null}
         </div>
-        <div className="flex max-w-full items-center gap-1.5 text-[10px] font-black uppercase tracking-wide text-neutral-500 lg:hidden">
+        <div className="live-clock-status flex max-w-full items-center gap-1.5 text-[10px] font-black uppercase tracking-wide text-neutral-500 lg:hidden">
           <Activity size={12} />
           <span className="truncate">{status}</span>
         </div>
@@ -6243,6 +6270,7 @@ function JumpBallDialog({
 }
 
 function PreGameDialog({
+  isLoading,
   isOnline,
   isSaving,
   match,
@@ -6256,6 +6284,7 @@ function PreGameDialog({
   onToggleStarter,
   onUpdatePlayer,
 }: {
+  isLoading: boolean;
   isOnline: boolean;
   isSaving: boolean;
   match: LiveMatch;
@@ -6360,7 +6389,8 @@ function PreGameDialog({
             </div>
           </div>
 
-          <div className="grid gap-px bg-neutral-800 sm:grid-cols-2">
+          {isLoading && <div role="status" className="px-4 py-4 text-sm text-amber-300">Loading team rosters… Saved rosters open immediately on this device.</div>}
+          <fieldset disabled={isLoading} className={cn("grid min-w-0 gap-px border-0 bg-neutral-800 p-0 sm:grid-cols-2", isLoading && "hidden")}>
             <PreGameTeamColumn
               side="away"
               team={match.away}
@@ -6381,7 +6411,7 @@ function PreGameDialog({
               onToggleStarter={onToggleStarter}
               onUpdatePlayer={onUpdatePlayer}
             />
-          </div>
+          </fieldset>
         </div>
 
         <div className="flex items-center justify-between gap-3 border-t border-neutral-800 px-4 py-3">
@@ -6402,7 +6432,7 @@ function PreGameDialog({
             </button>
             <button
               className="flex h-10 items-center gap-2 rounded-lg border border-amber-500/40 bg-amber-500/15 px-4 text-xs font-black uppercase tracking-wide text-amber-200 transition-colors hover:bg-amber-500/25 focus:outline-none focus:ring-2 focus:ring-amber-500/50 disabled:cursor-not-allowed disabled:opacity-40"
-              disabled={isSaving || validationErrors.length > 0}
+              disabled={isLoading || isSaving || validationErrors.length > 0}
               type="button"
               onClick={onSave}
             >
@@ -6458,15 +6488,17 @@ function PreGameTeamColumn({
   onToggleStarter: (team: TeamId, player: Player) => void;
   onUpdatePlayer: (team: TeamId, player: Player, values: Pick<Player, "name" | "number">) => void;
 }) {
-  const roster = [...team.players, ...team.bench];
+  const allPlayers = [...team.players, ...team.bench];
+  const roster = allPlayers.filter((player) => !player.removedFromRoster);
+  const removedPlayers = allPlayers.filter((player) => player.removedFromRoster);
   const starterKeys = new Set(team.players.map(getPlayerKey));
   const starterFull = team.players.length >= 5;
   const [pendingRemoval, setPendingRemoval] = useState<Player | undefined>(undefined);
   return (
     <div className="bg-neutral-900">
       <div className="border-b border-neutral-800 px-3 py-3">
-        <div className="flex items-center justify-between gap-2">
-          <span className="min-w-0 truncate text-[11px] font-black uppercase tracking-wide" style={{ color: `var(--c-${side}-soft)` }}>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <span className="min-w-0 text-[11px] font-black uppercase tracking-wide" style={{ color: `var(--c-${side}-soft)` }}>
             {team.label} · {team.name}
           </span>
           <span className="shrink-0 text-[11px] font-black uppercase text-neutral-500 tabular-nums">
@@ -6508,7 +6540,6 @@ function PreGameTeamColumn({
             const isStarter = starterKeys.has(key);
             const present = player.present ?? true;
             const playerError = getGameDayPlayerError(team, player);
-            const canRemove = !player.id || player.id < 0;
             return (
               <div className="mb-1" key={key}>
                 <div
@@ -6570,7 +6601,7 @@ function PreGameTeamColumn({
                     >
                       <Star className={isStarter ? "fill-amber-300" : ""} size={15} />
                     </button>
-                    {canRemove && (
+                    {(
                       <button
                         aria-label={`Remove ${player.name || "new player"}`}
                         className="flex size-9 items-center justify-center rounded-md border border-neutral-700 bg-neutral-900 text-neutral-500 transition-colors hover:text-red-300 focus:outline-none focus:ring-2 focus:ring-red-500/50"
@@ -6597,8 +6628,14 @@ function PreGameTeamColumn({
             Add player
           </button>
         )}
-        <p className="mt-2 px-1 text-[10px] text-pretty text-neutral-600">
-          Existing team players stay in Odoo; mark them out for this game. New game-day players can be removed before sync.
+        {removedPlayers.map((player) => (
+          <div key={getPlayerKey(player)} className="mt-2 flex items-center justify-between gap-2 rounded-lg border border-neutral-800 p-2 text-xs text-neutral-400">
+            <span className="truncate">#{player.number} {player.name} · Removed from game</span>
+            <button type="button" className="min-h-9 shrink-0 rounded-md border border-neutral-700 px-3 text-neutral-100" onClick={() => onRemovePlayer(side, player)} aria-label={`Restore ${player.name}`}>Restore</button>
+          </div>
+        ))}
+        <p className="mt-2 px-1 text-[10px] text-pretty text-neutral-500">
+          Remove players from this game or restore them here. Registered player records and past statistics are preserved.
         </p>
       </div>
       {pendingRemoval && (
@@ -6625,18 +6662,21 @@ function ConfirmPlayerRemovalDialog({
   onConfirm: () => void;
 }) {
   return (
-    <div aria-modal="true" className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4" role="alertdialog">
-      <div className="w-full max-w-sm rounded-xl border border-red-500/50 bg-neutral-900 p-4 shadow-xl">
-        <h3 className="text-base font-black text-balance text-neutral-50">Remove this new player?</h3>
-        <p className="mt-1 text-sm text-pretty text-neutral-400">
-          #{player.number || "—"} {player.name || "Unnamed player"} has not synced yet and will be removed from this game-day roster.
-        </p>
+    <AlertDialog.Root open onOpenChange={(open) => !open && onCancel()}>
+      <AlertDialog.Portal>
+      <AlertDialog.Overlay className="fixed inset-0 z-50 bg-black/80" />
+      <AlertDialog.Content className="fixed left-1/2 top-1/2 z-50 w-[calc(100%-2rem)] max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-xl border border-red-500/50 bg-neutral-900 p-4 shadow-xl">
+        <AlertDialog.Title className="text-base font-black text-balance text-neutral-50">Remove player from this game?</AlertDialog.Title>
+        <AlertDialog.Description className="mt-1 text-sm text-pretty text-neutral-400">
+          #{player.number || "—"} {player.name || "Unnamed player"}{player.id && player.id > 0 ? " will be marked absent and can be restored here. Their team record and statistics stay intact." : " has not synced yet and will be removed from this game-day roster."}
+        </AlertDialog.Description>
         <div className="mt-4 flex justify-end gap-2">
-          <button autoFocus className="h-10 rounded-lg border border-neutral-700 bg-neutral-950 px-4 text-xs font-bold text-neutral-200 focus:outline-none focus:ring-2 focus:ring-neutral-500" type="button" onClick={onCancel}>Cancel</button>
-          <button className="h-10 rounded-lg border border-red-500/50 bg-red-500/15 px-4 text-xs font-bold text-red-200 focus:outline-none focus:ring-2 focus:ring-red-500/50" type="button" onClick={onConfirm}>Remove player</button>
+          <AlertDialog.Cancel className="h-10 rounded-lg border border-neutral-700 bg-neutral-950 px-4 text-xs font-bold text-neutral-200" onClick={onCancel}>Cancel</AlertDialog.Cancel>
+          <AlertDialog.Action className="h-10 rounded-lg border border-red-500/50 bg-red-500/15 px-4 text-xs font-bold text-red-200" onClick={onConfirm}>Remove player</AlertDialog.Action>
         </div>
-      </div>
-    </div>
+      </AlertDialog.Content>
+      </AlertDialog.Portal>
+    </AlertDialog.Root>
   );
 }
 
@@ -7899,6 +7939,7 @@ function applyStoredGameDayRoster(match: LiveMatch): LiveMatch {
             name: storedPlayer.name,
             number: storedPlayer.number,
             present: storedPlayer.present,
+            removedFromRoster: storedPlayer.removedFromRoster,
           }
         : storedPlayer;
     });

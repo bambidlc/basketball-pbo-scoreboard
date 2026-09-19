@@ -263,7 +263,64 @@ try {
     assert.equal(client.playerCreates.length, 2);
   }
 
-  process.stdout.write("Player sync contract tests passed: create, verify, safe retry, team authority, same-jersey identity safety, archived-number reuse, numeric duplicate validation, and absent-player history.\n");
+  {
+    const client = new MockOdooClient([
+      storedPlayer({ id: 101, jersey: 7, name: 'Away Player', team: 10 }), homeStored,
+    ]);
+    const match = makeMatch({ awayPlayer: makePlayer({ id: 101, number: '7', name: 'Away Player' }), homePlayer });
+    assert.equal((await saveGameDayRoster(client, match)).saved, true);
+    assert.equal(client.playerWrites.length, 0, 'unchanged players must not generate writes');
+    match.away.bench[0].name = 'Edited Player';
+    assert.equal((await saveGameDayRoster(client, match)).saved, true);
+    assert.equal(client.playerWrites.length, 1, 'only the edited player should be written');
+  }
+
+  {
+    const s = await vite.ssrLoadModule('/src/api/schema.ts');
+    const { MODELS: M, ATTENDANCE: A } = s;
+    const fields = { [M.game]: [...s.GAME_FIELDS, ...s.GAME_OPTIONAL_FIELDS], [M.gameAttendance]: s.ATTENDANCE_FIELDS, [M.gameEvent]: s.GAME_EVENT_FIELDS, [M.playerGameStat]: s.PLAYER_STAT_FIELDS };
+    class AttendanceClient extends MockOdooClient {
+      attendance = []; attendanceLookups = 0; attendanceWrites = 0; attendanceCreates = 0;
+      async searchRead(model, domain) {
+        if (model === 'ir.model') return Object.keys(fields).map(model => ({ model }));
+        if (model === 'ir.model.fields') return Object.entries(fields).flatMap(([model, names]) => names.map(name => ({ model, name })));
+        if (model === M.gameAttendance) { this.attendanceLookups++; return this.attendance.map(row => ({ ...row })); }
+        return super.searchRead(model, domain);
+      }
+      async write(model, ids, vals) {
+        if (model !== M.gameAttendance) return super.write(model, ids, vals);
+        this.attendanceWrites++;
+        for (const row of this.attendance) if (ids.includes(row.id)) Object.assign(row, vals);
+        return true;
+      }
+      async create(model, vals) {
+        if (model !== M.gameAttendance) return super.create(model, vals);
+        this.attendanceCreates++;
+        const id = 500 + this.attendance.length;
+        this.attendance.push({ id, ...vals }); return id;
+      }
+    }
+    const client = new AttendanceClient([storedPlayer({ id: 101, jersey: 7, name: 'Away Player', team: 10 }), homeStored]);
+    const match = makeMatch({ awayPlayer: makePlayer({ id: 101, number: '7', name: 'Away Player' }), homePlayer });
+    assert.equal((await saveGameDayRoster(client, match)).saved, true);
+    assert.equal(client.attendanceLookups, 1, 'one attendance lookup covers both teams');
+    assert.equal(client.attendanceCreates, 2);
+    assert.equal((await saveGameDayRoster(client, match)).saved, true);
+    assert.equal(client.attendanceWrites, 0, 'unchanged attendance should not be rewritten');
+    match.away.bench[0].present = false;
+    match.away.bench[0].removedFromRoster = true;
+    assert.equal((await saveGameDayRoster(client, match)).saved, true);
+    assert.equal(client.attendanceWrites, 1);
+    assert.equal(client.attendance.find(row => row[A.player] === 101)[A.present], false);
+    assert.equal(client.players.length, 2, 'game removal preserves permanent player records');
+    match.away.bench[0].present = true;
+    match.away.bench[0].removedFromRoster = false;
+    assert.equal((await saveGameDayRoster(client, match)).saved, true);
+    assert.equal(client.attendance.find(row => row[A.player] === 101)[A.present], true);
+    assert.equal(client.attendanceCreates, 2, 'restore does not duplicate attendance');
+  }
+
+  process.stdout.write("Player sync contract tests passed, including unchanged roster/attendance writes, edit-only saves, batch attendance lookup, and reversible game removal.\n");
 } finally {
   await vite.close();
 }

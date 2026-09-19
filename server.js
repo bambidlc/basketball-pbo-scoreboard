@@ -21,6 +21,11 @@ import { request as httpRequest } from "node:http";
 import { readFile, stat } from "node:fs/promises";
 import { extname, join, normalize, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { gzip } from "node:zlib";
+import { promisify } from "node:util";
+
+const compress = promisify(gzip);
+const assetCache = new Map();
 
 const ROOT_DIR = fileURLToPath(new URL(".", import.meta.url));
 const DIST_DIR = join(ROOT_DIR, "dist");
@@ -75,7 +80,6 @@ async function serveStatic(req, res) {
     filePath = join(DIST_DIR, "index.html");
   }
 
-  let usedFallback = false;
   try {
     const stats = await stat(filePath);
     if (stats.isDirectory()) {
@@ -83,15 +87,30 @@ async function serveStatic(req, res) {
     }
   } catch {
     filePath = join(DIST_DIR, "index.html");
-    usedFallback = true;
   }
 
   try {
-    const data = await readFile(filePath);
+    let cached = assetCache.get(filePath);
+    if (!cached) {
+      const data = await readFile(filePath);
+      const compressible = /\.(?:html|js|mjs|css|json|svg|webmanifest)$/.test(filePath);
+      cached = { data, gzip: compressible && data.length > 1024 ? await compress(data) : undefined };
+      if (assetCache.size < 100) assetCache.set(filePath, cached);
+    }
     const type = MIME_TYPES[extname(filePath).toLowerCase()] || "application/octet-stream";
     const isHashedAsset = filePath.includes(`${sep}assets${sep}`);
-    send(res, usedFallback ? 200 : 200, data, {
+    const acceptsGzip = (req.headers["accept-encoding"] || "").split(",").some((encoding) => {
+      const [name, ...parameters] = encoding.trim().toLowerCase().split(";");
+      const quality = parameters.find((parameter) => parameter.trim().startsWith("q="));
+      return name === "gzip" && (!quality || Number(quality.trim().slice(2)) > 0);
+    });
+    const useGzip = cached.gzip && acceptsGzip;
+    const body = useGzip ? cached.gzip : cached.data;
+    send(res, 200, req.method === "HEAD" ? undefined : body, {
       "Content-Type": type,
+      "Content-Length": body.length,
+      "Vary": "Accept-Encoding",
+      ...(useGzip ? { "Content-Encoding": "gzip" } : {}),
       "Cache-Control": isHashedAsset ? "public, max-age=31536000, immutable" : "no-cache",
     });
   } catch {
@@ -132,12 +151,17 @@ function proxyOdoo(req, res) {
   };
 
   const upstream = doRequest(options, (upstreamRes) => {
-    res.writeHead(upstreamRes.statusCode || 502, upstreamRes.headers);
+    if (res.destroyed) { upstreamRes.destroy(); return; }
+    const publicClubThumbnail = /^\/web\/image\/x_club\/\d+\/x_studio_image\/96x96$/.test(subPath) && upstreamRes.statusCode === 200;
+    res.writeHead(upstreamRes.statusCode || 502, { ...upstreamRes.headers, "cache-control": publicClubThumbnail ? "public, max-age=300" : "no-store" });
     upstreamRes.pipe(res);
   });
 
-  upstream.on("error", (error) => {
-    send(res, 502, JSON.stringify({ error: "Upstream request failed.", detail: String(error?.message ?? error) }), {
+  upstream.setTimeout(22000, () => upstream.destroy(new Error("Upstream timeout")));
+  res.on("close", () => { if (!res.writableEnded) upstream.destroy(); });
+  upstream.on("error", () => {
+    if (res.headersSent || res.destroyed) { res.destroy(); return; }
+    send(res, 502, JSON.stringify({ error: "Upstream request failed. Please retry." }), {
       "Content-Type": "application/json; charset=utf-8",
     });
   });
@@ -156,7 +180,7 @@ const server = createServer((req, res) => {
 
 server.listen(PORT, () => {
   console.log(`[server] listening on :${PORT}`);
-  console.log(`[server] proxying ${PROXY_PREFIX}/* -> ${ODOO_URL || "(ODOO_URL not set)"}`);
+  console.log(`[server] proxy ${ODOO_URL ? "configured" : "not configured"}`);
   if (!ODOO_API_KEY) {
     console.warn("[server] warning: ODOO_API_KEY is not set; /odoo requests will be unauthenticated.");
   }

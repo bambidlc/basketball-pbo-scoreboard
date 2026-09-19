@@ -80,6 +80,7 @@ export type Player = {
   points: number;
   position?: string;
   present?: boolean;
+  removedFromRoster?: boolean;
   starter?: boolean;
   q1: number;
   q2: number;
@@ -279,6 +280,7 @@ type PlayerStatSaveResult = {
 };
 
 const capabilityCache = new WeakMap<OdooClient, Promise<SchemaCapabilities>>();
+const clubCache = new WeakMap<OdooClient, Map<number, { expires: number; record: OdooRecord }>>();
 const statUpsertQueues = new WeakMap<OdooClient, Map<string, Promise<number | undefined>>>();
 
 export const fallbackMatch: LiveMatch = {
@@ -366,8 +368,8 @@ export async function loadMatchOptions(client: OdooClient): Promise<MatchOption[
     { limit: 500, order: `${GAME.datetime} desc` },
   );
   const gameIds = games.map((game) => numberValue(game.id)).filter((id) => id > 0);
-  const suspensionEvents = gameIds.length > 0
-    ? await client.searchRead<OdooRecord>(
+  const suspensionRequest = gameIds.length > 0
+    ? client.searchRead<OdooRecord>(
         MODELS.gameEvent,
         [
           [GAME_EVENT.game, "in", gameIds],
@@ -377,14 +379,6 @@ export async function loadMatchOptions(client: OdooClient): Promise<MatchOption[
         { limit: 2000, order: "id desc" },
       ).catch(() => [] as OdooRecord[])
     : [];
-  const suspensionNoteByGameId = new Map<number, string>();
-  for (const event of suspensionEvents) {
-    const gameId = relationId(event[GAME_EVENT.game]);
-    const reason = stringValue(event[GAME_EVENT.note]).trim();
-    if (gameId && reason && !suspensionNoteByGameId.has(gameId)) {
-      suspensionNoteByGameId.set(gameId, reason);
-    }
-  }
 
   const teamIds = uniqueNumbers(
     games.flatMap((game) => [
@@ -396,6 +390,12 @@ export async function loadMatchOptions(client: OdooClient): Promise<MatchOption[
     ? await client.read<OdooRecord>(MODELS.team, teamIds, TEAM_FIELDS)
     : [];
   const clubIdentityByTeamId = await loadTeamClubIdentity(client, teams);
+  const suspensionNoteByGameId = new Map<number, string>();
+  for (const event of await suspensionRequest) {
+    const gameId = relationId(event[GAME_EVENT.game]);
+    const reason = stringValue(event[GAME_EVENT.note]).trim();
+    if (gameId && reason && !suspensionNoteByGameId.has(gameId)) suspensionNoteByGameId.set(gameId, reason);
+  }
 
   return games
     .map((game): MatchOption | undefined => {
@@ -649,6 +649,18 @@ export async function saveGameAttendance(
       };
     }
 
+    // One lookup for the entire game replaces a lookup per player. Compare values so
+    // an unchanged roster does not issue dozens of redundant attendance writes.
+    const existingAttendance = await client.searchRead<OdooRecord>(
+      MODELS.gameAttendance, [[ATTENDANCE.game, "=", match.gameId]],
+      filterReadableFields(ATTENDANCE_FIELDS, capabilities.gameAttendance),
+      { order: "id desc" },
+    );
+    const attendanceByPlayer = new Map<number, OdooRecord>();
+    for (const row of existingAttendance) {
+      const id = relationId(row[ATTENDANCE.player]);
+      if (id && !attendanceByPlayer.has(id)) attendanceByPlayer.set(id, row);
+    }
     let saved = 0;
     for (const side of ["away", "home"] as TeamId[]) {
       const team = match[side];
@@ -674,7 +686,22 @@ export async function saveGameAttendance(
           continue;
         }
 
-        await upsertAttendanceRow(client, match, player, values);
+        const existing = attendanceByPlayer.get(player.id);
+        const changed = !existing || Object.entries(values).some(([field, value]) =>
+          (field === ATTENDANCE.team ? relationId(existing[field]) : existing[field]) !== value,
+        );
+        if (changed) {
+          const id = numberValue(existing?.id);
+          if (id) {
+            const written = await client.write(MODELS.gameAttendance, [id], values);
+            if (!written) throw new Error("Attendance update was not confirmed.");
+          } else {
+            await client.create(MODELS.gameAttendance, {
+              ...values, [ATTENDANCE.game]: match.gameId, [ATTENDANCE.player]: player.id,
+              [ATTENDANCE.name]: `${match.matchName} - ${player.name}`,
+            });
+          }
+        }
         saved += 1;
       }
     }
@@ -823,7 +850,7 @@ export async function saveGameDayRoster(
               );
             },
           );
-          if (collision) {
+          if (collision && (player.present ?? true)) {
             throw jerseyCollisionError(team, jersey, collision);
           }
         } else {
@@ -856,7 +883,11 @@ export async function saveGameDayRoster(
         if (!playerId) {
           throw new Error(`Could not sync #${number} ${name}.`);
         }
-        if (!created) {
+        const stored = serverById.get(playerId);
+        const changed = !stored || Object.entries(values).some(([field, value]) =>
+          (field === PLAYER.team ? relationId(stored[field]) : stored[field]) !== value,
+        );
+        if (!created && changed) {
           const written = await client.write(MODELS.player, [playerId], values);
           if (!written) {
             throw new Error(`Odoo did not confirm the update for #${number} ${name}.`);
@@ -1632,7 +1663,14 @@ async function loadTeamClubIdentity(
   }
 
   try {
-    const clubs = await client.read<OdooRecord>(MODELS.club, clubIds, CLUB_FIELDS);
+    let cache = clubCache.get(client);
+    if (!cache) { cache = new Map(); clubCache.set(client, cache); }
+    const missing = clubIds.filter((id) => (cache.get(id)?.expires ?? 0) <= Date.now());
+    if (missing.length) {
+      const records = await client.read<OdooRecord>(MODELS.club, missing, CLUB_FIELDS);
+      for (const record of records) cache.set(numberValue(record.id), { record, expires: Date.now() + 300000 });
+    }
+    const clubs = clubIds.flatMap((id) => cache.get(id)?.record ? [cache.get(id)!.record] : []);
     const identityByClubId = new Map<number, TeamClubIdentity>();
 
     for (const club of clubs) {
@@ -1645,7 +1683,9 @@ async function loadTeamClubIdentity(
       const textColor = resolveClubColor(club[CLUB.secondaryColor]);
       const accentColor = resolveClubColor(club[CLUB.accentColor]);
       const clubName = stringValue(club[CLUB.name]) || stringValue(club.display_name) || undefined;
-      const logoUrl = binaryImageDataUrl(club[CLUB.image], club[CLUB.logoFilename]);
+      // Full-size base64 logos made the season payload megabytes large. Thumbnails
+      // load separately, lazily, and can be reused by the browser's image cache.
+      const logoUrl = client.clubLogoUrl(clubId);
       identityByClubId.set(clubId, { accentColor, clubName, color, logoUrl, textColor });
     }
 
@@ -1660,38 +1700,6 @@ async function loadTeamClubIdentity(
   }
 
   return byTeamId;
-}
-
-function binaryImageDataUrl(value: unknown, filenameValue?: unknown): string | undefined {
-  if (typeof value !== "string") {
-    return undefined;
-  }
-
-  const raw = value.trim();
-  if (!raw) {
-    return undefined;
-  }
-  if (raw.startsWith("data:image/")) {
-    return raw;
-  }
-
-  // A bin_size context can return labels such as "18.2 KB" instead of image bytes.
-  // Those are deliberately ignored so the initials fallback remains usable.
-  if (raw.length < 16 || !/^[A-Za-z0-9+/=\r\n]+$/.test(raw)) {
-    return undefined;
-  }
-
-  const filename = stringValue(filenameValue).toLowerCase();
-  const mime = raw.startsWith("/9j/") || /\.jpe?g$/.test(filename)
-    ? "image/jpeg"
-    : raw.startsWith("R0lGOD") || filename.endsWith(".gif")
-      ? "image/gif"
-      : raw.startsWith("UklGR") || filename.endsWith(".webp")
-        ? "image/webp"
-        : raw.startsWith("PHN2Zy") || filename.endsWith(".svg")
-          ? "image/svg+xml"
-          : "image/png";
-  return `data:${mime};base64,${raw.replace(/\s/g, "")}`;
 }
 
 function normalizePlayer(
@@ -2047,41 +2055,6 @@ async function saveGameFlowFields(
   }
 }
 
-async function upsertAttendanceRow(
-  client: OdooClient,
-  match: LiveMatch,
-  player: Player,
-  values: Record<string, unknown>,
-) {
-  if (player.attendanceId) {
-    await client.write(MODELS.gameAttendance, [player.attendanceId], values);
-    return player.attendanceId;
-  }
-
-  const [existing] = await client.searchRead<OdooRecord>(
-    MODELS.gameAttendance,
-    [
-      [ATTENDANCE.game, "=", match.gameId],
-      [ATTENDANCE.player, "=", player.id],
-    ],
-    ["id"],
-    { limit: 1, order: "id desc" },
-  );
-  const existingId = numberValue(existing?.id);
-
-  if (existingId) {
-    await client.write(MODELS.gameAttendance, [existingId], values);
-    return existingId;
-  }
-
-  return client.create(MODELS.gameAttendance, {
-    ...values,
-    [ATTENDANCE.game]: match.gameId,
-    [ATTENDANCE.player]: player.id,
-    [ATTENDANCE.name]: `${match.matchName} - ${player.name}`,
-  });
-}
-
 async function saveGameSetupFields(
   client: OdooClient,
   match: LiveMatch,
@@ -2214,6 +2187,8 @@ async function discoverSchemaCapabilities(client: OdooClient): Promise<SchemaCap
       },
     };
   } catch {
+    // A temporary outage must not permanently disable optional attendance/clock fields.
+    capabilityCache.delete(client);
     return fallback;
   }
 }
