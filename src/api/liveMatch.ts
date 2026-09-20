@@ -237,6 +237,7 @@ export type SaveMatchActionResult = {
   opponentTurnoverStatId?: number;
   playerStatId?: number;
   saved: boolean;
+  rosterVerified?: boolean;
 };
 
 export type SaveMatchCorrectionInput = {
@@ -489,6 +490,7 @@ export async function saveMatchAction(
       saved: true,
     };
   } catch (error) {
+    if (error instanceof MissingSchemaFieldsError) capabilityCache.delete(client);
     return {
       log: createLog("error", "Action sync failed", getErrorMessage(error)),
       saved: false,
@@ -961,6 +963,7 @@ export async function saveGameDayRoster(
       ),
       match: resolvedMatch,
       saved: !attendanceNeedsRetry,
+      rosterVerified: attendanceResult.saved,
     };
   } catch (error) {
     return {
@@ -1822,7 +1825,7 @@ async function savePlayerStat(
 
   const supportedFullValues = filterWritableValues(fullValues, capabilities.playerGameStat);
   if (!fieldsAreSame(supportedFullValues, fullValues)) {
-    throw new Error("Faltan campos de estadísticas en Odoo; la jugada se conserva pendiente en este dispositivo.");
+    throw new MissingSchemaFieldsError(MODELS.playerGameStat, Object.keys(fullValues).filter(field => !capabilities.playerGameStat.fields.has(field)));
   }
 
   if (Object.keys(supportedFullValues).length === 0) {
@@ -1958,7 +1961,7 @@ async function saveGameEvent(
   try {
     const marker = input.operationId ? `[pbo-sync:${input.operationId}]` : undefined;
     if (marker) {
-      if (!capabilities.gameEvent.fields.has(GAME_EVENT.note)) throw new Error("Falta el campo de notas para verificar la jugada.");
+      if (!capabilities.gameEvent.fields.has(GAME_EVENT.note)) throw new MissingSchemaFieldsError(MODELS.gameEvent, [GAME_EVENT.note]);
       const existing = await client.searchRead<OdooRecord>(MODELS.gameEvent,
         [[GAME_EVENT.game, "=", input.match.gameId], [GAME_EVENT.note, "like", marker]], ["id"], { limit: 1 });
       if (existing[0]?.id) return { eventId: existing[0].id, message: "Jugada ya confirmada en Odoo." };
@@ -2093,6 +2096,13 @@ function playerToStatValues(player: Player) {
     [PLAYER_STAT.twoPointersAttempted]: player.twoPointersAttempted,
     [PLAYER_STAT.twoPointersMade]: player.twoPointersMade,
   };
+}
+
+class MissingSchemaFieldsError extends Error {
+  constructor(model: string, fields: string[]) {
+    super(`Faltan campos en Odoo: ${model}.${fields.join(", ")}. La jugada sigue guardada aquí; se comprobarán los campos al reintentar.`);
+    this.name = "MissingSchemaFieldsError";
+  }
 }
 
 function getSchemaCapabilities(client: OdooClient) {

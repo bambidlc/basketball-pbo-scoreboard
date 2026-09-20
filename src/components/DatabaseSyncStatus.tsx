@@ -1,11 +1,14 @@
 import { cn } from "../lib/cn";
 
-export function DatabaseSyncStatus({ online, enabled, pending, error, lastSaved, retrying, reading, localBackupFailed, pendingLabel, onRetry, onExport, onCorrectRoster }: {
+export function DatabaseSyncStatus({ online, enabled, pending, error, lastSaved, retrying, reading, localBackupFailed, pendingLabel, otherPending = 0, otherError, rosterStatus, onRetry, onExport, onCorrectRoster }: {
   online: boolean; enabled: boolean; pending: number; error?: string; lastSaved?: number;
   retrying: boolean; reading: boolean; onRetry: () => void; onExport: () => void;
   localBackupFailed?: boolean;
   pendingLabel?: string;
   onCorrectRoster?: () => void;
+  otherPending?: number;
+  otherError?: string;
+  rosterStatus?: string;
 }) {
   const label = !enabled ? "Modo local · sin base de datos"
     : !online ? "Sin internet · guardado en este dispositivo"
@@ -15,16 +18,20 @@ export function DatabaseSyncStatus({ online, enabled, pending, error, lastSaved,
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
       <span role="status" className={cn("font-semibold", pending || error ? "text-amber-300" : lastSaved ? "text-lime-300" : "text-neutral-300")}>{label}</span>
       <span className="text-neutral-400">Internet: {online ? "disponible" : "sin conexión"}</span>
-      <span className="font-semibold tabular-nums text-neutral-200">{pending} pendientes</span>
+      <span className="font-semibold tabular-nums text-neutral-200">Este partido: {pending} pendientes</span>
+      {otherPending > 0 && <span className="tabular-nums text-neutral-400">Otros partidos: {otherPending} pendientes</span>}
       {lastSaved && <span className="tabular-nums text-neutral-400">Último guardado: {new Date(lastSaved).toLocaleTimeString()}</span>}
       <button type="button" onClick={onRetry} disabled={!enabled || !online || retrying}
         className="min-h-9 rounded-md border border-neutral-700 px-2 font-semibold text-neutral-200 disabled:opacity-50">{retrying ? "Sincronizando…" : "Reintentar"}</button>
       <button type="button" onClick={onExport} className="min-h-9 rounded-md border border-neutral-700 px-2 text-neutral-300">Respaldar datos</button>
-      {onCorrectRoster && <button type="button" onClick={onCorrectRoster} className="min-h-9 rounded-md border border-amber-700 px-2 font-semibold text-amber-300">Corregir plantilla</button>}
+      {onCorrectRoster && <button type="button" onClick={onCorrectRoster} className="min-h-9 rounded-md border border-amber-700 px-2 font-semibold text-amber-300">Revisar / corregir plantilla</button>}
     </div>
     {error && pending > 0 && <p className="mt-1 break-words text-pretty text-amber-300">No se pudo guardar: {error}</p>}
     {pending > 0 && pendingLabel && <p className="mt-1 text-pretty text-neutral-400">Primero en cola: {pendingLabel}</p>}
+    {rosterStatus && <p className="mt-1 text-pretty text-neutral-300">{rosterStatus}</p>}
+    {otherError && <p className="mt-1 break-words text-pretty text-amber-300">Pendiente en otro partido: {otherError}</p>}
+    {(pending > 0 || otherPending > 0) && <p className="mt-1 text-pretty text-neutral-400">Puedes seguir anotando y preparar otro partido mientras se sincroniza.</p>}
     {localBackupFailed ? <p role="alert" className="mt-1 text-pretty font-semibold text-red-300">No se pudo guardar el respaldo local. No recargues ni cierres esta página; descarga «Respaldar datos» ahora.</p>
-      : pending > 0 && <p className="mt-1 text-pretty text-neutral-400">El marcador local incluye cambios pendientes. No borres los datos de este navegador.</p>}
+      : (pending > 0 || otherPending > 0) && <p className="mt-1 text-pretty text-neutral-400">El marcador local incluye cambios pendientes. No borres los datos de este navegador.</p>}
   </div>;
 }

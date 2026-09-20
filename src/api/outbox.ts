@@ -59,8 +59,38 @@ export function operationGameId(op: OutboxOp) {
 }
 
 // Keep FIFO within a game; a rejected roster must not block another court/game.
-export function nextPendingOperation(ops: OutboxOp[], blockedGames: Set<number | undefined>) {
-  return ops.find(op => !blockedGames.has(operationGameId(op)));
+export function nextPendingOperation(ops: OutboxOp[], blockedGames: Set<number | undefined>, lastGameId?: number) {
+  const heads = new Map<number | undefined, OutboxOp>();
+  for (const op of ops) {
+    const gameId = operationGameId(op);
+    if (!blockedGames.has(gameId) && !heads.has(gameId)) heads.set(gameId, op);
+  }
+  const ready = [...heads.values()];
+  // A newly prepared roster gets a turn without waiting for another game's backlog.
+  // Only game heads are eligible, so plays never pass their own prerequisites.
+  const nextIndex = ready.findIndex(op => operationGameId(op) === lastGameId) + 1;
+  return ready.find(op => op.kind === "roster") ?? ready[nextIndex % ready.length];
+}
+
+export function pendingGameChanged(before: OutboxOp[], after: OutboxOp[], gameId: number | undefined) {
+  const previous = before.filter(op => operationGameId(op) === gameId);
+  const next = after.filter(op => operationGameId(op) === gameId);
+  return previous.length !== next.length || previous.some((op, index) => op !== next[index]);
+}
+
+export type DatabaseReceipt = { savedAt: number; rosterSavedAt?: number; rosterSignature?: string };
+
+// Excludes points/clock and resolved numeric IDs for local players. Those change
+// during play without changing the roster that was confirmed by the database.
+export function rosterSignature(match: LiveMatch) {
+  return JSON.stringify({ gameId: match.gameId, teams: (["away", "home"] as TeamId[]).map(side => {
+    const team = match[side];
+    const starters = new Set(team.players.map(playerKey));
+    return { id: team.id, coach: team.coach?.trim() ?? "", players: [...team.players, ...team.bench].map(player => ({
+      key: playerKey(player), name: player.name.trim().replace(/\s+/g, " "), number: Number(player.number),
+      present: player.present ?? true, starter: starters.has(playerKey(player)), removed: Boolean(player.removedFromRoster),
+    })).sort((a, b) => a.key.localeCompare(b.key)) };
+  }) });
 }
 
 // Replace the obsolete roster at its original position, ahead of dependent plays.

@@ -28,6 +28,7 @@ const FIELD_PLAN = [
       field("x_studio_steals", "Steals", "integer"),
       field("x_studio_blocks", "Blocks", "integer"),
       field("x_studio_turnovers", "Turnovers", "integer"),
+      field("x_studio_tech_fouls", "Technical Fouls", "integer"),
       field("x_studio_ftm", "Free Throws Made", "integer"),
       field("x_studio_fta", "Free Throws Attempted", "integer"),
       field("x_studio_2pm", "2PT Made", "integer"),

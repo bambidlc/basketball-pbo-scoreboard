@@ -8,7 +8,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 const vite = await createServer({ appType: "custom", logLevel: "silent", server: { middlewareMode: true } });
 try {
-  const { restorePendingMatch, applyPendingResult, trimMatchForOutbox, operationGameId, nextPendingOperation, queueRosterCorrection } = await vite.ssrLoadModule("/src/api/outbox.ts");
+  const { restorePendingMatch, applyPendingResult, trimMatchForOutbox, operationGameId, nextPendingOperation, pendingGameChanged, queueRosterCorrection, rosterSignature } = await vite.ssrLoadModule("/src/api/outbox.ts");
   const { playerKey } = await vite.ssrLoadModule("/src/scoring.ts");
   const { fallbackMatch, saveMatchAction } = await vite.ssrLoadModule("/src/api/liveMatch.ts");
   const schema = await vite.ssrLoadModule("/src/api/schema.ts");
@@ -47,10 +47,11 @@ try {
     enabled = true;
     game = { id: 260, [G.awayScore]: 0, [G.homeScore]: 0 };
     stats = []; events = []; failEvent = false; lostEventResponse = false; rejectScore = false;
+    missingTechField = false;
     async searchRead(model, domain) {
       const fields = { [M.game]: Object.values(G), [M.playerGameStat]: Object.values(P), [M.gameEvent]: Object.values(E) };
       if (model === "ir.model") return Object.keys(fields).map(model => ({ model }));
-      if (model === "ir.model.fields") return Object.entries(fields).flatMap(([model, names]) => names.map(name => ({ model, name })));
+      if (model === "ir.model.fields") return Object.entries(fields).flatMap(([model, names]) => names.filter(name => !this.missingTechField || name !== P.techFouls).map(name => ({ model, name })));
       if (model === M.playerGameStat) return this.stats;
       if (model === M.gameEvent) return this.events.filter(row => row[E.game] === 260 && row[E.note]?.includes(domain.find(term => term[0] === E.note)?.[2]));
       return [];
@@ -88,13 +89,28 @@ try {
   assert.equal(rejected.events.length, 0);
   assert.equal((await saveMatchAction(new Client(), { ...input(), player: { ...actor, id: undefined } })).saved, false);
 
+  const schemaRepair = new Client(); schemaRepair.missingTechField = true;
+  const technical = { ...input(0), action: "tech foul", shotType: undefined, label: "Tech · #4", player: { ...actor, fouls: 1, techFouls: 0 } };
+  const missingField = await saveMatchAction(schemaRepair, technical);
+  assert.equal(missingField.saved, false);
+  assert.match(missingField.log.detail, /x_studio_tech_fouls/);
+  assert.equal(schemaRepair.events.length, 0);
+  schemaRepair.missingTechField = false;
+  assert.equal((await saveMatchAction(schemaRepair, technical)).saved, true, "next retry rediscovers the repaired schema without reloading");
+  assert.equal((await saveMatchAction(schemaRepair, technical)).saved, true);
+  assert.equal(schemaRepair.stats[0][P.techFouls], 1);
+  assert.equal(schemaRepair.stats[0][P.fouls], 2);
+  assert.equal(schemaRepair.events.length, 1, "technical retry is idempotent");
+
   // Execute the application's actual FIFO flusher with a failing head and an appended play.
   const source = ts.createSourceFile("App.tsx", readFileSync(new URL("../src/App.tsx", import.meta.url), "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
-  let flusher, flowWriter, cacheReader, rosterReader, refreshReader;
+  let flusher, flowWriter, cacheReader, rosterReader, refreshReader, pendingWriter, confirmationWriter;
   function visit(node) {
     if (ts.isVariableDeclaration(node) && node.name.getText(source) === "flushOutbox") flusher = node.initializer.getText(source);
     if (ts.isVariableDeclaration(node) && node.name.getText(source) === "syncFlowState") flowWriter = node.initializer.getText(source);
     if (ts.isVariableDeclaration(node) && node.name.getText(source) === "refreshMatch") refreshReader = node.initializer.getText(source);
+    if (ts.isVariableDeclaration(node) && node.name.getText(source) === "setPendingOps") pendingWriter = node.initializer.getText(source);
+    if (ts.isVariableDeclaration(node) && node.name.getText(source) === "confirmDatabaseSave") confirmationWriter = node.initializer.getText(source);
     if (ts.isFunctionDeclaration(node) && node.name?.text === "readStoredLiveMatch") cacheReader = node.getText(source);
     if (ts.isFunctionDeclaration(node) && node.name?.text === "applyStoredGameDayRoster") rosterReader = node.getText(source);
     ts.forEachChild(node, visit);
@@ -104,7 +120,7 @@ try {
   const context = vm.createContext({ apiClient: { enabled: true }, flushingRef: { current: false }, inFlightOpIdsRef: { current: new Set() },
     pendingOpsRef: { current: [{ id: "a", kind: "action", attempts: 0, input: input() }, { id: "b", kind: "flow", attempts: 0, match: match(2), includeScores: true }] },
     navigator: { onLine: true }, useCallback: fn => fn, linkServerEventId: () => {}, reconcileRosterSync: () => {}, appendLog: () => {}, operationGameId, nextPendingOperation,
-    setLastDatabaseSave: () => {}, setConnectionStatus: () => {}, setResultFeedback: () => {}, createLog: (_level, message) => ({ message }) });
+    confirmDatabaseSave: () => {}, setConnectionStatus: () => {}, setResultFeedback: () => {}, createLog: (_level, message) => ({ message }) });
   context.setPendingOps = fn => { context.pendingOpsRef.current = fn(context.pendingOpsRef.current); };
   context.saveMatchAction = async () => ({ saved: false, log: { level: "error", detail: "Blocked head" } });
   context.saveMatchFlowState = async () => { writes.push("flow"); return { saved: true }; };
@@ -169,6 +185,34 @@ try {
     assert.deepEqual(writes, ["corrected-roster", "prior-play"]);
   }
 
+  // Hundreds of older plays cannot starve a new game's roster or statistics.
+  writes.length = 0;
+  context.pendingOpsRef.current = Array.from({ length: 200 }, (_, i) => ({ ...priorPlay, id: `backlog-${i}` }));
+  context.saveMatchAction = async (_client, action) => {
+    writes.push(action.operationId);
+    if (action.operationId === "backlog-0") context.setPendingOps(ops => [...ops,
+      { id: "new-game-roster", kind: "roster", match: match(), attempts: 0 }, otherPlay]);
+    return { saved: true };
+  };
+  context.saveGameDayRoster = async () => { writes.push("new-game-roster"); return { saved: true, rosterVerified: true }; };
+  await context.flush();
+  assert.deepEqual(writes.slice(0, 4), ["backlog-0", "new-game-roster", "backlog-1", "other-play"]);
+  assert.equal(writes.length, 202);
+  assert.equal(context.pendingOpsRef.current.length, 0);
+
+  const threeGames = [259, 260, 261].flatMap(gameId => Array.from({ length: 3 }, (_, index) => ({
+    ...priorPlay, id: `${gameId}-${index}`, input: { ...priorPlay.input, match: { ...priorGame, gameId } },
+  })));
+  const gameOrder = [];
+  let previousGame;
+  while (threeGames.length) {
+    const op = nextPendingOperation(threeGames, new Set(), previousGame);
+    previousGame = operationGameId(op);
+    gameOrder.push(previousGame);
+    threeGames.splice(threeGames.indexOf(op), 1);
+  }
+  assert.deepEqual(gameOrder, [259, 260, 261, 259, 260, 261, 259, 260, 261], "three backlogged games all get turns");
+
   let persisted;
   Object.assign(context, { trimMatchForOutbox, restorePendingMatch, matchRef: { current: restored }, makeOpId: () => "quarter-transition",
     flushOutbox: context.flush, persistStoredLiveMatch: value => { persisted = structuredClone(value); } });
@@ -210,6 +254,8 @@ try {
   const refreshContext = vm.createContext({ apiClient: { enabled: true }, apiConfig: { enabled: true }, useCallback: fn => fn,
     customModeRef: { current: false }, mutationRevisionRef: { current: 0 }, pendingOpsRef: { current: [] },
     selectedGameIdRef: { current: 260 }, inFlightRefreshRef: { current: false }, pendingRefreshRef: { current: null },
+    operationGameId, pendingGameChanged, STORAGE_KEYS: { outbox: "queue" }, writeStoredJson: () => true,
+    setLocalBackupFailed() {}, setPendingOpsState() {},
     rateLimitUntilRef: { current: 0 }, clockRunningRef: { current: false }, matchOptionsLoadedRef: { current: true },
     matchOptionsLoadedAtRef: { current: Date.now() }, MATCH_OPTIONS_REFRESH_MS: 1e9, loadedGameIdRef: { current: 259 },
     setIsRefreshing() {}, setConnectionStatus() {}, setMatchOptions() {}, appendLog() {}, isRateLimitLog: () => false,
@@ -235,12 +281,49 @@ try {
   assert.equal(refreshContext.currentMatch.gameId, 260);
   assert.equal(refreshContext.currentMatch.awayScore, 18);
 
+  // Previously each acknowledgement bumped the global revision and discarded this
+  // new game's successful download. Use the real outbox setter to reproduce it.
+  vm.runInContext(ts.transpile(`var updatePending = ${pendingWriter}`, { target: ts.ScriptTarget.ES2022 }), refreshContext);
+  refreshContext.pendingOpsRef.current = Array.from({ length: 200 }, (_, i) => ({ ...priorPlay, id: `old-${i}` }));
+  refreshContext.loadLiveMatch = () => new Promise(resolve => { finishRead = resolve; });
+  const newGameRead = refreshContext.refresh(260);
+  assert.equal(refreshContext.inFlightRefreshRef.current, true, "another game's backlog must not suppress polling");
+  const revision = refreshContext.mutationRevisionRef.current;
+  for (let i = 0; i < 200; i++) refreshContext.updatePending(ops => ops.slice(1));
+  assert.equal(refreshContext.mutationRevisionRef.current, revision);
+  const newGameRoster = match(22);
+  newGameRoster.away.players = [{ ...actor, number: "31" }];
+  finishRead({ source: "api", match: newGameRoster, log: { level: "success" } });
+  await newGameRead;
+  assert.equal(refreshContext.currentMatch.awayScore, 22);
+  assert.equal(refreshContext.currentMatch.away.players[0].number, "31");
+
+  const receipts = vm.createContext({ useCallback: fn => fn, operationGameId, rosterSignature, writeStoredJson: () => true, saved: {} });
+  receipts.setDatabaseReceipts = fn => { receipts.saved = fn(receipts.saved); };
+  vm.runInContext(ts.transpile(`var confirm = ${confirmationWriter}`, { target: ts.ScriptTarget.ES2022 }), receipts);
+  receipts.confirm(priorRoster, true);
+  assert.ok(receipts.saved[259].rosterSignature);
+  assert.equal(receipts.saved[260], undefined, "another game's save is not proof of this game's roster");
+  receipts.confirm({ kind: "roster", match: match() }, false);
+  assert.equal(receipts.saved[260].rosterSignature, undefined, "partial player-only saves must not confirm attendance");
+  receipts.confirm({ kind: "roster", match: match() }, true);
+  assert.equal(receipts.saved[260].rosterSignature, rosterSignature(match()));
+  assert.equal(rosterSignature(match()), rosterSignature({ ...match(), awayScore: 99, clock: "01:00" }));
+  assert.notEqual(rosterSignature(match()), rosterSignature(newGameRoster), "changing the roster invalidates its old receipt");
+
   const { DatabaseSyncStatus } = await vite.ssrLoadModule("/src/components/DatabaseSyncStatus.tsx");
   const html = renderToStaticMarkup(createElement(DatabaseSyncStatus, { online: true, enabled: true, pending: 184, error: "Blocked head", reading: true, onRetry() {}, onExport() {}, onCorrectRoster() {} }));
   assert.match(html, /184 pendientes/);
   assert.match(html, /guardado bloqueado/);
   assert.match(html, /Blocked head/);
-  assert.match(html, /Corregir plantilla/);
+  assert.match(html, /corregir plantilla/);
   assert.doesNotMatch(html, /guardado confirmado/);
+  const otherGameHtml = renderToStaticMarkup(createElement(DatabaseSyncStatus, { online: true, enabled: true, pending: 0,
+    otherPending: 200, otherError: "South vs Cayey: Technical foul", lastSaved: Date.now(), rosterStatus: "Plantilla confirmada en Odoo",
+    onRetry() {}, onExport() {} }));
+  assert.match(otherGameHtml, /Este partido: 0 pendientes/);
+  assert.match(otherGameHtml, /Otros partidos: 200 pendientes/);
+  assert.match(otherGameHtml, /Plantilla confirmada/);
+  assert.doesNotMatch(otherGameHtml, /guardado bloqueado/);
   console.log("Sync reliability passed: 184 offline plays, quarters/reload, roster corrections, in-flight edits, per-game FIFO, failed writes, duplicate-safe retries and truthful status.");
 } finally { await vite.close(); }
