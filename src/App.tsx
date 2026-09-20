@@ -1017,6 +1017,7 @@ function App() {
 
     let lastTick = Date.now();
     const timerId = window.setInterval(() => {
+      if (!clockRunningRef.current) return;
       const now = Date.now();
       const elapsedSeconds = Math.floor((now - lastTick) / 1000);
 
@@ -1821,6 +1822,10 @@ function App() {
       return;
     }
 
+    if (detail.action === "personal foul" || detail.action === "tech foul" || detail.foulOnShot) {
+      stopClockForFoul();
+    }
+
     // Base off the live ref, not the render's `match` closure, so two commits fired from the
     // same handler (e.g. a foul plus its free throws) chain instead of clobbering each other.
     const baseMatch = matchRef.current;
@@ -1996,6 +2001,7 @@ function App() {
   // Pressing FT Made / FT Miss opens a picker of the players currently on court; the chosen
   // shooter (and their team) records the free throw via the explicit-actor path.
   function recordFreeThrow(made: boolean) {
+    stopClockForFoul();
     setFreeThrowPrompt({ made });
   }
 
@@ -2036,6 +2042,7 @@ function App() {
   }
 
   function openTech() {
+    stopClockForFoul();
     setTechOpen(true);
   }
 
@@ -2157,7 +2164,14 @@ function App() {
     });
   }
 
+  function stopClockForFoul() {
+    clockRunningRef.current = false;
+    setIsClockRunning(false);
+    syncFlowState("Foul/free throw clock stopped", matchRef.current);
+  }
+
   function openFoul() {
+    stopClockForFoul();
     setFoulPlayerOpen(true);
   }
 
@@ -2296,6 +2310,9 @@ function App() {
     const lineup = withStarterKeys(current, team, orderedKeys);
     const nextMatch = { ...lineup, events: [...events, ...lineup.events] };
 
+    mutationRevisionRef.current += 1;
+    writeStoredStarterKeys(nextMatch, team);
+    writeStoredGameDayRoster(nextMatch);
     matchRef.current = nextMatch;
     setMatch(nextMatch);
     setUndoStack((stack) => [...undoItems, ...stack].slice(0, UNDO_LIMIT));
@@ -2594,6 +2611,11 @@ function App() {
     }
     canceledEventIdsRef.current.add(eventId);
     const nextMatch = applyPlayerDiscipline(revertMatchAfterAction(matchRef.current, undoItem));
+    if (undoItem.detail.action === "substitution") {
+      mutationRevisionRef.current += 1;
+      writeStoredStarterKeys(nextMatch, undoItem.selectedTeam);
+      writeStoredGameDayRoster(nextMatch);
+    }
     const correctedPlayer = findPlayerByKey(nextMatch[undoItem.selectedTeam], undoItem.playerKey);
     const correctedOpponent = undoItem.detail.opponentTurnoverTeam && undoItem.detail.opponentTurnoverPlayer
       ? findPlayerByKey(
