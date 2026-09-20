@@ -2,6 +2,16 @@ import type { GameEvent, LiveMatch, Player, ShotLocation, Team, TeamId } from ".
 
 export const PLAYER_SUSPENSION_PREFIX = "Suspensión del jugador por este partido: ";
 
+export function computeEqualization(match: Pick<LiveMatch, "away" | "home">): { points: number; team: TeamId } | undefined {
+  const awayPresent = match.away.presentCount;
+  const homePresent = match.home.presentCount;
+  const diff = Math.abs(awayPresent - homePresent);
+  if (diff === 0) return undefined;
+
+  // Award two points per additional present player to the larger squad.
+  return { points: diff * 2, team: awayPresent > homePresent ? "away" : "home" };
+}
+
 export function isPlayerUnavailable(player: Player) {
   return player.fouls >= 5 || player.techFouls >= 2 || Boolean(player.suspensionReason);
 }

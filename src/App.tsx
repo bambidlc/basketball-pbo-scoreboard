@@ -76,7 +76,7 @@ import { ScheduleBrowser } from "./components/ScheduleBrowser";
 import { CourtSvg } from "./components/CourtSvg";
 import { QuickScorePanel, ScoringDialog, ScoringPlayerPicker, ScoringToolbar } from "./components/ScoringControls";
 import { SubstitutionDialog } from "./components/SubstitutionDialog";
-import { applyPlayerDiscipline, isPlayerUnavailable, technicalSuspensionNote, formatGameCategory, BENCH_ORDER, courtOrder, lineupReview, nextEventId, playerKey as getPlayerKey, swappedCourts, type CourtSides, type LineupDrafts, type ScoringView } from "./scoring";
+import { computeEqualization, applyPlayerDiscipline, isPlayerUnavailable, technicalSuspensionNote, formatGameCategory, BENCH_ORDER, courtOrder, lineupReview, nextEventId, playerKey as getPlayerKey, swappedCourts, type CourtSides, type LineupDrafts, type ScoringView } from "./scoring";
 import { cn } from "./lib/cn";
 
 const loadMotionFeatures = () => import("./motionFeatures").then((module) => module.default);
@@ -1567,7 +1567,7 @@ function App() {
     };
 
     // Equalization (puntos de equiparación): at the start of the 3rd quarter the
-    // short-handed team receives 2 points per missing player, evaluated against the
+    // larger squad receives 2 points per additional player, evaluated against the
     // attendance as it stands right now. Applied once and undoable from the feed.
     let nextMatch = baseMatch;
     if (period === 3 && !matchRef.current.equalizationApplied) {
@@ -6322,9 +6322,7 @@ function PreGameDialog({
 }) {
   const awayPresent = match.away.presentCount;
   const homePresent = match.home.presentCount;
-  const diff = Math.abs(awayPresent - homePresent);
-  const shortTeam = diff === 0 ? undefined : awayPresent < homePresent ? match.away : match.home;
-  const eqPoints = diff * 2;
+  const equalization = computeEqualization(match);
   const validationErrors = validateGameDayRoster(match);
 
   return (
@@ -6401,9 +6399,9 @@ function PreGameDialog({
               Attendance · {match.away.label} {awayPresent} vs {match.home.label} {homePresent}
             </div>
             <div className="text-xs font-bold">
-              {shortTeam ? (
+              {equalization ? (
                 <span className="rounded-full border border-amber-500/50 bg-amber-500/10 px-2.5 py-1 text-amber-300">
-                  {shortTeam.name} +{eqPoints} at Q3 · equiparación
+                  {match[equalization.team].name} +{equalization.points} at Q3 · equiparación
                 </span>
               ) : (
                 <span className="text-neutral-500">Even rosters — no equalization</span>
@@ -8252,18 +8250,6 @@ function withPlayerStatId(match: LiveMatch, team: TeamId, playerKey: string, sta
       players: side.players.map(updatePlayer),
     },
   };
-}
-
-function computeEqualization(match: LiveMatch): { points: number; team: TeamId } | undefined {
-  const awayPresent = match.away.presentCount;
-  const homePresent = match.home.presentCount;
-  const diff = Math.abs(awayPresent - homePresent);
-  if (diff === 0) {
-    return undefined;
-  }
-
-  // The short-handed team (fewer present players) receives 2 points per missing player.
-  return { points: diff * 2, team: awayPresent < homePresent ? "away" : "home" };
 }
 
 function applyEqualization(
