@@ -206,6 +206,29 @@ try {
   }
 
   {
+    class PartialClient extends MockOdooClient {
+      failSecond = true;
+      async create(model, values) {
+        if (this.failSecond && this.playerCreates.length === 1) throw new Error("Second player failed");
+        return super.create(model, values);
+      }
+    }
+    const client = new PartialClient([homeStored]);
+    const match = makeMatch({ awayPlayer: makePlayer({ localId: "first-new", name: "First", number: "1" }), homePlayer });
+    match.away.bench.push(makePlayer({ localId: "second-new", name: "Second", number: "2" }));
+    const first = await saveGameDayRoster(client, match);
+    assert.equal(first.saved, false);
+    assert.equal(first.match.away.bench[0].id, 300, "a confirmed ID survives failure later in the same team");
+    first.match.away.bench[0].name = "First Edited";
+    first.match.away.bench[0].number = "3";
+    client.failSecond = false;
+    const retry = await saveGameDayRoster(client, first.match);
+    assert.equal(retry.saved, true);
+    assert.equal(client.playerCreates.length, 2, "editing after partial sync must not duplicate the first player");
+    assert.equal(client.players.find(p => p.id === 300)[FIELD.name], "First Edited");
+  }
+
+  {
     const collision = storedPlayer({ id: 101, jersey: 7, name: "Existing Player", team: 10 });
     const client = new MockOdooClient([collision, homeStored]);
     const match = makeMatch({
@@ -242,6 +265,37 @@ try {
     assert.equal(result.saved, false);
     assert.match(result.log.detail, /assigned more than once/i);
     assert.equal(client.playerCreates.length, 0);
+  }
+
+  {
+    const client = new MockOdooClient([
+      storedPlayer({ id: 101, jersey: 1, name: "Xavier Rodriguez", team: 10 }),
+      storedPlayer({ id: 102, jersey: 2, name: "Current Player", team: 10 }), homeStored,
+    ]);
+    const match = makeMatch({ awayPlayer: makePlayer({ id: 102, name: "Edited Player", number: "1" }), homePlayer });
+    assert.equal((await saveGameDayRoster(client, match)).saved, true,
+      "an unlisted historical player must not block a known player's jersey/name edit");
+    assert.equal(client.players.find(p => p.id === 101)[FIELD.name], "Xavier Rodriguez");
+    assert.equal(client.players.find(p => p.id === 102)[FIELD.name], "Edited Player");
+    assert.equal(client.playerCreates.length, 0);
+    assert.equal(client.playerWrites.some(p => p.id === 101), false);
+  }
+
+  {
+    const client = new MockOdooClient([
+      storedPlayer({ id: 101, jersey: 1, name: "Player One", team: 10 }),
+      storedPlayer({ id: 102, jersey: 2, name: "Player Two", team: 10 }), homeStored,
+    ]);
+    const match = makeMatch({ awayPlayer: makePlayer({ id: 101, name: "Player One", number: "2" }), homePlayer });
+    match.away.bench.push(makePlayer({ id: 102, name: "Player Two", number: "1" }));
+    assert.equal((await saveGameDayRoster(client, match)).saved, true, "jersey swaps validate the final roster, not old server numbers");
+    assert.equal(client.players.find(p => p.id === 101)[FIELD.jersey], 2);
+    assert.equal(client.players.find(p => p.id === 102)[FIELD.jersey], 1);
+    assert.equal(client.playerCreates.length, 0);
+    match.away.bench[0] = { ...match.away.bench[0], present: false, removedFromRoster: true };
+    match.away.bench[1].number = "2";
+    assert.equal((await saveGameDayRoster(client, match)).saved, true, "a removed player's jersey can be reused without deleting their history");
+    assert.equal(client.players.length, 3);
   }
 
   {

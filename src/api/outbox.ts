@@ -1,4 +1,5 @@
-import type { LiveMatch, SaveMatchActionInput } from "./liveMatch";
+import type { LiveMatch, Player, SaveMatchActionInput, TeamId } from "./liveMatch";
+import { playerKey } from "../scoring";
 
 // A durable, FIFO queue of Odoo mutations that have not yet been confirmed synced. While
 // the device is offline (or a write fails), the optimistic local match is the source of
@@ -53,6 +54,48 @@ export type OutboxOp =
 
 let opCounter = 0;
 
+export function operationGameId(op: OutboxOp) {
+  return (op.kind === "action" ? op.input.match : op.match).gameId;
+}
+
+// Keep FIFO within a game; a rejected roster must not block another court/game.
+export function nextPendingOperation(ops: OutboxOp[], blockedGames: Set<number | undefined>) {
+  return ops.find(op => !blockedGames.has(operationGameId(op)));
+}
+
+// Replace the obsolete roster at its original position, ahead of dependent plays.
+// Historical stats/score/clock in those plays must never become the current totals.
+export function queueRosterCorrection(ops: OutboxOp[], correction: Extract<OutboxOp, { kind: "roster" }>): OutboxOp[] {
+  const gameId = correction.match.gameId;
+  const editPlayer = (player: Player, side: TeamId): Player => {
+    const team = correction.match[side];
+    const edited = [...team.players, ...team.bench].find(candidate => playerKey(candidate) === playerKey(player) ||
+      (player.id && candidate.id === player.id));
+    return edited ? { ...player, id: edited.id ?? player.id, name: edited.name, number: edited.number,
+      present: edited.present, removedFromRoster: edited.removedFromRoster } : player;
+  };
+  const editSnapshot = (snapshot: LiveMatch): LiveMatch => ({ ...snapshot,
+    away: { ...snapshot.away, players: snapshot.away.players.map(p => editPlayer(p, "away")), bench: snapshot.away.bench.map(p => editPlayer(p, "away")) },
+    home: { ...snapshot.home, players: snapshot.home.players.map(p => editPlayer(p, "home")), bench: snapshot.home.bench.map(p => editPlayer(p, "home")) },
+  });
+  const result: OutboxOp[] = [];
+  let inserted = false;
+  for (const op of ops) {
+    if (operationGameId(op) !== gameId) { result.push(op); continue; }
+    if (!inserted) { result.push(correction); inserted = true; }
+    if (op.kind === "roster") continue;
+    if (op.kind === "action") result.push({ ...op, lastError: undefined, input: { ...op.input,
+      player: editPlayer(op.input.player, op.input.selectedTeam),
+      opponentTurnoverPlayer: op.input.opponentTurnoverPlayer && op.input.opponentTurnoverTeam
+        ? editPlayer(op.input.opponentTurnoverPlayer, op.input.opponentTurnoverTeam) : op.input.opponentTurnoverPlayer,
+      match: editSnapshot(op.input.match),
+    } });
+    else result.push({ ...op, match: editSnapshot(op.match) });
+  }
+  if (!inserted) result.push(correction);
+  return result;
+}
+
 // Monotonic, collision-free id for a queued op. Time-based prefix keeps ids sortable for
 // debugging; the counter guarantees uniqueness within a session even within the same ms.
 export function makeOpId(): string {
@@ -97,12 +140,18 @@ export function restorePendingMatch(server: LiveMatch, cached: LiveMatch | undef
     if (!server.gameId || snapshot.gameId !== server.gameId || op.kind === "roster") continue;
     restored = { ...server, ...snapshot, events: server.events, syncedAt: server.syncedAt };
     if (op.kind === "action") restored = { ...restored, status: "Live", awayScore: op.input.nextAwayScore, homeScore: op.input.nextHomeScore };
+    if (op.kind === "action" && op.eventId != null && events.has(op.eventId)) {
+      // The queued actor is also authoritative for events created before local IDs
+      // were stored on the feed. Jersey edits must not move an old play to a new player.
+      events.set(op.eventId, { ...events.get(op.eventId)!, playerId: op.input.player.id,
+        playerLocalId: op.input.player.localId, player: `#${op.input.player.number}` });
+    }
     if (op.kind === "action" && op.eventId != null && !events.has(op.eventId)) {
       const input = op.input;
       events.set(op.eventId, { id: op.eventId, action: input.action, label: input.label,
         icon: input.points > 0 ? "made" : input.action.includes("missed") ? "missed" : "rebound",
         period: input.match.period, time: input.match.clock, team: input.selectedTeam,
-        player: `#${input.player.number}`, playerId: input.player.id, points: input.points,
+        player: `#${input.player.number}`, playerId: input.player.id, playerLocalId: input.player.localId, points: input.points,
         score: `${input.nextAwayScore}-${input.nextHomeScore}`, note: input.note,
         shotType: input.shotType, shotLocation: input.shotLocation, issuedByRef: input.issuedByRef });
     }

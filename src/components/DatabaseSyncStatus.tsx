@@ -1,10 +1,11 @@
 import { cn } from "../lib/cn";
 
-export function DatabaseSyncStatus({ online, enabled, pending, error, lastSaved, retrying, reading, localBackupFailed, pendingLabel, onRetry, onExport }: {
+export function DatabaseSyncStatus({ online, enabled, pending, error, lastSaved, retrying, reading, localBackupFailed, pendingLabel, onRetry, onExport, onCorrectRoster }: {
   online: boolean; enabled: boolean; pending: number; error?: string; lastSaved?: number;
   retrying: boolean; reading: boolean; onRetry: () => void; onExport: () => void;
   localBackupFailed?: boolean;
   pendingLabel?: string;
+  onCorrectRoster?: () => void;
 }) {
   const label = !enabled ? "Modo local · sin base de datos"
     : !online ? "Sin internet · guardado en este dispositivo"
@@ -19,6 +20,7 @@ export function DatabaseSyncStatus({ online, enabled, pending, error, lastSaved,
       <button type="button" onClick={onRetry} disabled={!enabled || !online || retrying}
         className="min-h-9 rounded-md border border-neutral-700 px-2 font-semibold text-neutral-200 disabled:opacity-50">{retrying ? "Sincronizando…" : "Reintentar"}</button>
       <button type="button" onClick={onExport} className="min-h-9 rounded-md border border-neutral-700 px-2 text-neutral-300">Respaldar datos</button>
+      {onCorrectRoster && <button type="button" onClick={onCorrectRoster} className="min-h-9 rounded-md border border-amber-700 px-2 font-semibold text-amber-300">Corregir plantilla</button>}
     </div>
     {error && pending > 0 && <p className="mt-1 break-words text-pretty text-amber-300">No se pudo guardar: {error}</p>}
     {pending > 0 && pendingLabel && <p className="mt-1 text-pretty text-neutral-400">Primero en cola: {pendingLabel}</p>}

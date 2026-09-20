@@ -130,6 +130,7 @@ export type GameEvent = {
   period?: number;
   player: string;
   playerId?: number;
+  playerLocalId?: string;
   points?: number;
   score?: string;
   serverEventId?: number;
@@ -782,11 +783,6 @@ export async function saveGameDayRoster(
 
       const roster = [...team.players, ...team.bench];
       validateRosterForOdooSync(team, roster);
-      const gameDayPlayerById = new Map(
-        roster
-          .filter((player): player is Player & { id: number } => Boolean(player.id && player.id > 0))
-          .map((player) => [player.id, player]),
-      );
       const originalStarters = new Set(team.players.map(getSyncPlayerKey));
       const serverRoster = await client.searchRead<OdooRecord>(
         MODELS.player,
@@ -844,22 +840,9 @@ export async function saveGameDayRoster(
               `${team.name}: #${number} ${name} is not linked to this team in Odoo. Refresh the roster before saving.`,
             );
           }
-          const collision = (serverByJersey.get(jersey) ?? []).find(
-            (record) => {
-              const recordId = numberValue(record.id);
-              const gameDayPlayer = gameDayPlayerById.get(recordId);
-              return (
-                recordId !== playerId &&
-                record[PLAYER.active] !== false &&
-                // Existing historical duplicates do not block a game when the other
-                // player is explicitly marked absent for this matchup.
-                (gameDayPlayer?.present ?? true)
-              );
-            },
-          );
-          if (collision && (player.present ?? true)) {
-            throw jerseyCollisionError(team, jersey, collision);
-          }
+          // Player IDs establish identity. Validate jersey uniqueness against the final
+          // present roster above, not old server numbers (which also prevents swaps).
+          // Historical/absent players sharing this number do not take part in this game.
         } else {
           const jerseyMatches = serverByJersey.get(jersey) ?? [];
           const exactActiveMatches = jerseyMatches.filter(
@@ -904,7 +887,13 @@ export async function saveGameDayRoster(
           }
         }
 
-        resolvedRoster.push({ ...player, id: playerId, name, number });
+        const resolvedPlayer = { ...player, id: playerId, name, number };
+        resolvedRoster.push(resolvedPlayer);
+        // Preserve each confirmed ID even if a later player/verification fails.
+        // A subsequent name or jersey edit must keep using that same person.
+        const attachId = (candidate: Player) => getSyncPlayerKey(candidate) === getSyncPlayerKey(player) ? resolvedPlayer : candidate;
+        resolvedMatch = { ...resolvedMatch, [side]: { ...resolvedMatch[side],
+          players: resolvedMatch[side].players.map(attachId), bench: resolvedMatch[side].bench.map(attachId) } };
       }
 
       // Confirm every create/update against Odoo before attendance or live statistics can
@@ -1023,13 +1012,6 @@ function validateRosterForOdooSync(team: Team, roster: Player[]) {
       seenJerseys.add(jersey);
     }
   }
-}
-
-function jerseyCollisionError(team: Team, jersey: number, record: OdooRecord) {
-  const existingName = normalizeRosterPlayerName(stringValue(record[PLAYER.name])) || "another player";
-  return new Error(
-    `${team.name}: jersey #${jersey} already belongs to ${existingName} in Odoo. Choose another jersey or refresh the roster.`,
-  );
 }
 
 async function upsertTeamCoach(client: OdooClient, teamId: number, name: string) {

@@ -31,12 +31,64 @@ function harness() {
     setMatch: () => {}, setUndoStack: () => {}, setSelectedPlayers: () => {}, setConnectionStatus: () => {},
     dispatchSaveAction: async () => ({ saved: true, log: { level: "success" } }),
     setTechOpen: () => {}, setFoulPrompt: () => {}, setFoulPlayerOpen: () => {}, setFreeThrowPrompt: () => {},
-    syncFlowState: () => {},
+    syncFlowState: () => {}, persistStoredLiveMatch: () => {}, pendingOpsRef: { current: [] },
+    dispatchSaveRoster: async () => ({ saved: true }),
   });
   context.setIsClockRunning = value => { context.running = value; };
-  for (const name of ["getRoster", "withStarterKeys", "getStarterStorageId", "writeStoredStarterKeys", "writeStoredGameDayRoster", "applyStoredStarters", "applyStoredGameDayRoster", "commitLineupChange", "stopClockForFoul", "openFoul", "openTech", "recordFreeThrow", "closeFoul", "closeTech", "closeFreeThrow"]) vm.runInContext(handler(name), context);
+  for (const name of ["getRoster", "withStarterKeys", "getStarterStorageId", "writeStoredStarterKeys", "writeStoredGameDayRoster", "applyStoredStarters", "applyStoredGameDayRoster", "commitLineupChange", "stopClockForFoul", "openFoul", "openTech", "recordFreeThrow", "closeFoul", "closeTech", "closeFreeThrow", "removeRosterPlayer", "updateRosterPlayer", "mergeResolvedRosterIds", "rewriteOutboxRoster", "togglePresent", "writeStoredAttendance"]) vm.runInContext(handler(name), context);
   return context;
 }
+
+test("removing a player then filling the empty lineup slot survives roster refresh without changing scores", () => {
+  const app = harness();
+  Object.assign(app.matchRef.current, { awayScore: 18, homeScore: 21 });
+  const original = structuredClone(app.matchRef.current);
+  app.removeRosterPlayer("away", app.matchRef.current.away.players[0]);
+  assert.equal(app.matchRef.current.away.players.length, 4);
+  app.commitLineupChange("away", [2, 3, 4, 5, 6].map(id => `id:${id}`));
+  assert.equal(app.matchRef.current.away.players.length, 5);
+  assert.equal(app.matchRef.current.awayScore, 18);
+  const loaded = app.applyStoredGameDayRoster(original);
+  assert.deepEqual(Array.from(loaded.away.players, p => p.id), [2, 3, 4, 5, 6]);
+  assert.equal(loaded.away.bench.find(p => p.id === 1).removedFromRoster, true);
+});
+
+test("a new offline player survives edits, removal, restore and delayed ID resolution with stats intact", () => {
+  const app = harness();
+  const newcomer = { ...player(undefined), localId: "added-offline", name: "New Player", number: "30", points: 7 };
+  app.matchRef.current.away.bench.push(newcomer);
+  app.matchRef.current.events.push({ id: 999, team: "away", player: "#30", playerLocalId: newcomer.localId, points: 7 });
+  const old = structuredClone(app.matchRef.current);
+  app.updateRosterPlayer("away", newcomer, { name: "Corrected Name", number: "31" });
+  app.removeRosterPlayer("away", { ...newcomer, number: "31" });
+  const removed = app.matchRef.current.away.bench.find(p => p.localId === newcomer.localId);
+  assert.ok(removed, "an unsynced player with events stays available for history");
+  assert.equal(removed.removedFromRoster, true);
+  app.removeRosterPlayer("away", removed);
+  app.commitLineupChange("away", ["id:2", "id:3", "id:4", "id:5", "local:added-offline"]);
+  old.away.bench.find(p => p.localId === newcomer.localId).id = 777;
+  const merged = app.mergeResolvedRosterIds(app.matchRef.current, old);
+  app.writeStoredGameDayRoster(merged);
+  const refreshed = app.applyStoredGameDayRoster(old);
+  const actual = refreshed.away.players.find(p => p.localId === newcomer.localId);
+  assert.equal(actual.id, 777);
+  assert.equal(actual.name, "Corrected Name");
+  assert.equal(actual.number, "31");
+  assert.equal(actual.points, 7);
+  assert.equal(actual.removedFromRoster, false);
+  assert.equal(merged.events.find(e => e.id === 999).playerId, 777);
+  assert.deepEqual(Array.from(refreshed.away.players, p => p.localId || p.id), [2, 3, 4, 5, "added-offline"]);
+});
+
+test("marking an on-court player absent vacates the slot and stays absent on reload", () => {
+  const app = harness();
+  const original = structuredClone(app.matchRef.current);
+  app.togglePresent("away", app.matchRef.current.away.players[0]);
+  assert.equal(app.matchRef.current.away.players.length, 4);
+  const refreshed = app.applyStoredGameDayRoster(original);
+  assert.equal(refreshed.away.players.some(p => p.id === 1), false);
+  assert.equal(refreshed.away.bench.find(p => p.id === 1).present, false);
+});
 
 test("both Q2 squads survive a server refresh and reload with current player stats", () => {
   const app = harness();

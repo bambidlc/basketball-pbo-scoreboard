@@ -54,6 +54,23 @@ test("local player identity remains stable after Odoo resolves its record ID", (
   assert.equal(playerKey(player(99)), "id:99");
 });
 
+test("a roster removal leaves a fillable slot and removed players cannot be selected", () => {
+  const side = team();
+  side.bench.push({ ...side.players.shift(), present: false, removedFromRoster: true });
+  assert.equal(lineupReview(side, draft([2, 3, 4, 5, 6]), 2).error, undefined);
+  assert.ok(lineupReview(side, draft([1, 2, 3, 4, 5]), 2).error);
+});
+
+test("jersey reuse cannot transfer local technical fouls to another person", () => {
+  const original = player(undefined, { localId: "original", number: "31", techFouls: 0 });
+  const replacement = player(undefined, { localId: "replacement", number: "30", techFouls: 0 });
+  const match = { away: { players: [replacement], bench: [original] }, home: { players: [], bench: [] },
+    events: [{ id: 1, action: "tech foul", team: "away", player: "#30", playerLocalId: "original" }] };
+  const applied = applyPlayerDiscipline(match);
+  assert.equal(applied.away.players[0].techFouls, 0);
+  assert.equal(applied.away.bench[0].techFouls, 1);
+});
+
 test("both teams receive unique event IDs even with the same timestamp", () => {
   const history = [{ id: 1000 }];
   const first = nextEventId(history, 1000);

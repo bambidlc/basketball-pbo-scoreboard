@@ -71,7 +71,7 @@ import {
   formatGameTime,
 } from "./schedule";
 import { OdooClient, getOdooConfig } from "./api/odooClient";
-import { applyPendingResult, restorePendingMatch, makeOpId, trimMatchForOutbox, type OutboxOp } from "./api/outbox";
+import { applyPendingResult, restorePendingMatch, operationGameId, nextPendingOperation, queueRosterCorrection, makeOpId, trimMatchForOutbox, type OutboxOp } from "./api/outbox";
 import { ScheduleBrowser } from "./components/ScheduleBrowser";
 import { CourtSvg } from "./components/CourtSvg";
 import { QuickScorePanel, ScoringDialog, ScoringPlayerPicker, ScoringToolbar } from "./components/ScoringControls";
@@ -623,6 +623,8 @@ function App() {
         }
 
         setMatch((current) => {
+          if (customModeRef.current || revisionAtStart !== mutationRevisionRef.current ||
+              (requestedGameId !== selectedGameIdRef.current && targetGameId !== selectedGameIdRef.current)) return current;
           if (result.source === "api") {
             loadedGameIdRef.current = result.match.gameId;
           }
@@ -645,9 +647,9 @@ function App() {
 
           const cachedMatch = readStoredLiveMatch(targetGameId);
           const sourceMatch = result.source === "api" ? result.match : cachedMatch ?? result.match;
-          const loadedMatch = restorePendingMatch(applyStoredGameDayRoster(
+          const loadedMatch = applyStoredGameDayRoster(restorePendingMatch(
             applyStoredOfficials(applyStoredAttendance(applyStoredStarters(sourceMatch))),
-          ), cachedMatch, [...new Map([...pendingAtStart, ...pendingOpsRef.current].map(op => [op.id, op])).values()]);
+            cachedMatch, [...new Map([...pendingAtStart, ...pendingOpsRef.current].map(op => [op.id, op])).values()]));
 
           return applyPlayerDiscipline({
             ...loadedMatch,
@@ -673,7 +675,7 @@ function App() {
 
         const nextGameId = result.source === "api"
           ? result.match.gameId
-          : (loadedGameIdRef.current ?? targetGameId);
+          : targetGameId;
         selectedGameIdRef.current = nextGameId;
         setSelectedGameId(nextGameId);
         appendLog(result.log);
@@ -722,6 +724,10 @@ function App() {
   }, []);
 
   const reconcileRosterSync = useCallback((resolvedMatch: LiveMatch) => {
+    if (matchRef.current.gameId !== resolvedMatch.gameId) {
+      const cached = readStoredLiveMatch(resolvedMatch.gameId);
+      if (cached) writeStoredGameDayRoster(mergeResolvedRosterIds(cached, resolvedMatch));
+    }
     setMatch((current) => {
       if (current.gameId !== resolvedMatch.gameId) {
         return current;
@@ -734,9 +740,8 @@ function App() {
     setPendingOps((current) => current.map((op) => rewriteOutboxRoster(op, resolvedMatch)));
   }, []);
 
-  // Replay parked writes in FIFO order once back online. Stops at the first failure to keep
-  // ordering, skips ops the inline path is still sending, and drops each op only after Odoo
-  // confirms it (the write path is idempotent, so a retried op never duplicates data).
+  // Preserve FIFO per game. A failed game's writes wait for correction while other
+  // games continue; acknowledged operation IDs cannot remove newer roster edits.
   const flushOutbox = useCallback(async () => {
     if (!apiClient.enabled || flushingRef.current || inFlightOpIdsRef.current.size > 0) {
       return;
@@ -749,9 +754,11 @@ function App() {
     try {
       const hadPending = pendingOpsRef.current.length > 0;
       let failed = false;
+      const blockedGames = new Set<number | undefined>();
 
       while (pendingOpsRef.current.length > 0) {
-        const op = pendingOpsRef.current[0];
+        const op = nextPendingOperation(pendingOpsRef.current, blockedGames);
+        if (!op) break;
         if (typeof navigator !== "undefined" && !navigator.onLine) {
           failed = true;
           break;
@@ -789,8 +796,12 @@ function App() {
             current.map((item) => (item.id === op.id ? { ...item, attempts: item.attempts + 1, lastError: result.log.detail || result.log.message } : item)),
           );
           appendLog(result.log);
-          failed = true;
-          break;
+          // A roster corrected while its old request was in flight has a new ID.
+          // Do not let that obsolete failure block the replacement snapshot.
+          if (pendingOpsRef.current.some(item => item.id === op.id)) {
+            failed = true;
+            blockedGames.add(operationGameId(op));
+          }
         }
       }
 
@@ -906,53 +917,23 @@ function App() {
 
   const dispatchSaveRoster = useCallback(
     (nextMatch: LiveMatch): Promise<SaveMatchActionResult> => {
+      persistStoredLiveMatch(nextMatch);
       if (!apiClient.enabled || !nextMatch.gameId) {
         return saveGameDayRoster(apiClient, nextMatch);
       }
 
-      const op: OutboxOp = {
+      const op: Extract<OutboxOp, { kind: "roster" }> = {
         id: makeOpId(),
         kind: "roster",
         createdAt: Date.now(),
         attempts: 0,
         match: trimMatchForOutbox(nextMatch),
       };
-      const mustQueue = pendingOpsRef.current.length > 0 || flushingRef.current;
-      setPendingOps((current) => [...current, op]);
-      if (mustQueue) {
-        return Promise.resolve({ saved: false, log: createLog("warning", "Saved on this device", "Waiting to sync earlier changes.") });
-      }
-      inFlightOpIdsRef.current.add(op.id);
-
-      if (typeof navigator !== "undefined" && !navigator.onLine) {
-        inFlightOpIdsRef.current.delete(op.id);
-        return Promise.resolve({
-          saved: false,
-          log: createLog("warning", "Roster saved offline", "It is queued to sync automatically when the connection returns."),
-        });
-      }
-
-      return saveGameDayRoster(apiClient, nextMatch)
-        .then((result) => {
-          if (result.match) {
-            reconcileRosterSync(result.match);
-          }
-          if (result.saved) {
-            setLastDatabaseSave(Date.now());
-            setPendingOps((current) => current.filter((item) => item.id !== op.id));
-          }
-          return result;
-        })
-        .catch(
-          () =>
-            ({ saved: false, log: createLog("error", "Roster sync failed", "Network error") }) as SaveMatchActionResult,
-        )
-        .finally(() => {
-          inFlightOpIdsRef.current.delete(op.id);
-          void flushOutbox();
-        });
+      setPendingOps(current => queueRosterCorrection(current, op));
+      void flushOutbox();
+      return Promise.resolve({ saved: false, log: createLog("info", "Plantilla corregida en este dispositivo", "La nueva plantilla reemplaza la versión pendiente y se sincroniza antes de sus jugadas.") });
     },
-    [apiClient, flushOutbox, reconcileRosterSync, setPendingOps],
+    [apiClient, flushOutbox, setPendingOps],
   );
 
   // Reconnect handling: track the browser online/offline flag, and whenever connectivity
@@ -1180,6 +1161,8 @@ function App() {
   );
 
   function handleGameSelect(gameId: number | undefined) {
+    persistStoredLiveMatch(matchRef.current);
+    clockRunningRef.current = false;
     setIsClockRunning(false);
     setUndoStack([]);
     canceledEventIdsRef.current.clear();
@@ -1398,8 +1381,10 @@ function App() {
       getPlayerKey(candidate) === playerKey
         ? { ...candidate, present: !(candidate.present ?? true) }
         : candidate;
-    const players = side.players.map(flip);
-    const bench = side.bench.map(flip);
+    const updated = side.players.map(flip);
+    const players = updated.filter(candidate => candidate.present !== false && !candidate.removedFromRoster);
+    const bench = [...side.bench.map(flip), ...updated.filter(candidate => !players.includes(candidate))]
+      .map(candidate => ({ ...candidate, active: false }));
     const presentCount = [...players, ...bench].filter((candidate) => candidate.present ?? true).length;
     const nextMatch = {
       ...matchRef.current,
@@ -1475,11 +1460,20 @@ function App() {
     mutationRevisionRef.current += 1;
     const key = getPlayerKey(player);
     const side = matchRef.current[team];
+    // A confirmation dialog may still hold the object from before the latest edit
+    // or ID acknowledgement. Remove/restore the current record, preserving both.
+    player = getRoster(side).find(candidate => getPlayerKey(candidate) === key) ?? player;
     const players = side.players.filter((candidate) => getPlayerKey(candidate) !== key);
     const bench = side.bench.filter((candidate) => getPlayerKey(candidate) !== key);
     // Keep registered players available to history and attendance. Removal applies
     // only to this game's lineup and is reversible from the roster dialog.
-    if (player.id && player.id > 0) {
+    const hasHistory = matchRef.current.events.some(event => event.team === team &&
+      (player.id ? event.playerId === player.id : player.localId && event.playerLocalId
+        ? event.playerLocalId === player.localId : event.player === formatPlayer(player))) ||
+      pendingOpsRef.current.some(op => op.kind === "action" && op.input.match.gameId === matchRef.current.gameId &&
+        ((op.input.selectedTeam === team && getPlayerKey(op.input.player) === key) ||
+          (op.input.opponentTurnoverTeam === team && op.input.opponentTurnoverPlayer && getPlayerKey(op.input.opponentTurnoverPlayer) === key)));
+    if ((player.id && player.id > 0) || hasHistory) {
       bench.push({ ...player, active: false, starter: false, present: Boolean(player.removedFromRoster), removedFromRoster: !player.removedFromRoster });
     }
     const presentCount = [...players, ...bench].filter((candidate) => candidate.present ?? true).length;
@@ -1860,6 +1854,7 @@ function App() {
       period: baseMatch.period,
       player: formatPlayer(actingPlayer),
       playerId: actingPlayer.id,
+      playerLocalId: actingPlayer.localId,
       points: committedDetail.points,
       score: committedDetail.points > 0 ? `${nextAwayScore}-${nextHomeScore}` : undefined,
       shotLocation: committedDetail.shotLocation,
@@ -2285,7 +2280,11 @@ function App() {
     const playersByKey = new Map(roster.map((player) => [getPlayerKey(player), player]));
     const rosterOrder = new Map(roster.map((player, index) => [getPlayerKey(player), index]));
 
-    const nextSet = new Set(nextKeys.filter((key) => playersByKey.has(key)));
+    if (new Set(nextKeys).size !== nextKeys.length || nextKeys.length > 5 || nextKeys.some(key => {
+      const player = playersByKey.get(key);
+      return !player || player.present === false || player.removedFromRoster || isPlayerUnavailable(player);
+    })) return;
+    const nextSet = new Set(nextKeys);
     const onCourtSet = new Set(side.players.map(getPlayerKey));
 
     const outgoing = side.players.filter((player) => !nextSet.has(getPlayerKey(player)));
@@ -2294,12 +2293,30 @@ function App() {
     );
 
     // Each team is validated before a combined change reaches this path.
-    if (outgoing.length === 0 || outgoing.length !== incoming.length || incoming.some(isPlayerUnavailable)) return;
+    if (outgoing.length === 0 && incoming.length === 0) return;
 
     // Keep the on-court list in a stable roster order rather than tap order.
     const orderedKeys = [...nextSet].sort(
       (a, b) => (rosterOrder.get(a) ?? 0) - (rosterOrder.get(b) ?? 0),
     );
+
+    // A roster correction can leave a vacant slot. Filling it (or reducing a team
+    // with too few eligible players) is a lineup save, not a one-for-one swap.
+    if (outgoing.length !== incoming.length) {
+      const nextMatch = withStarterKeys(current, team, orderedKeys);
+      mutationRevisionRef.current += 1;
+      matchRef.current = nextMatch;
+      setMatch(nextMatch);
+      writeStoredStarterKeys(nextMatch, team);
+      writeStoredGameDayRoster(nextMatch);
+      const nextSelectedPlayers = { ...selectedPlayersRef.current, [team]: nextMatch[team].players[0] ? getPlayerKey(nextMatch[team].players[0]) : undefined };
+      selectedPlayersRef.current = nextSelectedPlayers;
+      setSelectedPlayers(nextSelectedPlayers);
+      void dispatchSaveRoster(nextMatch);
+      syncFlowState("Lineup changed", nextMatch);
+      appendLog(createLog("info", "Lineup saved", `${nextMatch[team].name}: ${nextMatch[team].players.map(formatPlayer).join(" ")}${reasonSuffix}`));
+      return;
+    }
 
     // Date.now() can repeat across a tight loop, so stamp each event from a single base id.
     const baseId = nextEventId(matchRef.current.events);
@@ -2314,6 +2331,7 @@ function App() {
       period: current.period,
       player: formatPlayer(pair.inPlayer),
       playerId: pair.inPlayer.id,
+      playerLocalId: pair.inPlayer.localId,
       points: 0,
       team,
       time: current.clock,
@@ -2437,6 +2455,7 @@ function App() {
       period: current.period,
       player: player ? formatPlayer(player) : "—",
       playerId: player?.id,
+      playerLocalId: player?.localId,
       points: 0,
       team,
       time: current.clock,
@@ -2742,6 +2761,8 @@ function App() {
     localBackupFailed={localBackupFailed}
     pendingLabel={pendingMatch && `${pendingMatch.away.name} vs ${pendingMatch.home.name} · ${firstPending.kind === "action" ? firstPending.input.label : firstPending.kind === "roster" ? "Plantilla" : firstPending.kind === "flow" ? "Reloj / período" : "Resultado"}`}
     retrying={isRetryingSync} reading={connectionStatus === "connected"}
+    onCorrectRoster={firstPending?.kind === "roster" && pendingMatch?.gameId
+      ? () => openGameDayRoster(pendingMatch.gameId!) : undefined}
     onRetry={() => void retryDatabaseSync()} onExport={exportLocalBackup} />;
 
   if (screenMode === "dashboard") {
@@ -5429,11 +5450,10 @@ function EndPeriodStat({ label, value, warn }: { label: string; value: string; w
   );
 }
 
-// Present players plus anyone already on court (eligible to be on the floor).
+// Attendance and roster removals apply to every selection during the game.
 function eligiblePlayers(team: Team): Player[] {
-  const onCourt = new Set(team.players.map(getPlayerKey));
   return getRoster(team).filter(
-    (player) => !isPlayerUnavailable(player) && (player.present !== false || onCourt.has(getPlayerKey(player))),
+    (player) => !isPlayerUnavailable(player) && player.present !== false && !player.removedFromRoster,
   );
 }
 
@@ -7586,7 +7606,7 @@ function readStoredLiveMatch(gameId: number | undefined): LiveMatch | undefined 
   const storedMatches = readStoredJson<Record<string, StoredLiveMatch>>(STORAGE_KEYS.liveMatches);
   const storedForGame = storedMatches?.[String(gameId)];
   if (storedForGame?.match) {
-    return restorePendingMatch(storedForGame.match, storedForGame.match, readStoredJson<OutboxOp[]>(STORAGE_KEYS.outbox) ?? []);
+    return applyStoredGameDayRoster(restorePendingMatch(storedForGame.match, storedForGame.match, readStoredJson<OutboxOp[]>(STORAGE_KEYS.outbox) ?? []));
   }
 
   // Backward compatibility with the original single-game offline snapshot.
@@ -7594,7 +7614,7 @@ function readStoredLiveMatch(gameId: number | undefined): LiveMatch | undefined 
   const ops = readStoredJson<OutboxOp[]>(STORAGE_KEYS.outbox) ?? [];
   const pending = ops.map(op => op.kind === "action" ? op.input.match : op.match).find(snapshot => snapshot.gameId === gameId);
   const snapshot = legacy?.gameId === gameId ? legacy.match : pending;
-  return snapshot ? restorePendingMatch(snapshot, snapshot, ops) : undefined;
+  return snapshot ? applyStoredGameDayRoster(restorePendingMatch(snapshot, snapshot, ops)) : undefined;
 }
 
 function persistStoredLiveMatch(match: LiveMatch) {
@@ -7867,6 +7887,7 @@ function findEventPlayer(match: LiveMatch, event: GameEvent) {
   const roster = getRoster(match[event.team]);
   return (
     roster.find((player) => event.playerId && player.id === event.playerId) ??
+    roster.find((player) => event.playerLocalId && player.localId === event.playerLocalId) ??
     roster.find((player) => formatPlayer(player) === event.player) ??
     roster.find((player) => event.player.includes(player.name) && event.player.includes(`#${player.number}`))
   );
@@ -7955,7 +7976,8 @@ function getEventPlayerNumber(event: GameEvent, teams: Record<TeamId, Team>): st
   }
 
   const roster = getRoster(teams[event.team]);
-  const byId = event.playerId ? roster.find((player) => player.id === event.playerId) : undefined;
+  const byId = roster.find((player) => (event.playerId && player.id === event.playerId) ||
+    (event.playerLocalId && player.localId === event.playerLocalId));
   if (byId) {
     return `#${byId.number}`;
   }
@@ -7990,6 +8012,7 @@ function writeStoredGameDayRoster(match: LiveMatch) {
     ...store,
     [String(match.gameId)]: { savedAt: Date.now(), teams },
   } satisfies GameDayRosterStore);
+  persistStoredLiveMatch(match);
 }
 
 function applyStoredGameDayRoster(match: LiveMatch): LiveMatch {
@@ -8029,7 +8052,7 @@ function applyStoredGameDayRoster(match: LiveMatch): LiveMatch {
     });
     const starterSet = new Set(storedTeam.starterKeys);
     const players = resolvedRoster
-      .filter((player) => starterSet.has(getPlayerKey(player)))
+      .filter((player) => starterSet.has(getPlayerKey(player)) && player.present !== false && !player.removedFromRoster)
       .slice(0, 5)
       .map((player) => ({ ...player, active: true }));
     const activeSet = new Set(players.map(getPlayerKey));
@@ -8082,9 +8105,9 @@ function mergeResolvedRosterIds(current: LiveMatch, resolved: LiveMatch): LiveMa
         return event;
       }
       const jersey = event.player.match(/^#(\d+)/)?.[1];
-      const player = jersey
-        ? getRoster(next[event.team]).find((candidate) => candidate.number === jersey)
-        : undefined;
+      const player = event.playerLocalId
+        ? getRoster(next[event.team]).find((candidate) => candidate.localId === event.playerLocalId)
+        : jersey ? getRoster(next[event.team]).find((candidate) => candidate.number === jersey) : undefined;
       return player?.id ? { ...event, playerId: player.id } : event;
     }),
   };
@@ -8255,7 +8278,7 @@ function withStarterKeys(match: LiveMatch, team: TeamId, starterKeys: string[]):
   const side = match[team];
   const roster = getRoster(side);
   const playersByKey = new Map(roster.map((player) => [getPlayerKey(player), player]));
-  const uniqueStarterKeys = [...new Set(starterKeys)].filter(key => { const player = playersByKey.get(key); return player && !isPlayerUnavailable(player); }).slice(0, 5);
+  const uniqueStarterKeys = [...new Set(starterKeys)].filter(key => { const player = playersByKey.get(key); return player && player.present !== false && !player.removedFromRoster && !isPlayerUnavailable(player); }).slice(0, 5);
   const starterSet = new Set(uniqueStarterKeys);
   const starters = uniqueStarterKeys
     .map((key) => playersByKey.get(key))

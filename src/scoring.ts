@@ -27,7 +27,8 @@ export function applyPlayerDiscipline(match: LiveMatch): LiveMatch {
   const updateTeam = (side: TeamId): Team => {
     const update = (player: Player): Player => {
       const belongs = (event: GameEvent) => event.team === side &&
-        (event.playerId ? event.playerId === player.id : event.player === `#${player.number}`);
+        (event.playerId ? event.playerId === player.id : event.playerLocalId
+          ? event.playerLocalId === player.localId : event.player === `#${player.number}`);
       const technicals = match.events.filter(event => event.action === "tech foul" && belongs(event));
       const suspension = technicals.find(event => event.note?.startsWith(PLAYER_SUSPENSION_PREFIX));
       return { ...player, techFouls: Math.max(player.techFouls || 0, technicals.length), suspensionReason: suspension?.note?.slice(PLAYER_SUSPENSION_PREFIX.length) ||
@@ -72,16 +73,17 @@ export function shotLocationFromCoordinates(x: number, y: number, zone: string, 
 export function lineupReview(team: Team, draft: LineupDraft, period: number) {
   const roster = [...team.players, ...team.bench];
   const current = new Set(team.players.map(playerKey));
-  const eligible = roster.filter((player) => player.present !== false || current.has(playerKey(player)));
+  const eligible = roster.filter((player) => player.present !== false && !player.removedFromRoster);
   const selected = new Set(draft.keys);
   const incoming = eligible.filter((player) => selected.has(playerKey(player)) && !current.has(playerKey(player)));
   const outgoing = team.players.filter((player) => !selected.has(playerKey(player)));
   const changed = incoming.length > 0 || outgoing.length > 0;
-  const target = team.players.length || Math.min(5, eligible.length);
+  const target = Math.min(5, eligible.filter(player => !isPlayerUnavailable(player)).length);
+  const minimum = Math.min(team.players.length || target, target);
   const invalidPlayer = draft.keys.some((key) => !eligible.some((player) => playerKey(player) === key)) ||
     incoming.some(isPlayerUnavailable) || team.players.some(player => selected.has(playerKey(player)) && isPlayerUnavailable(player));
   const error = invalidPlayer ? "Choose present players who are not suspended and have fewer than five fouls."
-    : selected.size !== draft.keys.length || selected.size !== target || incoming.length !== outgoing.length
+    : selected.size !== draft.keys.length || selected.size < minimum || selected.size > target
       ? `Select ${target} players to complete the lineup.`
     : changed && period === 1 && !draft.reason.trim() ? "Add a reason for this Q1 substitution."
     : undefined;
