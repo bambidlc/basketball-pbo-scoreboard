@@ -239,7 +239,6 @@ export const PLAYER_FIELDS = [
   PLAYER.jerseyNumber,
   PLAYER.position,
   PLAYER.team,
-  PLAYER.totalPoints,
 ] as const;
 
 export const PLAYER_STAT_FIELDS = [

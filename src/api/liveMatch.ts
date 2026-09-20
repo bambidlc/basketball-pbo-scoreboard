@@ -1309,9 +1309,10 @@ async function loadStatsForGame(
       [[PLAYER_STAT.game, "=", gameId]],
       fields,
     );
-  } catch {
+  } catch (error) {
     if (optionalFields.length === 0) {
-      return [];
+      // Keep the last known match instead of treating a failed read as zero stats.
+      throw error;
     }
 
     return client.searchRead<OdooRecord>(
@@ -1714,8 +1715,7 @@ function normalizePlayer(
   const q3 = numberValue(stat?.[PLAYER_STAT.q3]);
   const q4 = numberValue(stat?.[PLAYER_STAT.q4]);
   const ot = numberValue(stat?.[PLAYER_STAT.overtime]);
-  const statTotal = numberValue(stat?.[PLAYER_STAT.totalPoints]);
-  const playerTotal = numberValue(player[PLAYER.totalPoints]);
+  const statTotal = optionalNumberValue(stat?.[PLAYER_STAT.totalPoints]);
 
   return createPlayer({
     active: index < 5,
@@ -1731,7 +1731,9 @@ function normalizePlayer(
     number: String(numberValue(player[PLAYER.jerseyNumber], 0)).padStart(1, "0"),
     offensiveRebounds: numberValue(stat?.[PLAYER_STAT.offensiveRebounds]),
     ot,
-    points: statTotal || q1 + q2 + q3 + q4 + ot || playerTotal,
+    // Overall player totals include other games. Only this game's stats belong here,
+    // and an explicitly saved zero must remain zero (including after an undo).
+    points: statTotal ?? q1 + q2 + q3 + q4 + ot,
     position: stringValue(player[PLAYER.position]),
     q1,
     q2,
