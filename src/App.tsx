@@ -71,11 +71,12 @@ import {
   formatGameTime,
 } from "./schedule";
 import { OdooClient, getOdooConfig } from "./api/odooClient";
-import { applyPendingResult, makeOpId, trimMatchForOutbox, type OutboxOp } from "./api/outbox";
+import { applyPendingResult, restorePendingMatch, makeOpId, trimMatchForOutbox, type OutboxOp } from "./api/outbox";
 import { ScheduleBrowser } from "./components/ScheduleBrowser";
 import { CourtSvg } from "./components/CourtSvg";
 import { QuickScorePanel, ScoringDialog, ScoringPlayerPicker, ScoringToolbar } from "./components/ScoringControls";
 import { SubstitutionDialog } from "./components/SubstitutionDialog";
+import { DatabaseSyncStatus } from "./components/DatabaseSyncStatus";
 import { computeEqualization, applyPlayerDiscipline, isPlayerUnavailable, technicalSuspensionNote, formatGameCategory, BENCH_ORDER, courtOrder, lineupReview, nextEventId, playerKey as getPlayerKey, swappedCourts, type CourtSides, type LineupDrafts, type ScoringView } from "./scoring";
 import { cn } from "./lib/cn";
 
@@ -452,6 +453,9 @@ function App() {
     apiConfig.enabled ? "syncing" : "local",
   );
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [lastDatabaseSave, setLastDatabaseSave] = useState<number>();
+  const [isRetryingSync, setIsRetryingSync] = useState(false);
+  const [localBackupFailed, setLocalBackupFailed] = useState(false);
   const [syncLog, setSyncLog] = useState<SyncLogEntry[]>(() =>
     readStoredSyncLog(apiConfig.enabled),
   );
@@ -530,7 +534,7 @@ function App() {
     const next = update(pendingOpsRef.current);
     mutationRevisionRef.current += 1;
     pendingOpsRef.current = next;
-    writeStoredJson(STORAGE_KEYS.outbox, next);
+    setLocalBackupFailed(!writeStoredJson(STORAGE_KEYS.outbox, next));
     setPendingOpsState(next);
   }, []);
 
@@ -641,9 +645,9 @@ function App() {
 
           const cachedMatch = readStoredLiveMatch(targetGameId);
           const sourceMatch = result.source === "api" ? result.match : cachedMatch ?? result.match;
-          const loadedMatch = applyPendingResult(applyStoredGameDayRoster(
+          const loadedMatch = restorePendingMatch(applyStoredGameDayRoster(
             applyStoredOfficials(applyStoredAttendance(applyStoredStarters(sourceMatch))),
-          ), sourceMatch.gameId, [...pendingAtStart, ...pendingOpsRef.current]);
+          ), cachedMatch, [...new Map([...pendingAtStart, ...pendingOpsRef.current].map(op => [op.id, op])).values()]);
 
           return applyPlayerDiscipline({
             ...loadedMatch,
@@ -699,21 +703,6 @@ function App() {
     [apiClient, apiConfig.enabled, appendLog],
   );
 
-  const syncFlowState = useCallback(
-    (label: string, nextMatch: LiveMatch = matchRef.current, quiet = false) => {
-      void saveMatchFlowState(apiClient, nextMatch, label === "Equalization removed").then((result) => {
-        if (!quiet || result.log.level === "error") {
-          appendLog({
-            ...result.log,
-            detail: result.log.detail ?? label,
-          });
-        }
-        setConnectionStatus(result.log.level === "error" ? "error" : result.saved ? "connected" : "local");
-      });
-    },
-    [apiClient, appendLog],
-  );
-
   // Stamp a delayed sync's serverEventId back onto the matching local event + undo record,
   // so a later edit/undo of an action first synced offline can still target the server row.
   const linkServerEventId = useCallback((localEventId: number, serverEventId: number) => {
@@ -758,11 +747,11 @@ function App() {
 
     flushingRef.current = true;
     try {
-      let queue = pendingOpsRef.current.filter((op) => !inFlightOpIdsRef.current.has(op.id));
+      const hadPending = pendingOpsRef.current.length > 0;
       let failed = false;
 
-      for (let queueIndex = 0; queueIndex < queue.length; queueIndex += 1) {
-        const op = queue[queueIndex];
+      while (pendingOpsRef.current.length > 0) {
+        const op = pendingOpsRef.current[0];
         if (typeof navigator !== "undefined" && !navigator.onLine) {
           failed = true;
           break;
@@ -771,23 +760,25 @@ function App() {
         let result: SaveMatchActionResult;
         try {
           if (op.kind === "action") {
-            result = await saveMatchAction(apiClient, op.input);
+            result = await saveMatchAction(apiClient, { ...op.input, operationId: op.id });
           } else if (op.kind === "status") {
             result = await saveMatchStatus(apiClient, op.match, op.status, op.note);
+          } else if (op.kind === "flow") {
+            result = await saveMatchFlowState(apiClient, op.match, op.includeScores);
           } else {
             result = await saveGameDayRoster(apiClient, op.match);
           }
-        } catch {
-          result = { saved: false, log: createLog("error", "Sync retry failed", "Network error") };
+        } catch (error) {
+          result = { saved: false, log: createLog("error", "Sync retry failed", readableError(error)) };
         }
 
         if (result.match) {
-          reconcileRosterSync(result.match);
           // A player create can succeed before a later attendance request fails. Repair ids
           // immediately even while the roster op remains queued for that final retry.
-          queue = queue.map((queued) => rewriteOutboxRoster(queued, result.match!));
+          reconcileRosterSync(result.match);
         }
         if (result.saved) {
+          setLastDatabaseSave(Date.now());
           if (op.kind === "status" && op.match.gameId) setResultFeedback(current => ({ ...current, [op.match.gameId!]: "Saved to Odoo" }));
           if (result.eventId && "eventId" in op && op.eventId != null) {
             linkServerEventId(op.eventId, result.eventId);
@@ -795,26 +786,40 @@ function App() {
           setPendingOps((current) => current.filter((item) => item.id !== op.id));
         } else {
           setPendingOps((current) =>
-            current.map((item) => (item.id === op.id ? { ...item, attempts: item.attempts + 1 } : item)),
+            current.map((item) => (item.id === op.id ? { ...item, attempts: item.attempts + 1, lastError: result.log.detail || result.log.message } : item)),
           );
+          appendLog(result.log);
           failed = true;
           break;
         }
       }
 
-      if (queue.length > 0) {
+      if (hadPending) {
         setConnectionStatus(failed ? (navigator.onLine ? "error" : "local") : "connected");
       }
     } finally {
       flushingRef.current = false;
     }
-  }, [apiClient, linkServerEventId, reconcileRosterSync]);
+  }, [apiClient, linkServerEventId, reconcileRosterSync, appendLog]);
+
+  const syncFlowState = useCallback(
+    (label: string, nextMatch: LiveMatch = matchRef.current, quiet = false) => {
+      persistStoredLiveMatch(nextMatch);
+      if (!apiClient.enabled || !nextMatch.gameId) return;
+      const op: OutboxOp = { id: makeOpId(), kind: "flow", createdAt: Date.now(), attempts: 0,
+        match: trimMatchForOutbox(nextMatch), includeScores: label === "Equalization removed" || label === "Period changed" };
+      setPendingOps(current => [...current, op]);
+      if (!quiet) appendLog(createLog("info", "Cambio guardado en este dispositivo", label));
+      void flushOutbox();
+    }, [apiClient, appendLog, setPendingOps, flushOutbox],
+  );
 
   // Optimistic, durable send of a scoring action: park it in the outbox, fire the write,
   // and drop it on confirmed success. If offline/failed it stays queued for `flushOutbox`.
   // Returns the live result so each call site's existing reconcile runs unchanged.
   const dispatchSaveAction = useCallback(
     (input: SaveMatchActionInput, eventId?: number): Promise<SaveMatchActionResult> => {
+      persistStoredLiveMatch(input.match);
       if (!apiClient.enabled || !input.match.gameId) {
         return saveMatchAction(apiClient, input);
       }
@@ -833,10 +838,13 @@ function App() {
       }
       inFlightOpIdsRef.current.add(op.id);
 
-      return saveMatchAction(apiClient, input)
+      return saveMatchAction(apiClient, { ...input, operationId: op.id })
         .then((result) => {
           if (result.saved) {
+            setLastDatabaseSave(Date.now());
             setPendingOps((current) => current.filter((item) => item.id !== op.id));
+          } else {
+            setPendingOps(current => current.map(item => item.id === op.id ? { ...item, lastError: result.log.detail || result.log.message } : item));
           }
           return result;
         })
@@ -879,6 +887,7 @@ function App() {
       return saveMatchStatus(apiClient, nextMatch, status, note)
         .then((result) => {
           if (result.saved) {
+            setLastDatabaseSave(Date.now());
             setPendingOps((current) => current.filter((item) => item.id !== op.id));
           }
           return result;
@@ -929,6 +938,7 @@ function App() {
             reconcileRosterSync(result.match);
           }
           if (result.saved) {
+            setLastDatabaseSave(Date.now());
             setPendingOps((current) => current.filter((item) => item.id !== op.id));
           }
           return result;
@@ -2707,9 +2717,37 @@ function App() {
     });
   }
 
+  async function retryDatabaseSync() {
+    setIsRetryingSync(true);
+    try {
+      await flushOutbox();
+      await refreshMatch(undefined, { force: true });
+    } finally { setIsRetryingSync(false); }
+  }
+
+  function exportLocalBackup() {
+    const backup = { savedAt: new Date().toISOString(), match: matchRef.current, pendingOps: pendingOpsRef.current };
+    const url = URL.createObjectURL(new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `pbo-respaldo-${matchRef.current.gameId ?? "local"}-${Date.now()}.json`;
+    link.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  const firstPending = pendingOps[0];
+  const pendingMatch = firstPending && (firstPending.kind === "action" ? firstPending.input.match : firstPending.match);
+  const databaseStatus = <DatabaseSyncStatus online={isOnline} enabled={apiConfig.enabled && !customMode}
+    pending={pendingOps.length} error={pendingOps[0]?.lastError} lastSaved={lastDatabaseSave}
+    localBackupFailed={localBackupFailed}
+    pendingLabel={pendingMatch && `${pendingMatch.away.name} vs ${pendingMatch.home.name} · ${firstPending.kind === "action" ? firstPending.input.label : firstPending.kind === "roster" ? "Plantilla" : firstPending.kind === "flow" ? "Reloj / período" : "Resultado"}`}
+    retrying={isRetryingSync} reading={connectionStatus === "connected"}
+    onRetry={() => void retryDatabaseSync()} onExport={exportLocalBackup} />;
+
   if (screenMode === "dashboard") {
     return (
       <LazyMotion features={loadMotionFeatures}>
+        {databaseStatus}
         <GameDashboard
           apiEnabled={apiConfig.enabled}
           connectionStatus={connectionStatus}
@@ -2803,6 +2841,7 @@ function App() {
           />
 
           <section aria-label="Live scoring" className="live-scoring order-2 flex min-h-0 min-w-0 flex-col bg-neutral-950 md:col-span-2 lg:col-span-3 lg:col-start-1 lg:row-start-2">
+            {databaseStatus}
             <ScoringToolbar teams={{ away: match.away, home: match.home }} sides={courtSides}
               selected={selectedTeam} view={scoringView} onSelect={setSelectedTeam}
               onView={setScoringView} onSwitch={switchCourtSides}
@@ -7375,9 +7414,10 @@ function DevLogPanel({
   syncLog: SyncLogEntry[];
   syncMessage: string;
 }) {
-  const connected = connectionStatus === "connected" && isOnline;
+  const connected = connectionStatus === "connected" && isOnline && pendingCount === 0;
   const statusLabel = !isOnline
     ? "Offline"
+    : pendingCount > 0 ? "Sin guardar en Odoo"
     : connectionStatus === "syncing"
       ? "Syncing"
       : connectionStatus === "error"
@@ -7546,12 +7586,15 @@ function readStoredLiveMatch(gameId: number | undefined): LiveMatch | undefined 
   const storedMatches = readStoredJson<Record<string, StoredLiveMatch>>(STORAGE_KEYS.liveMatches);
   const storedForGame = storedMatches?.[String(gameId)];
   if (storedForGame?.match) {
-    return storedForGame.match;
+    return restorePendingMatch(storedForGame.match, storedForGame.match, readStoredJson<OutboxOp[]>(STORAGE_KEYS.outbox) ?? []);
   }
 
   // Backward compatibility with the original single-game offline snapshot.
   const legacy = readStoredJson<StoredLiveMatch>(STORAGE_KEYS.liveMatch);
-  return legacy && legacy.gameId === gameId && legacy.match ? legacy.match : undefined;
+  const ops = readStoredJson<OutboxOp[]>(STORAGE_KEYS.outbox) ?? [];
+  const pending = ops.map(op => op.kind === "action" ? op.input.match : op.match).find(snapshot => snapshot.gameId === gameId);
+  const snapshot = legacy?.gameId === gameId ? legacy.match : pending;
+  return snapshot ? restorePendingMatch(snapshot, snapshot, ops) : undefined;
 }
 
 function persistStoredLiveMatch(match: LiveMatch) {
@@ -7617,18 +7660,20 @@ function writeStoredBoolean(key: string, value: boolean) {
 
 function writeStoredJson(key: string, value: unknown) {
   if (typeof window === "undefined") {
-    return;
+    return false;
   }
 
   try {
     if (value === undefined) {
       window.localStorage.removeItem(key);
-      return;
+      return true;
     }
 
     window.localStorage.setItem(key, JSON.stringify(value));
+    return true;
   } catch {
     // Local storage can be unavailable in restricted browser contexts.
+    return false;
   }
 }
 
@@ -8046,6 +8091,8 @@ function mergeResolvedRosterIds(current: LiveMatch, resolved: LiveMatch): LiveMa
 }
 
 function rewriteOutboxRoster(op: OutboxOp, resolved: LiveMatch): OutboxOp {
+  const snapshot = op.kind === "action" ? op.input.match : op.match;
+  if (snapshot.gameId !== resolved.gameId) return op;
   const replacePlayer = (player: Player | undefined, side: TeamId): Player | undefined => {
     if (!player) {
       return undefined;
@@ -8371,6 +8418,7 @@ function updateMatchAfterAction(
     awayScore: nextAwayScore,
     events: [event, ...match.events],
     homeScore: nextHomeScore,
+    status: "Live",
     possession: nextPossession,
     shotClock:
       possessionChanged || detail.shotType === "2pt" || detail.shotType === "3pt"

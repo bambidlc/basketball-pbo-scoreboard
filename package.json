@@ -13,6 +13,7 @@
     "odoo:fix-access-rights": "node scripts/fix-access-rights.mjs",
     "test:player-sync": "node scripts/test-player-sync.mjs",
     "test:game-resolution": "node scripts/test-game-resolution.mjs",
+    "test:sync": "node scripts/test-sync-reliability.mjs",
     "test:schedule": "node --experimental-strip-types --test scripts/schedule.test.mjs",
     "test:scoring": "node --experimental-strip-types --test scripts/scoring.test.mjs scripts/lineup-clock.test.mjs scripts/player-points.test.mjs",
     "dev": "vite --host 0.0.0.0",

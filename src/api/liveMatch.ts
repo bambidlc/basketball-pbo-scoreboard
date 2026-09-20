@@ -208,6 +208,7 @@ export type MatchOption = {
 
 export type SaveMatchActionInput = {
   action: ActionKey;
+  operationId?: string;
   foulOnShot?: boolean;
   freeThrowsAttempted?: number;
   freeThrowsMade?: number;
@@ -457,16 +458,22 @@ export async function saveMatchAction(
 
   try {
     const capabilities = await getSchemaCapabilities(client);
-    await client.write(MODELS.game, [input.match.gameId], {
+    const written = await client.write(MODELS.game, [input.match.gameId], {
       [GAME.awayScore]: input.nextAwayScore,
       [GAME.homeScore]: input.nextHomeScore,
       [GAME.status]: "Live",
     });
+    if (!written) throw new Error("Odoo no confirmó el marcador. La jugada sigue pendiente.");
 
     const statResult = await savePlayerStat(client, input, capabilities);
     const forcedTurnoverResult = await saveForcedTurnoverStat(client, input, capabilities);
+    const flowMessage = await saveGameFlowFields(client, input.match, capabilities, { strict: true });
     const eventResult = await saveGameEvent(client, input, capabilities);
-    const flowMessage = await saveGameFlowFields(client, input.match, capabilities);
+    const [verified] = await client.read<OdooRecord>(MODELS.game, [input.match.gameId], [GAME.awayScore, GAME.homeScore]);
+    if (!verified || numberValue(verified[GAME.awayScore], -1) !== input.nextAwayScore ||
+        numberValue(verified[GAME.homeScore], -1) !== input.nextHomeScore) {
+      throw new Error("El marcador de Odoo no coincide con la jugada enviada. Revisa otras consolas abiertas.");
+    }
 
     return {
       eventId: eventResult.eventId,
@@ -1760,7 +1767,10 @@ async function savePlayerStat(
   const foulValue = input.action === "personal foul" || input.action === "tech foul" ? 1 : 0;
 
   if (!input.player.id) {
-    return { message: "Score saved. Player stat was skipped because the player has no record id." };
+    if (pointValue || foulValue || input.shotType || ["assist", "block", "steal", "turnover", "offensive rebound", "defensive rebound"].includes(input.action)) {
+      throw new Error("El jugador todavía no tiene un ID de Odoo. Guarda la plantilla antes de sincronizar sus jugadas.");
+    }
+    return { message: "Acción de equipo sin estadística individual." };
   }
 
   if (pointValue > 0) {
@@ -1829,35 +1839,17 @@ async function savePlayerStat(
   }
 
   const supportedFullValues = filterWritableValues(fullValues, capabilities.playerGameStat);
-  const supportedCoreValues = filterWritableValues(coreValues, capabilities.playerGameStat);
+  if (!fieldsAreSame(supportedFullValues, fullValues)) {
+    throw new Error("Faltan campos de estadísticas en Odoo; la jugada se conserva pendiente en este dispositivo.");
+  }
 
   if (Object.keys(supportedFullValues).length === 0) {
-    return { message: "Detail stat kept locally. Run the field script to persist this action type." };
+    throw new Error("Odoo no tiene los campos necesarios para guardar esta estadística.");
   }
 
-  try {
-    const statId = await upsertPlayerStat(client, input, supportedFullValues);
-    return {
-      message: fieldsAreSame(supportedFullValues, fullValues)
-        ? "Score and player detail saved."
-        : "Core score saved. Run the field script to persist detail stats.",
-      statId,
-    };
-  } catch (error) {
-    if (Object.keys(supportedCoreValues).length === 0) {
-      return { message: "Detail stat kept locally. Run the field script to persist this action type." };
-    }
-
-    if (fieldsAreSame(supportedFullValues, supportedCoreValues)) {
-      throw error;
-    }
-
-    const statId = await upsertPlayerStat(client, input, supportedCoreValues);
-    return {
-      message: "Core score saved. Run the field script to persist detail stats.",
-      statId,
-    };
-  }
+  const statId = await upsertPlayerStat(client, input, supportedFullValues);
+  if (!statId) throw new Error("Odoo no confirmó las estadísticas del jugador.");
+  return { message: "Score and player detail saved.", statId };
 }
 
 async function upsertPlayerStat(
@@ -1879,7 +1871,7 @@ async function saveForcedTurnoverStat(
   }
 
   if (!player.id) {
-    return { message: "Forced turnover kept locally because the player has no record id." };
+    throw new Error("El jugador de la pérdida de balón todavía no tiene un ID de Odoo.");
   }
 
   const values = filterWritableValues({
@@ -1887,10 +1879,11 @@ async function saveForcedTurnoverStat(
   }, capabilities.playerGameStat);
 
   if (Object.keys(values).length === 0) {
-    return { message: "Forced turnover kept locally." };
+    throw new Error("Falta el campo para guardar la pérdida de balón en Odoo.");
   }
 
   const statId = await upsertPlayerStatForMatch(client, input.match, player, values);
+  if (!statId) throw new Error("Odoo no confirmó la pérdida de balón.");
   return {
     message: "Forced turnover saved.",
     statId,
@@ -1904,7 +1897,7 @@ async function upsertPlayerStatForMatch(
   values: Record<string, unknown>,
 ) {
   if (player.statId) {
-    await client.write(MODELS.playerGameStat, [player.statId], values);
+    if (!await client.write(MODELS.playerGameStat, [player.statId], values)) throw new Error("Odoo no confirmó las estadísticas del jugador.");
     return player.statId;
   }
 
@@ -1948,7 +1941,7 @@ async function upsertPlayerStatForMatchNow(
   const existingStatId = numberValue(existingStat?.id);
 
   if (existingStatId) {
-    await client.write(MODELS.playerGameStat, [existingStatId], values);
+    if (!await client.write(MODELS.playerGameStat, [existingStatId], values)) throw new Error("Odoo no confirmó las estadísticas del jugador.");
     return existingStatId;
   }
 
@@ -1977,10 +1970,17 @@ async function saveGameEvent(
   capabilities: SchemaCapabilities,
 ) {
   if (!capabilities.gameEvent.exists) {
-    return { message: "Event kept locally." };
+    throw new Error("El historial de jugadas no está disponible en Odoo.");
   }
 
   try {
+    const marker = input.operationId ? `[pbo-sync:${input.operationId}]` : undefined;
+    if (marker) {
+      if (!capabilities.gameEvent.fields.has(GAME_EVENT.note)) throw new Error("Falta el campo de notas para verificar la jugada.");
+      const existing = await client.searchRead<OdooRecord>(MODELS.gameEvent,
+        [[GAME_EVENT.game, "=", input.match.gameId], [GAME_EVENT.note, "like", marker]], ["id"], { limit: 1 });
+      if (existing[0]?.id) return { eventId: existing[0].id, message: "Jugada ya confirmada en Odoo." };
+    }
     const scoreAfter = `${input.nextAwayScore}-${input.nextHomeScore}`;
     const values = filterWritableValues({
       [GAME_EVENT.active]: true,
@@ -1988,7 +1988,7 @@ async function saveGameEvent(
       [GAME_EVENT.clockSeconds]: clockToSeconds(input.match.clock),
       [GAME_EVENT.game]: input.match.gameId,
       [GAME_EVENT.name]: `${input.match.clock} #${input.player.number} ${input.label}`,
-      [GAME_EVENT.note]: input.note ?? (input.foulOnShot ? "Shooting foul/free throws included" : ""),
+      [GAME_EVENT.note]: [input.note ?? (input.foulOnShot ? "Shooting foul/free throws included" : ""), marker].filter(Boolean).join("\n"),
       [GAME_EVENT.period]: input.match.period,
       [GAME_EVENT.player]: input.player.id ?? false,
       [GAME_EVENT.points]: input.points,
@@ -2002,14 +2002,15 @@ async function saveGameEvent(
     }, capabilities.gameEvent);
 
     if (!values[GAME_EVENT.name]) {
-      return { message: "Event kept locally." };
+      throw new Error("Faltan campos para guardar el historial de jugadas.");
     }
 
     const eventId = await client.create(MODELS.gameEvent, values);
+    if (!eventId) throw new Error("Odoo no confirmó la creación de la jugada.");
 
     return { eventId, message: "Event feed saved." };
-  } catch {
-    return { message: "Event kept locally. Run the field script to persist the event feed." };
+  } catch (error) {
+    throw error;
   }
 }
 
@@ -2293,7 +2294,7 @@ function normalizeGameEvent(
     icon: getEventIcon(action, points),
     id,
     label: stringValue(record[GAME_EVENT.name]) || titleCase(action),
-    note: stringValue(record[GAME_EVENT.note]) || undefined,
+    note: stringValue(record[GAME_EVENT.note]).replace(/\n?\[pbo-sync:[^\]]+\]/g, "").trim() || undefined,
     period: numberValue(record[GAME_EVENT.period]),
     player: relationName(record[GAME_EVENT.player]) || "Player",
     playerId: relationId(record[GAME_EVENT.player]),
