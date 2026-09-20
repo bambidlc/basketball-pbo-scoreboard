@@ -82,7 +82,7 @@ import { CourtSvg } from "./components/CourtSvg";
 import { QuickScorePanel, ScoringDialog, ScoringPlayerPicker, ScoringToolbar } from "./components/ScoringControls";
 import { SubstitutionDialog } from "./components/SubstitutionDialog";
 import { DatabaseSyncStatus } from "./components/DatabaseSyncStatus";
-import { computeEqualization, applyPlayerDiscipline, isPlayerUnavailable, technicalSuspensionNote, formatGameCategory, BENCH_ORDER, courtOrder, lineupReview, nextEventId, playerKey as getPlayerKey, swappedCourts, type CourtSides, type LineupDrafts, type ScoringView } from "./scoring";
+import { computeEqualization, isEqualizationEligible, applyPlayerDiscipline, isPlayerUnavailable, technicalSuspensionNote, formatGameCategory, BENCH_ORDER, courtOrder, lineupReview, nextEventId, playerKey as getPlayerKey, swappedCourts, type CourtSides, type LineupDrafts, type ScoringView } from "./scoring";
 import { cn } from "./lib/cn";
 
 const loadMotionFeatures = () => import("./motionFeatures").then((module) => module.default);
@@ -6575,7 +6575,7 @@ function PreGameDialog({
                   {match[equalization.team].name} +{equalization.points} at Q3 · equiparación
                 </span>
               ) : (
-                <span className="text-neutral-500">Even rosters — no equalization</span>
+                <span className="text-neutral-500">{isEqualizationEligible(match) ? "Even rosters — no equalization" : "Sin equiparación · solo aplica a categorías menores de 14U"}</span>
               )}
             </div>
           </div>

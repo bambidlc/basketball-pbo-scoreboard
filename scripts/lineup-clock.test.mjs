@@ -122,7 +122,7 @@ for (const [open, close] of [["openFoul", "closeFoul"], ["openTech", "closeTech"
   });
 }
 
-function equalizationHarness(awayPresent, homePresent) {
+function equalizationHarness(awayPresent, homePresent, awayCategory = "13u", homeCategory = awayCategory) {
   const app = harness();
   Object.assign(app, {
     computeEqualization, periodSettings: { periodCount: 4 }, FULL_SHOT_CLOCK: 24,
@@ -133,8 +133,8 @@ function equalizationHarness(awayPresent, homePresent) {
     buildEqualizationEvent: (team, points) => ({ equalization: true, team, points }),
   });
   Object.assign(app.matchRef.current, { awayScore: 20, homeScore: 30 });
-  Object.assign(app.matchRef.current.away, { name: "Aguas Buenas", presentCount: awayPresent });
-  Object.assign(app.matchRef.current.home, { name: "Fraigcomar", presentCount: homePresent });
+  Object.assign(app.matchRef.current.away, { name: "Aguas Buenas", presentCount: awayPresent, category: awayCategory });
+  Object.assign(app.matchRef.current.home, { name: "Fraigcomar", presentCount: homePresent, category: homeCategory });
   for (const name of ["setPeriod", "applyEqualization", "removeEqualization"]) vm.runInContext(handler(name), app);
   return app;
 }
@@ -173,6 +173,27 @@ test("equalization follows the larger squad on either side and does not award ti
     assert.equal(match.awayScore, 20 + (team === "away" ? points : 0));
     assert.equal(match.homeScore, 30 + (team === "home" ? points : 0));
     assert.equal(match.events.length, points ? 1 : 0);
+  }
+});
+
+test("14U and older, unknown and mismatched categories never award equalization at Q3", () => {
+  for (const [away, home] of [["14u", "14u"], ["15U", "15U"], ["16u", "16u"], ["18u", "18u"], ["", ""], ["13u", "14u"], ["12u", "13u"]]) {
+    const app = equalizationHarness(12, 9, away, home);
+    assert.equal(computeEqualization(app.matchRef.current), undefined);
+    app.setPeriod(3);
+    assert.equal(app.matchRef.current.awayScore, 20);
+    assert.equal(app.matchRef.current.homeScore, 30);
+    assert.equal(app.matchRef.current.events.length, 0);
+    assert.equal(app.matchRef.current.equalizationApplied, undefined);
+  }
+});
+
+test("younger categories still award two points per player", () => {
+  for (const category of ["10u", "11u", "12u", " 13U "]) {
+    const app = equalizationHarness(12, 9, category);
+    app.setPeriod(3);
+    assert.equal(app.matchRef.current.awayScore, 26);
+    assert.equal(app.matchRef.current.equalizationPoints, 6);
   }
 });
 

@@ -3,6 +3,7 @@ import type { GameEvent, LiveMatch, Player, ShotLocation, Team, TeamId } from ".
 export const PLAYER_SUSPENSION_PREFIX = "Suspensión del jugador por este partido: ";
 
 export function computeEqualization(match: Pick<LiveMatch, "away" | "home">): { points: number; team: TeamId } | undefined {
+  if (!isEqualizationEligible(match)) return undefined;
   const awayPresent = match.away.presentCount;
   const homePresent = match.home.presentCount;
   const diff = Math.abs(awayPresent - homePresent);
@@ -10,6 +11,14 @@ export function computeEqualization(match: Pick<LiveMatch, "away" | "home">): { 
 
   // Award two points per additional present player to the larger squad.
   return { points: diff * 2, team: awayPresent > homePresent ? "away" : "home" };
+}
+
+export function isEqualizationEligible(match: Pick<LiveMatch, "away" | "home">): boolean {
+  const ages = [match.away.category, match.home.category].map(category => {
+    const value = category?.trim().match(/^(\d{1,2})u$/i);
+    return value ? Number(value[1]) : undefined;
+  });
+  return ages.every(age => age !== undefined && age > 0 && age < 14) && ages[0] === ages[1];
 }
 
 export function isPlayerUnavailable(player: Player) {
