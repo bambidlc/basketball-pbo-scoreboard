@@ -460,6 +460,13 @@ export async function saveMatchAction(
 
   try {
     const capabilities = await getSchemaCapabilities(client);
+    // An event is created only after stats and game flow have succeeded. Recognize
+    // it before replaying absolute totals from an older export/lost response.
+    const confirmedEventId = await findConfirmedAction(client, input, capabilities);
+    if (confirmedEventId) return { saved: true, eventId: confirmedEventId,
+      log: createLog("success", "Action already synced", "Jugada ya confirmada en Odoo; se conserva el marcador actual.") };
+    playerStatValues(input, capabilities); // Preflight schema/identity before writing a score.
+    gameFlowValues(input.match, capabilities, { strict: true });
     const written = await client.write(MODELS.game, [input.match.gameId], {
       [GAME.awayScore]: input.nextAwayScore,
       [GAME.homeScore]: input.nextHomeScore,
@@ -470,7 +477,7 @@ export async function saveMatchAction(
     const statResult = await savePlayerStat(client, input, capabilities);
     const forcedTurnoverResult = await saveForcedTurnoverStat(client, input, capabilities);
     const flowMessage = await saveGameFlowFields(client, input.match, capabilities, { strict: true });
-    const eventResult = await saveGameEvent(client, input, capabilities);
+    const eventResult = await saveGameEvent(client, input, capabilities, true);
     const [verified] = await client.read<OdooRecord>(MODELS.game, [input.match.gameId], [GAME.awayScore, GAME.homeScore]);
     if (!verified || numberValue(verified[GAME.awayScore], -1) !== input.nextAwayScore ||
         numberValue(verified[GAME.homeScore], -1) !== input.nextHomeScore) {
@@ -519,6 +526,7 @@ export async function saveMatchFlowState(
       saved: true,
     };
   } catch (error) {
+    if (error instanceof MissingSchemaFieldsError) capabilityCache.delete(client);
     return {
       log: createLog("error", "Timer sync failed", getErrorMessage(error)),
       saved: false,
@@ -1746,6 +1754,14 @@ async function savePlayerStat(
   input: SaveMatchActionInput,
   capabilities: SchemaCapabilities,
 ): Promise<PlayerStatSaveResult> {
+  const values = playerStatValues(input, capabilities);
+  if (!Object.keys(values).length) return { message: "Acción sin estadística individual.", statId: input.player.statId };
+  const statId = await upsertPlayerStat(client, input, values);
+  if (!statId) throw new Error("Odoo no confirmó las estadísticas del jugador.");
+  return { message: "Score and player detail saved.", statId };
+}
+
+function playerStatValues(input: SaveMatchActionInput, capabilities: SchemaCapabilities): Record<string, unknown> {
   const fullValues: Record<string, unknown> = {};
   const coreValues: Record<string, unknown> = {};
   const pointValue = input.points;
@@ -1755,7 +1771,7 @@ async function savePlayerStat(
     if (pointValue || foulValue || input.shotType || ["assist", "block", "steal", "turnover", "offensive rebound", "defensive rebound"].includes(input.action)) {
       throw new Error("El jugador todavía no tiene un ID de Odoo. Guarda la plantilla antes de sincronizar sus jugadas.");
     }
-    return { message: "Acción de equipo sin estadística individual." };
+    return {};
   }
 
   if (pointValue > 0) {
@@ -1817,10 +1833,7 @@ async function savePlayerStat(
   }
 
   if (Object.keys(fullValues).length === 0) {
-    return {
-      message: "Score saved. No player stat changed for this action.",
-      statId: input.player.statId,
-    };
+    return {};
   }
 
   const supportedFullValues = filterWritableValues(fullValues, capabilities.playerGameStat);
@@ -1832,9 +1845,7 @@ async function savePlayerStat(
     throw new Error("Odoo no tiene los campos necesarios para guardar esta estadística.");
   }
 
-  const statId = await upsertPlayerStat(client, input, supportedFullValues);
-  if (!statId) throw new Error("Odoo no confirmó las estadísticas del jugador.");
-  return { message: "Score and player detail saved.", statId };
+  return supportedFullValues;
 }
 
 async function upsertPlayerStat(
@@ -1949,10 +1960,20 @@ function getStatUpsertQueues(client: OdooClient) {
   return queues;
 }
 
+async function findConfirmedAction(client: OdooClient, input: SaveMatchActionInput, capabilities: SchemaCapabilities) {
+  if (!input.operationId) return undefined;
+  if (!capabilities.gameEvent.exists) throw new Error("El historial de jugadas no está disponible en Odoo.");
+  if (!capabilities.gameEvent.fields.has(GAME_EVENT.note)) throw new MissingSchemaFieldsError(MODELS.gameEvent, [GAME_EVENT.note]);
+  const existing = await client.searchRead<OdooRecord>(MODELS.gameEvent,
+    [[GAME_EVENT.game, "=", input.match.gameId], [GAME_EVENT.note, "like", `[pbo-sync:${input.operationId}]`]], ["id"], { limit: 1 });
+  return existing[0]?.id;
+}
+
 async function saveGameEvent(
   client: OdooClient,
   input: SaveMatchActionInput,
   capabilities: SchemaCapabilities,
+  operationChecked = false,
 ) {
   if (!capabilities.gameEvent.exists) {
     throw new Error("El historial de jugadas no está disponible en Odoo.");
@@ -1960,11 +1981,9 @@ async function saveGameEvent(
 
   try {
     const marker = input.operationId ? `[pbo-sync:${input.operationId}]` : undefined;
-    if (marker) {
-      if (!capabilities.gameEvent.fields.has(GAME_EVENT.note)) throw new MissingSchemaFieldsError(MODELS.gameEvent, [GAME_EVENT.note]);
-      const existing = await client.searchRead<OdooRecord>(MODELS.gameEvent,
-        [[GAME_EVENT.game, "=", input.match.gameId], [GAME_EVENT.note, "like", marker]], ["id"], { limit: 1 });
-      if (existing[0]?.id) return { eventId: existing[0].id, message: "Jugada ya confirmada en Odoo." };
+    if (marker && !operationChecked) {
+      const existing = await findConfirmedAction(client, input, capabilities);
+      if (existing) return { eventId: existing, message: "Jugada ya confirmada en Odoo." };
     }
     const scoreAfter = `${input.nextAwayScore}-${input.nextHomeScore}`;
     const values = filterWritableValues({
@@ -2005,7 +2024,24 @@ async function saveGameFlowFields(
   capabilities: SchemaCapabilities,
   options: { includeScores?: boolean; strict?: boolean } = {},
 ) {
-  const values = filterWritableValues({
+  const values = gameFlowValues(match, capabilities, options);
+  if (!Object.keys(values).length) {
+    if (options.strict) throw new Error("Odoo no confirmó los campos del reloj. El cambio sigue pendiente.");
+    return "";
+  }
+  try {
+    const written = await client.write(MODELS.game, [match.gameId!], values);
+    if (!written) throw new Error("Odoo did not confirm the game flow update.");
+
+    return "Game flow saved.";
+  } catch (error) {
+    if (options.strict) throw error;
+    return "";
+  }
+}
+
+function gameFlowValues(match: LiveMatch, capabilities: SchemaCapabilities, options: { includeScores?: boolean; strict?: boolean }) {
+  const fullValues: Record<string, unknown> = {
     [GAME.awayScore]: match.awayScore,
     [GAME.awayTimeouts]: match.away.timeouts,
     [GAME.gameClockSeconds]: clockToSeconds(match.clock),
@@ -2019,28 +2055,20 @@ async function saveGameFlowFields(
     [GAME.equalizationPoints]: match.equalizationPoints ?? 0,
     [GAME.equalizationTeam]: match.equalizationTeam ? match[match.equalizationTeam].id ?? false : false,
     [GAME.equalizationApplied]: match.equalizationApplied ?? false,
-  }, capabilities.game);
+  };
 
   // Timer checkpoints can be delayed in transit. They must never carry stale scores
   // over a result that has already been confirmed by Odoo.
   if (options.includeScores === false) {
-    delete values[GAME.awayScore];
-    delete values[GAME.homeScore];
+    delete fullValues[GAME.awayScore];
+    delete fullValues[GAME.homeScore];
   }
 
-  if (Object.keys(values).length === 0) {
-    return "";
+  if (options.strict) {
+    const missing = Object.keys(fullValues).filter(field => fullValues[field] !== undefined && !capabilities.game.fields.has(field));
+    if (missing.length) throw new MissingSchemaFieldsError(MODELS.game, missing);
   }
-
-  try {
-    const written = await client.write(MODELS.game, [match.gameId!], values);
-    if (!written) throw new Error("Odoo did not confirm the game flow update.");
-
-    return "Game flow saved.";
-  } catch (error) {
-    if (options.strict) throw error;
-    return "";
-  }
+  return filterWritableValues(fullValues, capabilities.game);
 }
 
 async function saveGameSetupFields(
@@ -2103,6 +2131,10 @@ class MissingSchemaFieldsError extends Error {
     super(`Faltan campos en Odoo: ${model}.${fields.join(", ")}. La jugada sigue guardada aquí; se comprobarán los campos al reintentar.`);
     this.name = "MissingSchemaFieldsError";
   }
+}
+
+export function resetSchemaCapabilities(client: OdooClient) {
+  capabilityCache.delete(client);
 }
 
 function getSchemaCapabilities(client: OdooClient) {

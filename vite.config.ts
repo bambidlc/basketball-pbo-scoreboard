@@ -1,3 +1,4 @@
+import { execSync } from "node:child_process";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig, loadEnv } from "vite";
@@ -8,8 +9,13 @@ export default defineConfig(({ mode }) => {
   const odooUrl = env.VITE_ODOO_URL;
   const port = process.env.PORT ? Number(process.env.PORT) : undefined;
 
+  let revision = "local";
+  try { revision = execSync("git rev-parse --short HEAD", { encoding: "utf8" }).trim(); } catch { /* Source archive. */ }
+  const version = `${revision}-${Date.now().toString(36)}`;
   return {
+    define: { __APP_VERSION__: JSON.stringify(version) },
     plugins: [
+      { name: "scorer-version", generateBundle() { this.emitFile({ type: "asset", fileName: "version.json", source: JSON.stringify({ version }) }); } },
       react(),
       tailwindcss(),
       // Thin PWA: precache the app shell so the scorer opens with no signal at all,

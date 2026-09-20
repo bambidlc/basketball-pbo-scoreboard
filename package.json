@@ -19,7 +19,8 @@
     "dev": "vite --host 0.0.0.0",
     "build": "tsc -b && vite build",
     "preview": "vite preview --host 0.0.0.0",
-    "start": "node server.js"
+    "start": "node server.js",
+    "test:storage": "node scripts/test-device-storage.mjs"
   },
   "dependencies": {
     "@google/design.md": "^0.1.1",
@@ -39,6 +40,7 @@
     "@types/react": "latest",
     "@types/react-dom": "latest",
     "@vitejs/plugin-react": "latest",
+    "fake-indexeddb": "^6.2.5",
     "typescript": "latest",
     "vite": "latest",
     "vite-plugin-pwa": "^1.3.0"

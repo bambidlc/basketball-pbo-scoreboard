@@ -8,7 +8,7 @@ import { MODELS, PLAYER, PLAYER_FIELDS, PLAYER_STAT, PLAYER_STAT_FIELDS, PLAYER_
 // Run the production normalization/read/write functions without a live Odoo connection.
 const source = ts.createSourceFile("liveMatch.ts", readFileSync(new URL("../src/api/liveMatch.ts", import.meta.url), "utf8"), ts.ScriptTarget.Latest, true);
 const app = vm.createContext({ MODELS, PLAYER, PLAYER_STAT, PLAYER_STAT_FIELDS, PLAYER_STAT_OPTIONAL_FIELDS });
-for (const name of ["numberValue", "optionalNumberValue", "stringValue", "createPlayer", "normalizePlayer", "loadStatsForGame", "filterReadableFields", "filterWritableValues", "uniqueStrings", "getPeriodField", "periodFieldToPlayerKey", "fieldsAreSame", "savePlayerStat"]) {
+for (const name of ["numberValue", "optionalNumberValue", "stringValue", "createPlayer", "normalizePlayer", "loadStatsForGame", "filterReadableFields", "filterWritableValues", "uniqueStrings", "getPeriodField", "periodFieldToPlayerKey", "fieldsAreSame", "playerStatValues", "savePlayerStat"]) {
   const fn = source.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === name);
   assert.ok(fn, name);
   vm.runInContext(ts.transpile(fn.getText(source), { target: ts.ScriptTarget.ES2022 }), app);

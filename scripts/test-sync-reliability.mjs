@@ -10,7 +10,7 @@ const vite = await createServer({ appType: "custom", logLevel: "silent", server:
 try {
   const { restorePendingMatch, applyPendingResult, trimMatchForOutbox, operationGameId, nextPendingOperation, pendingGameChanged, queueRosterCorrection, rosterSignature } = await vite.ssrLoadModule("/src/api/outbox.ts");
   const { playerKey } = await vite.ssrLoadModule("/src/scoring.ts");
-  const { fallbackMatch, saveMatchAction } = await vite.ssrLoadModule("/src/api/liveMatch.ts");
+  const { fallbackMatch, saveMatchAction, saveMatchFlowState } = await vite.ssrLoadModule("/src/api/liveMatch.ts");
   const schema = await vite.ssrLoadModule("/src/api/schema.ts");
   const { GAME: G, PLAYER_STAT: P, GAME_EVENT: E, MODELS: M } = schema;
   const match = (awayScore = 0, homeScore = 0) => ({ ...structuredClone(fallbackMatch), gameId: 260, period: 3, clock: "08:00", awayScore, homeScore,
@@ -71,6 +71,18 @@ try {
       return id;
     }
   }
+  const missingClock = new Client();
+  const searchMetadata = missingClock.searchRead.bind(missingClock);
+  missingClock.searchRead = async (model, ...args) => {
+    if (model === "ir.model" || model === "ir.model.fields") throw new Error("Offline");
+    return searchMetadata(model, ...args);
+  };
+  assert.equal((await saveMatchFlowState(missingClock, match(14), false)).saved, false, "failed discovery cannot silently discard a clock checkpoint");
+  assert.equal(missingClock.game[G.awayScore], 0);
+  missingClock.searchRead = searchMetadata;
+  assert.equal((await saveMatchFlowState(missingClock, match(14), false)).saved, true, "a retry discovers the clock fields after reconnect");
+  assert.equal(missingClock.game[G.period], 3);
+  assert.equal(missingClock.game[G.awayScore], 0, "ordinary clock checkpoints do not overwrite the score");
   const blocked = new Client(); blocked.failEvent = true;
   const failed = await saveMatchAction(blocked, input());
   assert.equal(failed.saved, false);
@@ -79,6 +91,13 @@ try {
   assert.equal((await saveMatchAction(blocked, input())).saved, true);
   assert.equal(blocked.events.length, 1);
   assert.equal(blocked.stats[0][P.totalPoints], 2);
+  const alreadySynced = new Client();
+  assert.equal((await saveMatchAction(alreadySynced, input())).saved, true);
+  alreadySynced.game[G.awayScore] = 40;
+  alreadySynced.stats[0][P.totalPoints] = 30;
+  assert.equal((await saveMatchAction(alreadySynced, input())).saved, true);
+  assert.equal(alreadySynced.game[G.awayScore], 40, "restoring an acknowledged play cannot roll the game back");
+  assert.equal(alreadySynced.stats[0][P.totalPoints], 30, "restoring an acknowledged play cannot roll stats back");
   const lost = new Client(); lost.lostEventResponse = true;
   assert.equal((await saveMatchAction(lost, input())).saved, false);
   assert.equal((await saveMatchAction(lost, input())).saved, true);
@@ -95,6 +114,7 @@ try {
   assert.equal(missingField.saved, false);
   assert.match(missingField.log.detail, /x_studio_tech_fouls/);
   assert.equal(schemaRepair.events.length, 0);
+  assert.equal(schemaRepair.game[G.status], undefined, "schema failure must not rewrite the game before rejecting the play");
   schemaRepair.missingTechField = false;
   assert.equal((await saveMatchAction(schemaRepair, technical)).saved, true, "next retry rediscovers the repaired schema without reloading");
   assert.equal((await saveMatchAction(schemaRepair, technical)).saved, true);
@@ -120,7 +140,7 @@ try {
   const context = vm.createContext({ apiClient: { enabled: true }, flushingRef: { current: false }, inFlightOpIdsRef: { current: new Set() },
     pendingOpsRef: { current: [{ id: "a", kind: "action", attempts: 0, input: input() }, { id: "b", kind: "flow", attempts: 0, match: match(2), includeScores: true }] },
     navigator: { onLine: true }, useCallback: fn => fn, linkServerEventId: () => {}, reconcileRosterSync: () => {}, appendLog: () => {}, operationGameId, nextPendingOperation,
-    confirmDatabaseSave: () => {}, setConnectionStatus: () => {}, setResultFeedback: () => {}, createLog: (_level, message) => ({ message }) });
+    deviceStorage: { flush: async () => true }, recoveryOpenRef: { current: false }, setIsSyncing() {}, confirmDatabaseSave: () => {}, setConnectionStatus: () => {}, setResultFeedback: () => {}, createLog: (_level, message) => ({ message }) });
   context.setPendingOps = fn => { context.pendingOpsRef.current = fn(context.pendingOpsRef.current); };
   context.saveMatchAction = async () => ({ saved: false, log: { level: "error", detail: "Blocked head" } });
   context.saveMatchFlowState = async () => { writes.push("flow"); return { saved: true }; };
@@ -255,7 +275,7 @@ try {
     customModeRef: { current: false }, mutationRevisionRef: { current: 0 }, pendingOpsRef: { current: [] },
     selectedGameIdRef: { current: 260 }, inFlightRefreshRef: { current: false }, pendingRefreshRef: { current: null },
     operationGameId, pendingGameChanged, STORAGE_KEYS: { outbox: "queue" }, writeStoredJson: () => true,
-    setLocalBackupFailed() {}, setPendingOpsState() {},
+    recordConfirmedOperation() {}, setLocalBackupFailed() {}, setPendingOpsState() {},
     rateLimitUntilRef: { current: 0 }, clockRunningRef: { current: false }, matchOptionsLoadedRef: { current: true },
     matchOptionsLoadedAtRef: { current: Date.now() }, MATCH_OPTIONS_REFRESH_MS: 1e9, loadedGameIdRef: { current: 259 },
     setIsRefreshing() {}, setConnectionStatus() {}, setMatchOptions() {}, appendLog() {}, isRateLimitLog: () => false,
@@ -298,7 +318,7 @@ try {
   assert.equal(refreshContext.currentMatch.awayScore, 22);
   assert.equal(refreshContext.currentMatch.away.players[0].number, "31");
 
-  const receipts = vm.createContext({ useCallback: fn => fn, operationGameId, rosterSignature, writeStoredJson: () => true, saved: {} });
+  const receipts = vm.createContext({ recordConfirmedOperation() {}, useCallback: fn => fn, operationGameId, rosterSignature, writeStoredJson: () => true, saved: {} });
   receipts.setDatabaseReceipts = fn => { receipts.saved = fn(receipts.saved); };
   vm.runInContext(ts.transpile(`var confirm = ${confirmationWriter}`, { target: ts.ScriptTarget.ES2022 }), receipts);
   receipts.confirm(priorRoster, true);

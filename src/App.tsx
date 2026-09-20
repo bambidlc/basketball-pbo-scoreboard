@@ -45,6 +45,7 @@ import {
   createLog,
   fallbackMatch,
   getPeriodLabel,
+  resetSchemaCapabilities,
   loadLiveMatch,
   loadMatchOptions,
   saveGameDayRoster,
@@ -72,6 +73,10 @@ import {
 } from "./schedule";
 import { OdooClient, getOdooConfig } from "./api/odooClient";
 import { applyPendingResult, restorePendingMatch, operationGameId, nextPendingOperation, pendingGameChanged, queueRosterCorrection, rosterSignature, makeOpId, trimMatchForOutbox, type DatabaseReceipt, type OutboxOp } from "./api/outbox";
+import { deviceStorage } from "./api/deviceStorage";
+import { backupMatches, CONFIRMED_OPERATIONS, mergeBackupOperations, recordConfirmedOperation, type ScorerBackup } from "./api/backup";
+import { BackupRecovery } from "./components/BackupRecovery";
+import { AppUpdate } from "./components/AppUpdate";
 import { ScheduleBrowser } from "./components/ScheduleBrowser";
 import { CourtSvg } from "./components/CourtSvg";
 import { QuickScorePanel, ScoringDialog, ScoringPlayerPicker, ScoringToolbar } from "./components/ScoringControls";
@@ -457,7 +462,23 @@ function App() {
     () => readStoredJson<Record<number, DatabaseReceipt>>("pbo:databaseReceipts") ?? {},
   );
   const [isRetryingSync, setIsRetryingSync] = useState(false);
-  const [localBackupFailed, setLocalBackupFailed] = useState(false);
+  const [localBackupFailed, setLocalBackupFailed] = useState(deviceStorage.failed);
+  const [localBackupPending, setLocalBackupPending] = useState(deviceStorage.pending);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [recoveryOpen, setRecoveryOpen] = useState(false);
+  const recoveryOpenRef = useRef(false);
+  const recoveryReadyRef = useRef(false);
+  useEffect(() => deviceStorage.subscribe(() => {
+    setLocalBackupFailed(deviceStorage.failed);
+    setLocalBackupPending(deviceStorage.pending);
+  }), []);
+  useEffect(() => {
+    const beforeUnload = (event: BeforeUnloadEvent) => {
+      if (deviceStorage.pending || deviceStorage.failed) { event.preventDefault(); event.returnValue = ""; }
+    };
+    window.addEventListener("beforeunload", beforeUnload);
+    return () => window.removeEventListener("beforeunload", beforeUnload);
+  }, []);
   const [syncLog, setSyncLog] = useState<SyncLogEntry[]>(() =>
     readStoredSyncLog(apiConfig.enabled),
   );
@@ -534,6 +555,9 @@ function App() {
   // Persist before starting network work, so an immediate reload cannot lose a save.
   const setPendingOps = useCallback((update: (current: OutboxOp[]) => OutboxOp[]) => {
     const next = update(pendingOpsRef.current);
+    const remaining = new Set(next.map(op => op.id));
+    // A later backup import must not resurrect acknowledged, undone, or replaced ops.
+    for (const previous of pendingOpsRef.current) if (!remaining.has(previous.id)) recordConfirmedOperation(previous.id);
     // Acknowledging game A must not invalidate a roster download for game B.
     if (pendingGameChanged(pendingOpsRef.current, next, selectedGameIdRef.current)) mutationRevisionRef.current += 1;
     pendingOpsRef.current = next;
@@ -542,6 +566,7 @@ function App() {
   }, []);
 
   const confirmDatabaseSave = useCallback((op: OutboxOp, rosterVerified = false) => {
+    recordConfirmedOperation(op.id);
     const gameId = operationGameId(op);
     if (!gameId) return;
     setDatabaseReceipts(current => {
@@ -758,7 +783,7 @@ function App() {
   // Preserve FIFO per game. A failed game's writes wait for correction while other
   // games continue; acknowledged operation IDs cannot remove newer roster edits.
   const flushOutbox = useCallback(async () => {
-    if (!apiClient.enabled || flushingRef.current || inFlightOpIdsRef.current.size > 0) {
+    if (!apiClient.enabled || recoveryOpenRef.current || flushingRef.current || inFlightOpIdsRef.current.size > 0) {
       return;
     }
     if (typeof navigator !== "undefined" && !navigator.onLine) {
@@ -766,13 +791,15 @@ function App() {
     }
 
     flushingRef.current = true;
+    setIsSyncing(true);
     try {
+      await deviceStorage.flush();
       const hadPending = pendingOpsRef.current.length > 0;
       let failed = false;
       const blockedGames = new Set<number | undefined>();
       let lastGameId: number | undefined;
 
-      while (pendingOpsRef.current.length > 0) {
+      while (pendingOpsRef.current.length > 0 && !recoveryOpenRef.current) {
         const op = nextPendingOperation(pendingOpsRef.current, blockedGames, lastGameId);
         if (!op) break;
         lastGameId = operationGameId(op);
@@ -827,6 +854,7 @@ function App() {
       }
     } finally {
       flushingRef.current = false;
+      setIsSyncing(false);
     }
   }, [apiClient, linkServerEventId, reconcileRosterSync, appendLog, confirmDatabaseSave]);
 
@@ -2758,19 +2786,42 @@ function App() {
 
   async function retryDatabaseSync() {
     setIsRetryingSync(true);
+    resetSchemaCapabilities(apiClient);
     try {
+      await deviceStorage.flush();
       await Promise.all([flushOutbox(), refreshMatch(undefined, { force: true })]);
     } finally { setIsRetryingSync(false); }
   }
 
   function exportLocalBackup() {
-    const backup = { savedAt: new Date().toISOString(), match: matchRef.current, pendingOps: pendingOpsRef.current };
+    const backup = { version: 2, savedAt: new Date().toISOString(), match: matchRef.current, pendingOps: pendingOpsRef.current, storage: deviceStorage.snapshot() };
     const url = URL.createObjectURL(new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" }));
     const link = document.createElement("a");
     link.href = url;
     link.download = `pbo-respaldo-${matchRef.current.gameId ?? "local"}-${Date.now()}.json`;
     link.click();
     window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  async function restoreBackup(backup: ScorerBackup) {
+    if (flushingRef.current || inFlightOpIdsRef.current.size) throw new Error("Espera a que termine el envío actual y pulsa Restaurar otra vez.");
+    const confirmed = readStoredJson<Record<string, number>>(CONFIRMED_OPERATIONS) ?? {};
+    const merged = mergeBackupOperations(pendingOpsRef.current, backup, confirmed);
+    const recovered = backupMatches(backup, merged);
+    // Only affected games are restored. Unrelated settings/records in a file are never imported.
+    for (const snapshot of recovered) { persistStoredLiveMatch(snapshot); writeStoredGameDayRoster(snapshot); }
+    setPendingOps(() => merged);
+    const current = recovered.find(snapshot => snapshot.gameId === matchRef.current.gameId) ??
+      (!matchRef.current.gameId ? recovered.find(snapshot => snapshot.gameId === backup.match.gameId) : undefined);
+    if (current) {
+      matchRef.current = current; setMatch(current);
+      selectedGameIdRef.current = current.gameId; setSelectedGameId(current.gameId);
+      writeStoredNumber(STORAGE_KEYS.selectedGameId, current.gameId);
+    }
+    if (!await deviceStorage.flush()) throw new Error("No se pudo confirmar el respaldo en este dispositivo. Conserva el archivo; las jugadas siguen en memoria.");
+    recoveryReadyRef.current = Boolean(current);
+    resetSchemaCapabilities(apiClient);
+    return merged.length;
   }
 
   const gamePending = pendingOps.filter(op => operationGameId(op) === match.gameId);
@@ -2782,18 +2833,30 @@ function App() {
   const rosterConfirmed = Boolean(receipt?.rosterSignature && receipt.rosterSignature === rosterSignature(match));
   const otherBlocked = otherPending.find(op => op.lastError);
   const otherBlockedMatch = otherBlocked && (otherBlocked.kind === "action" ? otherBlocked.input.match : otherBlocked.match);
-  const databaseStatus = <DatabaseSyncStatus online={isOnline} enabled={apiConfig.enabled && !customMode}
+  const databaseStatus = <><DatabaseSyncStatus online={isOnline} enabled={apiConfig.enabled && !customMode}
     pending={gamePending.length} error={firstPending?.lastError} lastSaved={receipt?.savedAt}
     otherPending={otherPending.length}
     otherError={otherBlockedMatch && `${otherBlockedMatch.away.name} vs ${otherBlockedMatch.home.name}: ${otherBlocked?.lastError}`}
     rosterStatus={rosterPending ? "Plantilla guardada en este dispositivo · pendiente de Odoo"
       : rosterConfirmed ? `Plantilla confirmada en Odoo · ${new Date(receipt!.rosterSavedAt!).toLocaleTimeString()}`
       : "Plantilla local · guarda la plantilla para confirmar en Odoo"}
-    localBackupFailed={localBackupFailed}
+    localBackupFailed={localBackupFailed} localBackupPending={localBackupPending} syncing={isSyncing}
+    onImport={() => { recoveryOpenRef.current = true; setRecoveryOpen(true); }}
     pendingLabel={pendingMatch && `${pendingMatch.away.name} vs ${pendingMatch.home.name} · ${firstPending.kind === "action" ? firstPending.input.label : firstPending.kind === "roster" ? "Plantilla" : firstPending.kind === "flow" ? "Reloj / período" : "Resultado"}`}
     retrying={isRetryingSync} reading={connectionStatus === "connected"}
     onCorrectRoster={match.gameId ? () => openGameDayRoster(match.gameId!) : undefined}
-    onRetry={() => void retryDatabaseSync()} onExport={exportLocalBackup} />;
+    onRetry={() => void retryDatabaseSync()} onExport={exportLocalBackup} />
+    <AppUpdate onSave={async () => {
+      persistStoredLiveMatch(matchRef.current);
+      writeStoredJson(STORAGE_KEYS.outbox, pendingOpsRef.current);
+      return deviceStorage.flush();
+    }} />
+    <BackupRecovery open={recoveryOpen} busy={isSyncing} onRestore={restoreBackup}
+      onClose={() => {
+        recoveryOpenRef.current = false; setRecoveryOpen(false);
+        if (recoveryReadyRef.current) { recoveryReadyRef.current = false; setScreenMode("live"); }
+        void flushOutbox();
+      }} /></>;
 
   if (screenMode === "dashboard") {
     return (
@@ -7538,15 +7601,7 @@ function PanelTitle({ children }: { children: string }) {
 }
 
 function readStoredText(key: string) {
-  if (typeof window === "undefined") {
-    return undefined;
-  }
-
-  try {
-    return window.localStorage.getItem(key) ?? undefined;
-  } catch {
-    return undefined;
-  }
+  return deviceStorage.get(key);
 }
 
 function readStoredNumber(key: string) {
@@ -7684,20 +7739,7 @@ function readStoredSyncLog(apiEnabled: boolean) {
 }
 
 function writeStoredText(key: string, value: string | undefined) {
-  if (typeof window === "undefined") {
-    return;
-  }
-
-  try {
-    if (value === undefined) {
-      window.localStorage.removeItem(key);
-      return;
-    }
-
-    window.localStorage.setItem(key, value);
-  } catch {
-    // Local storage can be unavailable in restricted browser contexts.
-  }
+  deviceStorage.set(key, value);
 }
 
 function writeStoredNumber(key: string, value: number | undefined) {
@@ -7709,22 +7751,8 @@ function writeStoredBoolean(key: string, value: boolean) {
 }
 
 function writeStoredJson(key: string, value: unknown) {
-  if (typeof window === "undefined") {
-    return false;
-  }
-
-  try {
-    if (value === undefined) {
-      window.localStorage.removeItem(key);
-      return true;
-    }
-
-    window.localStorage.setItem(key, JSON.stringify(value));
-    return true;
-  } catch {
-    // Local storage can be unavailable in restricted browser contexts.
-    return false;
-  }
+  try { return deviceStorage.set(key, value === undefined ? undefined : JSON.stringify(value)); }
+  catch { return false; }
 }
 
 function clockToSeconds(clock: string) {

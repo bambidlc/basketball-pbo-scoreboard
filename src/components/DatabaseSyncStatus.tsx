@@ -1,9 +1,12 @@
 import { cn } from "../lib/cn";
 
-export function DatabaseSyncStatus({ online, enabled, pending, error, lastSaved, retrying, reading, localBackupFailed, pendingLabel, otherPending = 0, otherError, rosterStatus, onRetry, onExport, onCorrectRoster }: {
+export function DatabaseSyncStatus({ online, enabled, pending, error, lastSaved, retrying, reading, localBackupFailed, pendingLabel, otherPending = 0, otherError, rosterStatus, onRetry, onExport, onCorrectRoster, syncing, localBackupPending, onImport }: {
   online: boolean; enabled: boolean; pending: number; error?: string; lastSaved?: number;
   retrying: boolean; reading: boolean; onRetry: () => void; onExport: () => void;
   localBackupFailed?: boolean;
+  localBackupPending?: boolean;
+  syncing?: boolean;
+  onImport?: () => void;
   pendingLabel?: string;
   onCorrectRoster?: () => void;
   otherPending?: number;
@@ -11,7 +14,7 @@ export function DatabaseSyncStatus({ online, enabled, pending, error, lastSaved,
   rosterStatus?: string;
 }) {
   const label = !enabled ? "Modo local · sin base de datos"
-    : !online ? "Sin internet · guardado en este dispositivo"
+    : !online ? localBackupFailed || localBackupPending ? "Sin internet · respaldo local pendiente" : "Sin internet · guardado en este dispositivo"
     : pending ? error ? "Odoo: guardado bloqueado" : "Odoo: cambios pendientes"
     : lastSaved ? "Odoo: guardado confirmado" : reading ? "Odoo: lectura conectada" : "Odoo: sin confirmar conexión";
   return <div className="shrink-0 border-b border-neutral-800 bg-neutral-950 px-3 py-2 text-xs">
@@ -25,6 +28,11 @@ export function DatabaseSyncStatus({ online, enabled, pending, error, lastSaved,
         className="min-h-9 rounded-md border border-neutral-700 px-2 font-semibold text-neutral-200 disabled:opacity-50">{retrying ? "Sincronizando…" : "Reintentar"}</button>
       <button type="button" onClick={onExport} className="min-h-9 rounded-md border border-neutral-700 px-2 text-neutral-300">Respaldar datos</button>
       {onCorrectRoster && <button type="button" onClick={onCorrectRoster} className="min-h-9 rounded-md border border-amber-700 px-2 font-semibold text-amber-300">Revisar / corregir plantilla</button>}
+    </div>
+    <div className="mt-1 flex flex-wrap items-center gap-3">
+      <span role="status" className={cn("text-neutral-400", localBackupFailed && "text-red-300")}>{localBackupFailed ? "Respaldo local: falló" : localBackupPending ? "Guardando en este dispositivo…" : "Respaldo local: confirmado"}</span>
+      {syncing && <span role="status" className="text-amber-300">Enviando cambios a Odoo…</span>}
+      {onImport && <button type="button" onClick={onImport} className="min-h-9 rounded-md border border-neutral-700 px-2 text-neutral-300">Recuperar respaldo</button>}
     </div>
     {error && pending > 0 && <p className="mt-1 break-words text-pretty text-amber-300">No se pudo guardar: {error}</p>}
     {pending > 0 && pendingLabel && <p className="mt-1 text-pretty text-neutral-400">Primero en cola: {pendingLabel}</p>}
