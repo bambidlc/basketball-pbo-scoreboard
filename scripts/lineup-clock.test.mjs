@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import vm from "node:vm";
 import ts from "typescript";
-import { computeEqualization, isPlayerUnavailable, nextEventId, playerKey } from "../src/scoring.ts";
+import { BENCH_ORDER, computeEqualization, isPlayerUnavailable, nextEventId, playerKey } from "../src/scoring.ts";
 
 // Execute the real application handlers with isolated storage and no network.
 const source = ts.createSourceFile("App.tsx", readFileSync(new URL("../src/App.tsx", import.meta.url), "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
@@ -121,5 +121,75 @@ test("equalization follows the larger squad on either side and does not award ti
     assert.equal(match.awayScore, 20 + (team === "away" ? points : 0));
     assert.equal(match.homeScore, 30 + (team === "home" ? points : 0));
     assert.equal(match.events.length, points ? 1 : 0);
+  }
+});
+
+function freeThrowHarness() {
+  const app = harness();
+  Object.assign(app, {
+    BENCH_ORDER, timeoutClockSeconds: 0,
+    clockToSeconds: clock => clock.split(":").reduce((total, part) => total * 60 + Number(part), 0),
+    setFoulOutPrompt: () => {}, checkFoulOut: () => {},
+    oppositeTeam: team => team === "away" ? "home" : "away",
+    commitAction: () => true,
+    foulPrompt: { team: "away", player: app.matchRef.current.away.players[0] },
+  });
+  app.matchRef.current.shotClock = 18;
+  for (const name of ["resumeClockAfterFreeThrows", "commitFreeThrowFor", "recordFoul"]) vm.runInContext(handler(name), app);
+  app.stopClockForFoul();
+  return app;
+}
+
+test("confirmed made and missed standalone free throws resume without resetting either clock", () => {
+  for (const made of [true, false]) {
+    const app = freeThrowHarness();
+    app.commitFreeThrowFor("home", app.matchRef.current.home.players[0], made);
+    assert.equal(app.running, true);
+    assert.equal(app.clockRunningRef.current, true);
+    assert.equal(app.matchRef.current.clock, "08:00");
+    assert.equal(app.matchRef.current.shotClock, 18);
+  }
+});
+
+test("a foul resumes only after the entire free-throw result is recorded, including all misses", () => {
+  for (const made of [0, 1, 2]) {
+    const app = freeThrowHarness();
+    const actions = [];
+    app.commitAction = detail => {
+      assert.equal(app.running, false);
+      actions.push(detail);
+      return true;
+    };
+    app.recordFoul({ fouledPlayer: app.matchRef.current.home.players[0], freeThrowsAttempted: 2, freeThrowsMade: made });
+    assert.equal(actions.length, 2);
+    assert.equal(actions[1].freeThrowsMade, made);
+    assert.equal(app.running, true);
+  }
+});
+
+test("no free throws or rejected scoring actions leave the clock paused", () => {
+  const app = freeThrowHarness();
+  app.recordFoul({ freeThrowsAttempted: 0, freeThrowsMade: 0 });
+  assert.equal(app.running, false);
+  app.commitAction = () => undefined;
+  app.commitFreeThrowFor("home", app.matchRef.current.home.players[0], true);
+  assert.equal(app.running, false);
+  app.recordFoul({ fouledPlayer: app.matchRef.current.home.players[0], freeThrowsAttempted: 2, freeThrowsMade: 1 });
+  assert.equal(app.running, false);
+});
+
+test("free throws do not restart an expired period, timeout, ended game or unavailable lineup", () => {
+  const setups = [
+    app => { app.matchRef.current.clock = "00:00"; },
+    app => { app.timeoutClockSeconds = 30; },
+    ...["Final", "Suspended", "Cancelled"].map(status => app => { app.matchRef.current.status = status; }),
+    app => { app.matchRef.current.away.players[0].fouls = 5; },
+  ];
+  for (const setup of setups) {
+    const app = freeThrowHarness();
+    setup(app);
+    app.commitFreeThrowFor("home", app.matchRef.current.home.players[0], true);
+    assert.equal(app.running, false);
+    assert.equal(app.clockRunningRef.current, false);
   }
 });

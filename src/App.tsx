@@ -1961,6 +1961,7 @@ function App() {
       appendLog(result.log);
       setConnectionStatus(result.log.level === "error" ? "error" : result.saved ? "connected" : "local");
     });
+    return true;
   }
 
   function recordCourtShot(location: ShotLocation, made: boolean, player: Player) {
@@ -2010,7 +2011,7 @@ function App() {
   }
 
   function commitFreeThrowFor(team: TeamId, player: Player, made: boolean) {
-    commitAction(
+    const recorded = commitAction(
       {
         action: made ? "free throw made" : "free throw missed",
         freeThrowsAttempted: 1,
@@ -2023,7 +2024,9 @@ function App() {
       },
       { player, team },
     );
+    if (!recorded) return;
     setFreeThrowPrompt(undefined);
+    resumeClockAfterFreeThrows();
   }
 
   function recordStatAction(action: ActionKey) {
@@ -2170,6 +2173,19 @@ function App() {
     syncFlowState("Foul/free throw clock stopped", matchRef.current);
   }
 
+  function resumeClockAfterFreeThrows() {
+    const current = matchRef.current;
+    if (clockToSeconds(current.clock) <= 0 || timeoutClockSeconds > 0 ||
+        ["Final", "Played", "Suspended", "Cancelled"].includes(current.status)) return;
+    for (const team of BENCH_ORDER) {
+      const player = current[team].players.find(isPlayerUnavailable);
+      if (player) { setFoulOutPrompt({ team, player }); return; }
+    }
+    clockRunningRef.current = true;
+    setIsClockRunning(true);
+    appendLog(createLog("info", "Clock resumed after free throws", current.clock));
+  }
+
   function openFoul() {
     stopClockForFoul();
     setFoulPlayerOpen(true);
@@ -2196,7 +2212,7 @@ function App() {
     const ftNote =
       result.freeThrowsAttempted > 0 ? ` · ${result.freeThrowsMade}/${result.freeThrowsAttempted} TL` : "";
 
-    commitAction(
+    const foulRecorded = commitAction(
       {
         action: "personal foul",
         label: `P. Foul${fouledNote}${ftNote}`,
@@ -2205,10 +2221,12 @@ function App() {
       { player: committer, team: committerTeam },
       baseId,
     );
+    if (!foulRecorded) return;
 
+    let freeThrowsRecorded = false;
     if (result.fouledPlayer && result.freeThrowsAttempted > 0) {
       const made = result.freeThrowsMade;
-      commitAction(
+      freeThrowsRecorded = Boolean(commitAction(
         {
           action: made > 0 ? "free throw made" : "free throw missed",
           freeThrowsAttempted: result.freeThrowsAttempted,
@@ -2220,11 +2238,12 @@ function App() {
         },
         { player: result.fouledPlayer, team: opponentTeam },
         baseId + 1,
-      );
+      ));
     }
 
     setFoulPrompt(undefined);
     checkFoulOut(committerTeam, getPlayerKey(committer));
+    if (freeThrowsRecorded) resumeClockAfterFreeThrows();
   }
 
   function openSubstitution() {
