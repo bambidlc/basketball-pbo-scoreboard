@@ -10,7 +10,7 @@ const vite = await createServer({ appType: "custom", logLevel: "silent", server:
 try {
   const { restorePendingMatch, applyPendingResult, trimMatchForOutbox, operationGameId, nextPendingOperation, pendingGameChanged, queueRosterCorrection, rosterSignature } = await vite.ssrLoadModule("/src/api/outbox.ts");
   const { playerKey } = await vite.ssrLoadModule("/src/scoring.ts");
-  const { fallbackMatch, saveMatchAction, saveMatchFlowState } = await vite.ssrLoadModule("/src/api/liveMatch.ts");
+  const { fallbackMatch, saveMatchAction, saveMatchFlowState, saveMatchCorrection } = await vite.ssrLoadModule("/src/api/liveMatch.ts");
   const schema = await vite.ssrLoadModule("/src/api/schema.ts");
   const { GAME: G, PLAYER_STAT: P, GAME_EVENT: E, MODELS: M } = schema;
   const match = (awayScore = 0, homeScore = 0) => ({ ...structuredClone(fallbackMatch), gameId: 260, period: 3, clock: "08:00", awayScore, homeScore,
@@ -345,5 +345,67 @@ try {
   assert.match(otherGameHtml, /Otros partidos: 200 pendientes/);
   assert.match(otherGameHtml, /Plantilla confirmada/);
   assert.doesNotMatch(otherGameHtml, /guardado bloqueado/);
-  console.log("Sync reliability passed: 184 offline plays, quarters/reload, roster corrections, in-flight edits, per-game FIFO, failed writes, duplicate-safe retries and truthful status.");
+  // Corrections queue behind pending actions and survive reload without resurrecting
+  // the removed event or overwriting the current quarter's clock/fouls.
+  {
+  const corrected = match(366);
+  corrected.status = "Live";
+  corrected.away.players = [{ ...actor, points: 366, q3: 366 }];
+  corrected.away.fouls = 4;
+  const correction = { id: "undo-last", kind: "correction", attempts: 0, createdAt: Date.now(),
+    localEventId: 1183, operationIdToCorrect: "op-183", label: "Undo", match: corrected, players: corrected.away.players };
+  const correctedOps = JSON.parse(JSON.stringify([...pending, correction]));
+  const afterCorrection = restorePendingMatch(match(), restored, correctedOps);
+  assert.equal(afterCorrection.awayScore, 366);
+  assert.equal(afterCorrection.away.players[0].points, 366);
+  assert.equal(afterCorrection.events.length, 183);
+  assert.equal(afterCorrection.events.some(event => event.id === 1183), false);
+  const confirmedBeforeReload = { ...restored.events.find(event => event.id === 1183), id: 7000, serverEventId: 7000, operationId: "op-183" };
+  const resumedCorrection = restorePendingMatch({ ...match(), events: [confirmedBeforeReload] }, restored, correctedOps);
+  assert.equal(resumedCorrection.events.some(event => event.id === 1183 || event.id === 7000), false, "a lost acknowledgement must not resurrect the server copy of an undone event");
+  assert.equal(afterCorrection.away.fouls, 4);
+  assert.equal(applyPendingResult(match(), 260, correctedOps).awayScore, 366);
+  const labelCorrection = { ...correction, id: "edit-note", localEventId: 1000, updatedLabel: "Corrected note" };
+  assert.equal(restorePendingMatch(match(), restored, [labelCorrection]).events.find(event => event.id === 1000).label, "Corrected note");
+
+  class CorrectionClient extends Client {
+    loseDeleteResponse = true;
+    async read(model, ids) {
+      if (model === M.gameEvent) return this.events.filter(row => ids.includes(row.id)).map(row => ({ ...row }));
+      return super.read(model, ids);
+    }
+    async unlink(model, ids) {
+      assert.equal(model, M.gameEvent);
+      this.events = this.events.filter(row => !ids.includes(row.id));
+      if (this.loseDeleteResponse) { this.loseDeleteResponse = false; throw new Error("Lost delete response"); }
+      return true;
+    }
+    async write(model, ids, values) {
+      if (model === M.gameEvent) { for (const event of this.events) if (ids.includes(event.id)) Object.assign(event, values); return true; }
+      return super.write(model, ids, values);
+    }
+  }
+  const correctionClient = new CorrectionClient();
+  assert.equal((await saveMatchAction(correctionClient, input())).saved, true);
+  const zeroed = input(0).match;
+  const undoInput = { match: zeroed, players: zeroed.away.players, operationIdToCorrect: "test-op-1", label: "Undo saved shot" };
+  assert.equal((await saveMatchCorrection(correctionClient, undoInput)).saved, false);
+  assert.equal(correctionClient.events.length, 0);
+  assert.equal((await saveMatchCorrection(correctionClient, undoInput)).saved, true, "retry a lost deletion response without creating a duplicate");
+  assert.equal(correctionClient.stats[0][P.totalPoints], 0);
+  assert.equal(correctionClient.game[G.awayScore], 0);
+  assert.equal(correctionClient.stats.length, 1, "resolve missing stat IDs by game and player");
+  const { parseScorerBackup } = await vite.ssrLoadModule("/src/api/backup.ts");
+  assert.equal(parseScorerBackup(JSON.stringify({ savedAt: new Date().toISOString(), match: corrected, pendingOps: [correction] })).pendingOps[0].kind, "correction");
+
+  const substitutionClient = new Client();
+  const substitutionInput = input(0);
+  substitutionInput.match.away.players[0].localId = "resolved-locally";
+  substitutionInput.match.away.bench = [{ ...actor, id: 202, number: "12" }];
+  assert.equal((await saveMatchAction(substitutionClient, { ...substitutionInput, action: "substitution", shotType: undefined,
+    subInKey: "local:resolved-locally", subOutKey: "id:202", note: "Inicio Q3" })).saved, true);
+  const encoded = substitutionClient.events[0][E.note].match(/\[pbo-sub:([^\]]+)\]/)[1];
+  assert.deepEqual(JSON.parse(decodeURIComponent(encoded)), { in: "id:201", out: "id:202" }, "substitution history persists resolved IDs across devices");
+  }
+  console.log("Sync reliability passed: offline plays, period corrections/reload, lost correction responses, roster corrections, per-game FIFO and duplicate-safe retries.");
 } finally { await vite.close(); }

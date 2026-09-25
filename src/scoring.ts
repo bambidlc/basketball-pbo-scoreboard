@@ -64,6 +64,18 @@ export function playerKey(player: Player) {
   return player.localId ? `local:${player.localId}` : player.id ? `id:${player.id}` : `local:${player.number}:${player.name}`;
 }
 
+// Sort a copy: jersey order is a presentation choice, never player identity or lineup order.
+export function sortPlayersByJersey(players: readonly Player[]): Player[] {
+  const jersey = (player: Player) => /^\d+$/.test(player.number.trim()) ? Number(player.number) : Number.POSITIVE_INFINITY;
+  return [...players].sort((a, b) => jersey(a) - jersey(b) || a.number.localeCompare(b.number) || a.name.localeCompare(b.name) || playerKey(a).localeCompare(playerKey(b)));
+}
+
+export function hasDefenseWarning(events: readonly GameEvent[], team: TeamId): boolean {
+  return events.some(event => event.team === team &&
+    (event.action === "warning" || event.action === "admin tech") &&
+    (event.note === "Por defensa" || event.note === "Técnica por warning de defensa" || /(?:warning.*por defensa|técnica por warning de defensa)/i.test(event.label)));
+}
+
 export function courtOrder(sides: CourtSides): TeamId[] {
   return [sides.left, sides.right];
 }

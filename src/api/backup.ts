@@ -30,7 +30,7 @@ export function parseScorerBackup(text: string): ScorerBackup {
   const ids = new Set<string>();
   for (const op of value.pendingOps) {
     if (!op || typeof op.id !== "string" || !op.id || ids.has(op.id) || !Number.isFinite(op.createdAt) ||
-        !["action", "status", "flow", "roster"].includes(op.kind) || !validMatch(op.kind === "action" ? op.input?.match : op.match)) {
+        !["action", "status", "flow", "roster", "correction"].includes(op.kind) || !validMatch(op.kind === "action" ? op.input?.match : op.match)) {
       throw new Error("El respaldo contiene cambios incompletos o duplicados. Conserva el archivo original.");
     }
     ids.add(op.id);
@@ -41,6 +41,7 @@ export function parseScorerBackup(text: string): ScorerBackup {
     }
     if (op.kind === "status" && typeof op.status !== "string") throw new Error("Resultado incompleto en el respaldo.");
     if (op.kind === "flow" && typeof op.includeScores !== "boolean") throw new Error("Período incompleto en el respaldo.");
+    if (op.kind === "correction" && (!Number.isFinite(op.localEventId) || typeof op.label !== "string")) throw new Error("Corrección incompleta en el respaldo.");
   }
   return value;
 }

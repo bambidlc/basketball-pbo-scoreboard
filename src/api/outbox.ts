@@ -1,4 +1,4 @@
-import type { LiveMatch, Player, SaveMatchActionInput, TeamId } from "./liveMatch";
+import type { LiveMatch, Player, SaveMatchActionInput, SaveMatchCorrectionInput, TeamId } from "./liveMatch";
 import { playerKey } from "../scoring";
 
 // A durable, FIFO queue of Odoo mutations that have not yet been confirmed synced. While
@@ -12,6 +12,14 @@ import { playerKey } from "../scoring";
 // (last-write-wins). Each action carries its stable operation ID into the event note,
 // so a retry recognizes an event even if its original create response was lost.
 export type OutboxOp =
+  | (SaveMatchCorrectionInput & {
+      id: string;
+      kind: "correction";
+      createdAt: number;
+      attempts: number;
+      lastError?: string;
+      localEventId: number;
+    })
   | {
       id: string;
       kind: "action";
@@ -153,6 +161,7 @@ export function applyPendingResult<T extends { awayScore: number; homeScore: num
       homeScore: op.input.nextHomeScore, status: "Live" };
     if (op.kind === "flow") return op.includeScores
       ? { ...current, awayScore: snapshot.awayScore, homeScore: snapshot.homeScore } : current;
+    if (op.kind === "correction") return { ...current, awayScore: op.match.awayScore, homeScore: op.match.homeScore };
     return { ...current, awayScore: op.match.awayScore, homeScore: op.match.homeScore,
       status: op.status, statusNote: op.note || undefined };
   }, value);
@@ -174,18 +183,28 @@ export function restorePendingMatch(server: LiveMatch, cached: LiveMatch | undef
       // The queued actor is also authoritative for events created before local IDs
       // were stored on the feed. Jersey edits must not move an old play to a new player.
       events.set(op.eventId, { ...events.get(op.eventId)!, playerId: op.input.player.id,
-        playerLocalId: op.input.player.localId, player: `#${op.input.player.number}` });
+        operationId: op.id, playerLocalId: op.input.player.localId, player: `#${op.input.player.number}` });
     }
     if (op.kind === "action" && op.eventId != null && !events.has(op.eventId)) {
       const input = op.input;
-      events.set(op.eventId, { id: op.eventId, action: input.action, label: input.label,
+      events.set(op.eventId, { id: op.eventId, operationId: op.id, action: input.action, label: input.label,
         icon: input.points > 0 ? "made" : input.action.includes("missed") ? "missed" : "rebound",
         period: input.match.period, time: input.match.clock, team: input.selectedTeam,
         player: `#${input.player.number}`, playerId: input.player.id, playerLocalId: input.player.localId, points: input.points,
         score: `${input.nextAwayScore}-${input.nextHomeScore}`, note: input.note,
+        subInKey: input.subInKey, subOutKey: input.subOutKey,
+        freeThrowsAttempted: input.freeThrowsAttempted, freeThrowsMade: input.freeThrowsMade,
         shotType: input.shotType, shotLocation: input.shotLocation, issuedByRef: input.issuedByRef });
     }
     if (op.kind === "status") restored = { ...restored, status: op.status, statusNote: op.note || undefined };
+    if (op.kind === "correction") {
+      for (const [id, event] of events) {
+        if (id !== op.localEventId && (!op.serverEventId || event.serverEventId !== op.serverEventId) &&
+            (!op.operationIdToCorrect || event.operationId !== op.operationIdToCorrect)) continue;
+        if (op.updatedLabel !== undefined) events.set(id, { ...event, label: op.updatedLabel });
+        else events.delete(id);
+      }
+    }
   }
   if (restored !== server) return { ...restored, events: [...events.values()].sort((a, b) => b.id - a.id), syncMessage: "Cambios guardados en este dispositivo; pendientes de Odoo." };
   // Protect legacy local games with evidence of scoring from an empty Scheduled record.

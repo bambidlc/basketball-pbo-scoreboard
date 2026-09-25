@@ -1,10 +1,19 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { sortPlayersByJersey } from "../src/scoring.ts";
 import { applyPlayerDiscipline, technicalSuspensionNote, isPlayerUnavailable, formatGameCategory, BENCH_ORDER, courtOrder, lineupReview, nextEventId, playerKey, shotLocationFromCoordinates, swappedCourts } from "../src/scoring.ts";
 
 const player = (id, extras = {}) => ({ id, name: `Player ${id}`, number: String(id), present: true, fouls: 0, ...extras });
 const team = () => ({ players: [1, 2, 3, 4, 5].map((id) => player(id)), bench: [player(6), player(7)] });
 const draft = (ids, reason = "") => ({ keys: ids.map((id) => playerKey(player(id))), reason });
+
+test("player pickers use ascending numeric jerseys without mutating lineup or identity", () => {
+  const roster = [23, 2, 11, 0, 8, 4].map(id => player(id));
+  roster.push(player(30, { number: "" }), player(31, { number: "00" }));
+  const before = structuredClone(roster);
+  assert.deepEqual(sortPlayersByJersey(roster).map(p => p.number), ["0", "00", "2", "4", "8", "11", "23", ""]);
+  assert.deepEqual(roster, before);
+});
 
 test("court changes preserve bench order and are reversible", () => {
   const original = { left: "away", right: "home" };

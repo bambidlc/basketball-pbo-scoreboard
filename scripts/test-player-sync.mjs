@@ -374,6 +374,14 @@ try {
     assert.equal(client.attendanceCreates, 2, 'restore does not duplicate attendance');
   }
 
+  {
+    const client = new MockOdooClient([storedPlayer({ id: 101, jersey: 7, name: "Official Player", team: 10 }), homeStored]);
+    const match = makeMatch({ awayPlayer: { ...makePlayer({ id: 101, number: "", name: "" }), present: false, removedFromRoster: true }, homePlayer });
+    assert.equal((await saveGameDayRoster(client, match)).saved, true, "removing an official record does not require fixing its draft name or jersey");
+    assert.equal(client.playerWrites.length, 0);
+    assert.equal(client.players.find(p => p.id === 101)[FIELD.name], "Official Player");
+    assert.equal(client.players.find(p => p.id === 101)[FIELD.jersey], 7);
+  }
   process.stdout.write("Player sync contract tests passed, including unchanged roster/attendance writes, edit-only saves, batch attendance lookup, and reversible game removal.\n");
 } finally {
   await vite.close();

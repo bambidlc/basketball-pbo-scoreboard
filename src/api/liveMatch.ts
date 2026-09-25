@@ -22,7 +22,8 @@ import {
 import { OdooClient, type OdooRecord } from "./odooClient";
 import { resolveClubColor } from "./colorPalette";
 import { currentOdooDateTimeKey } from "../schedule";
-import { applyPlayerDiscipline, shotLocationFromCoordinates } from "../scoring";
+import { applyPlayerDiscipline, playerKey, shotLocationFromCoordinates } from "../scoring";
+import type { PeriodState } from "../periods";
 
 export type TeamId = "away" | "home";
 
@@ -119,6 +120,11 @@ export type Team = {
 };
 
 export type GameEvent = {
+  operationId?: string;
+  subInKey?: string;
+  subOutKey?: string;
+  freeThrowsAttempted?: number;
+  freeThrowsMade?: number;
   action?: ActionKey;
   equalization?: boolean;
   foulBall?: boolean;
@@ -149,6 +155,7 @@ export type SyncLogEntry = {
 };
 
 export type LiveMatch = {
+  periodStates?: Record<number, PeriodState>;
   away: Team;
   awayScore: number;
   clock: string;
@@ -208,6 +215,8 @@ export type MatchOption = {
 };
 
 export type SaveMatchActionInput = {
+  subInKey?: string;
+  subOutKey?: string;
   action: ActionKey;
   operationId?: string;
   foulOnShot?: boolean;
@@ -246,6 +255,8 @@ export type SaveMatchCorrectionInput = {
   player?: Player;
   players?: Player[];
   serverEventId?: number;
+  operationIdToCorrect?: string;
+  updatedLabel?: string;
 };
 
 type TeamSide = {
@@ -690,10 +701,10 @@ export async function saveGameAttendance(
 
         const values = filterWritableValues(
           {
-            [ATTENDANCE.present]: player.present ?? true,
+            [ATTENDANCE.present]: !player.removedFromRoster && (player.present ?? true),
             // Source of truth for "is a starter" is membership in team.players, not the
             // load-time player.starter hint (which goes stale after substitutions).
-            [ATTENDANCE.starter]: starterIds.has(player.id),
+            [ATTENDANCE.starter]: !player.removedFromRoster && starterIds.has(player.id),
             [ATTENDANCE.jersey]: Number(player.number) || 0,
             [ATTENDANCE.team]: team.id ?? false,
           },
@@ -823,6 +834,12 @@ export async function saveGameDayRoster(
 
       const resolvedRoster: Player[] = [];
       for (const player of roster) {
+        if (player.removedFromRoster && player.id && player.id > 0) {
+          // Removing an official player only updates this game's attendance. Do not
+          // require a clean jersey/name, reactivate, or rewrite their permanent record.
+          resolvedRoster.push({ ...player, present: false, active: false, starter: false });
+          continue;
+        }
         const number = player.number.trim();
         const name = normalizeRosterPlayerName(player.name);
         const jersey = Number(number);
@@ -917,6 +934,10 @@ export async function saveGameDayRoster(
       const verifiedById = new Map(verifiedPlayers.map((record) => [numberValue(record.id), record]));
       for (const player of resolvedRoster) {
         const verified = player.id ? verifiedById.get(player.id) : undefined;
+        if (player.removedFromRoster) {
+          if (!verified || relationId(verified[PLAYER.team]) !== team.id) throw new Error("El jugador retirado no pertenece al equipo de este partido.");
+          continue;
+        }
         if (
           !verified ||
           relationId(verified[PLAYER.team]) !== team.id ||
@@ -995,13 +1016,10 @@ function rosterPlayerIdentityName(value: string) {
 }
 
 function validateRosterForOdooSync(team: Team, roster: Player[]) {
-  if (roster.length === 0) {
-    throw new Error(`${team.name}: add at least one player before syncing.`);
-  }
-
   const seenJerseys = new Set<number>();
   const seenIdentities = new Set<string>();
   for (const player of roster) {
+    if (player.removedFromRoster) continue;
     const number = player.number.trim();
     const name = normalizeRosterPlayerName(player.name);
     if (!/^\d{1,3}$/.test(number)) {
@@ -1115,7 +1133,7 @@ export async function saveMatchCorrection(
 
   try {
     const capabilities = await getSchemaCapabilities(client);
-    const messages = [await saveGameFlowFields(client, input.match, capabilities)];
+    const messages = input.updatedLabel !== undefined ? [] : [await saveGameFlowFields(client, input.match, capabilities)];
 
     const correctionPlayers = uniquePlayers([
       input.player,
@@ -1123,24 +1141,42 @@ export async function saveMatchCorrection(
     ]);
 
     for (const player of correctionPlayers) {
-      if (!player.statId) {
-        continue;
+      let statId = player.statId;
+      if (!statId && player.id) {
+        const rows = await client.searchRead<OdooRecord>(MODELS.playerGameStat,
+          [[PLAYER_STAT.game, "=", input.match.gameId], [PLAYER_STAT.player, "=", player.id]], ["id"], { limit: 1 });
+        statId = numberValue(rows[0]?.id) || undefined;
       }
+      if (!statId) continue;
 
       const values = filterWritableValues(playerToStatValues(player), capabilities.playerGameStat);
       if (Object.keys(values).length > 0) {
-        await client.write(MODELS.playerGameStat, [player.statId], values);
+        const written = await client.write(MODELS.playerGameStat, [statId], values);
+        if (!written) throw new Error("La corrección de estadísticas no fue confirmada.");
         messages.push("Player stat corrected.");
       }
     }
 
-    if (input.serverEventId && capabilities.gameEvent.exists) {
-      await client.unlink(MODELS.gameEvent, [input.serverEventId]);
-      messages.push("Event removed.");
+    let eventId = input.serverEventId;
+    if (!eventId && input.operationIdToCorrect) {
+      const rows = await client.searchRead<OdooRecord>(MODELS.gameEvent,
+        [[GAME_EVENT.game, "=", input.match.gameId], [GAME_EVENT.note, "like", `[pbo-sync:${input.operationIdToCorrect}]`]], ["id"], { limit: 1 });
+      eventId = numberValue(rows[0]?.id) || undefined;
+    }
+    if (eventId && capabilities.gameEvent.exists) {
+      // A retry after a lost response is successful when the event is already gone.
+      const existing = await client.read<OdooRecord>(MODELS.gameEvent, [eventId], ["id"]);
+      if (existing.length) {
+        const confirmed = input.updatedLabel !== undefined
+          ? await client.write(MODELS.gameEvent, [eventId], { [GAME_EVENT.name]: input.updatedLabel })
+          : await client.unlink(MODELS.gameEvent, [eventId]);
+        if (!confirmed) throw new Error("La corrección del evento no fue confirmada.");
+      }
+      messages.push(input.updatedLabel !== undefined ? "Event updated." : "Event removed.");
     }
 
     return {
-      log: createLog("success", "Undo synced", compactMessages(messages) || input.label),
+      log: createLog("success", "Correction synced", compactMessages(messages) || input.label),
       saved: true,
     };
   } catch (error) {
@@ -1986,13 +2022,21 @@ async function saveGameEvent(
       if (existing) return { eventId: existing, message: "Jugada ya confirmada en Odoo." };
     }
     const scoreAfter = `${input.nextAwayScore}-${input.nextHomeScore}`;
+    const resolvedKey = (key: string) => {
+      const team = input.match[input.selectedTeam];
+      const player = [...team.players, ...team.bench].find(player => playerKey(player) === key);
+      return player?.id ? `id:${player.id}` : key;
+    };
+    const substitution = input.subInKey && input.subOutKey
+      ? `[pbo-sub:${encodeURIComponent(JSON.stringify({ in: resolvedKey(input.subInKey), out: resolvedKey(input.subOutKey) }))}]` : undefined;
     const values = filterWritableValues({
       [GAME_EVENT.active]: true,
       [GAME_EVENT.actionType]: input.action,
       [GAME_EVENT.clockSeconds]: clockToSeconds(input.match.clock),
       [GAME_EVENT.game]: input.match.gameId,
       [GAME_EVENT.name]: `${input.match.clock} #${input.player.number} ${input.label}`,
-      [GAME_EVENT.note]: [input.note ?? (input.foulOnShot ? "Shooting foul/free throws included" : ""), marker].filter(Boolean).join("\n"),
+      [GAME_EVENT.note]: [input.note ?? (input.foulOnShot ? "Shooting foul/free throws included" : ""),
+        input.freeThrowsAttempted ? `[pbo-ft:${input.freeThrowsAttempted}:${input.freeThrowsMade ?? 0}]` : undefined, substitution, marker].filter(Boolean).join("\n"),
       [GAME_EVENT.period]: input.match.period,
       [GAME_EVENT.player]: input.player.id ?? false,
       [GAME_EVENT.points]: input.points,
@@ -2312,13 +2356,19 @@ function normalizeGameEvent(
   const x = numberValue(record[GAME_EVENT.shotX]);
   const y = numberValue(record[GAME_EVENT.shotY]);
   const zone = stringValue(record[GAME_EVENT.shotZone]);
+  let substitution: { in?: string; out?: string } = {};
+  try {
+    const encoded = stringValue(record[GAME_EVENT.note]).match(/\[pbo-sub:([^\]]+)\]/)?.[1];
+    if (encoded) substitution = JSON.parse(decodeURIComponent(encoded));
+  } catch { /* Legacy events remain readable without lineup metadata. */ }
 
   return {
     action,
+    operationId: stringValue(record[GAME_EVENT.note]).match(/\[pbo-sync:([^\]]+)\]/)?.[1],
     icon: getEventIcon(action, points),
     id,
     label: stringValue(record[GAME_EVENT.name]) || titleCase(action),
-    note: stringValue(record[GAME_EVENT.note]).replace(/\n?\[pbo-sync:[^\]]+\]/g, "").trim() || undefined,
+    note: stringValue(record[GAME_EVENT.note]).replace(/\n?\[pbo-(?:sync|ft|sub):[^\]]+\]/g, "").trim() || undefined,
     period: numberValue(record[GAME_EVENT.period]),
     player: relationName(record[GAME_EVENT.player]) || "Player",
     playerId: relationId(record[GAME_EVENT.player]),
@@ -2327,6 +2377,10 @@ function normalizeGameEvent(
     serverEventId: id,
     shotLocation: shotLocationFromCoordinates(x, y, zone, shotValue),
     shotType,
+    subInKey: typeof substitution?.in === "string" ? substitution.in : undefined,
+    subOutKey: typeof substitution?.out === "string" ? substitution.out : undefined,
+    freeThrowsAttempted: shotType === "free throw" ? Number(stringValue(record[GAME_EVENT.note]).match(/\[pbo-ft:(\d+):\d+\]/)?.[1]) || undefined : undefined,
+    freeThrowsMade: shotType === "free throw" ? points : undefined,
     team,
     time: secondsToClock(numberValue(record[GAME_EVENT.clockSeconds])),
   };

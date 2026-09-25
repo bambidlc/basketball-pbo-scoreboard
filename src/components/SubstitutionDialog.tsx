@@ -2,7 +2,7 @@ import { Check, Shuffle } from "lucide-react";
 import { useState } from "react";
 import type { Team, TeamId } from "../api/liveMatch";
 import { cn } from "../lib/cn";
-import { BENCH_ORDER, isPlayerUnavailable, lineupReview, playerKey, type LineupDraft, type LineupDrafts } from "../scoring";
+import { BENCH_ORDER, sortPlayersByJersey, isPlayerUnavailable, lineupReview, playerKey, type LineupDraft, type LineupDrafts } from "../scoring";
 import { ScoringDialog } from "./ScoringControls";
 
 const reasons = ["Foul trouble", "Rest", "Tactical", "Injury", "Discipline"];
@@ -53,7 +53,7 @@ function LineupEditor({ side, team, period, bench, draft, onChange }: {
       <p className="mt-2 min-h-8 text-xs text-neutral-400 text-pretty">Tap a player out, then tap their replacement in.</p>
     </div>
     <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 lg:grid-cols-4">
-      {eligible.map((player) => {
+      {sortPlayersByJersey(eligible).map((player) => {
         const key = playerKey(player);
         const picked = selected.has(key);
         const fouledOut = isPlayerUnavailable(player);

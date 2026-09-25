@@ -52,7 +52,6 @@ import {
   saveMatchCorrection,
   saveMatchAction,
   saveMatchStatus,
-  saveGameEventLabel,
   saveMatchFlowState,
   type ActionKey,
   type GameEvent,
@@ -61,6 +60,7 @@ import {
   type Player,
   type SaveMatchActionInput,
   type SaveMatchActionResult,
+  type SaveMatchCorrectionInput,
   type ShotLocation,
   type ShotType,
   type SyncLogEntry,
@@ -82,6 +82,9 @@ import { CourtSvg } from "./components/CourtSvg";
 import { QuickScorePanel, ScoringDialog, ScoringPlayerPicker, ScoringToolbar } from "./components/ScoringControls";
 import { SubstitutionDialog } from "./components/SubstitutionDialog";
 import { DatabaseSyncStatus } from "./components/DatabaseSyncStatus";
+import { ClockEditor } from "./components/ClockEditor";
+import { capturePeriod, highestPeriod, periodFouls, restorePeriodLineup } from "./periods";
+import { hasDefenseWarning, sortPlayersByJersey } from "./scoring";
 import { computeEqualization, isEqualizationEligible, applyPlayerDiscipline, isPlayerUnavailable, technicalSuspensionNote, formatGameCategory, BENCH_ORDER, courtOrder, lineupReview, nextEventId, playerKey as getPlayerKey, swappedCourts, type CourtSides, type LineupDrafts, type ScoringView } from "./scoring";
 import { cn } from "./lib/cn";
 
@@ -138,6 +141,8 @@ type ActionDetail = {
   subOutKey?: string;
   subTeam?: TeamId;
 };
+
+type FoulResult = { fouledPlayer?: Player; freeThrowsAttempted: number; freeThrowsMade: number; basketValue?: 0 | 2 | 3 };
 
 type RefreshOptions = {
   force?: boolean;
@@ -434,6 +439,8 @@ function App() {
   const [timeoutClockSeconds, setTimeoutClockSeconds] = useState(0);
   const [timeoutTeam, setTimeoutTeam] = useState<TeamId | undefined>(undefined);
   const [isClockRunning, setIsClockRunning] = useState(false);
+  const [clockEditorOpen, setClockEditorOpen] = useState(false);
+  const [periodReviewOpen, setPeriodReviewOpen] = useState(false);
   const [substitutionOpen, setSubstitutionOpen] = useState(false);
   const [boxScoreOpen, setBoxScoreOpen] = useState(false);
   const [warningOpen, setWarningOpen] = useState(false);
@@ -693,6 +700,7 @@ function App() {
 
           return applyPlayerDiscipline({
             ...loadedMatch,
+            periodStates: (current.gameId === loadedMatch.gameId ? current.periodStates : cachedMatch?.periodStates) ?? loadedMatch.periodStates,
             syncMessage: scheduleError
               ? `Schedule refresh failed: ${scheduleError}`
               : loadedMatch.syncMessage,
@@ -816,6 +824,8 @@ function App() {
             result = await saveMatchStatus(apiClient, op.match, op.status, op.note);
           } else if (op.kind === "flow") {
             result = await saveMatchFlowState(apiClient, op.match, op.includeScores);
+          } else if (op.kind === "correction") {
+            result = await saveMatchCorrection(apiClient, op);
           } else {
             result = await saveGameDayRoster(apiClient, op.match);
           }
@@ -1202,8 +1212,8 @@ function App() {
     [match],
   );
   const periodOptions = useMemo(
-    () => createPeriodOptions(periodSettings.periodCount),
-    [periodSettings.periodCount],
+    () => createPeriodOptions(Math.max(periodSettings.periodCount, highestPeriod(match))),
+    [periodSettings.periodCount, match.period, match.periodStates, match.events],
   );
 
   function handleGameSelect(gameId: number | undefined) {
@@ -1581,22 +1591,35 @@ function App() {
       "Quarter ended",
       `Clock hit 0 — ${getPeriodLabel(current.period, periodSettings.periodCount)} ended.`,
     ));
-    setPeriod((current.period + 1) as LiveMatch["period"]);
+    if (current.period >= periodSettings.periodCount) {
+      // At the end of regulation, let the scorer finish the game or explicitly start OT.
+      setEndPeriodPrompt(current.period);
+      syncFlowState("Period ended", current);
+    } else {
+      setPeriod(current.period + 1);
+    }
   }
 
   function setPeriod(period: LiveMatch["period"]) {
+    if (period === matchRef.current.period || !Number.isInteger(period) || period < 1 || period > 12) return;
+    clockRunningRef.current = false;
     setIsClockRunning(false);
-    const endingPeriod = matchRef.current.period;
+    mutationRevisionRef.current += 1;
+    const current = matchRef.current;
+    const endingPeriod = current.period;
     const periodChanged = period !== endingPeriod;
+    const isNewPeriod = period > highestPeriod(current);
+    const periodStates = { ...current.periodStates, [endingPeriod]: capturePeriod(current) };
+    const saved = periodStates[period];
 
     // Advancing to a later period ends the current one — show its summary to the scorer.
-    if (period > endingPeriod) {
+    if (isNewPeriod) {
       setEndPeriodPrompt(endingPeriod);
     }
 
     // A new quarter flips the possession arrow (alternating possession), but only
     // if a jump ball during the quarter that just ended did not already change it.
-    if (periodChanged) {
+    if (isNewPeriod) {
       if (arrowChangedThisPeriodRef.current) {
         arrowChangedThisPeriodRef.current = false;
       } else {
@@ -1605,22 +1628,24 @@ function App() {
     }
 
     const baseMatch = {
-      ...matchRef.current,
+      ...current,
+      periodStates,
       // Team fouls (the bonus count) reset at the start of each period. Individual player
       // fouls are cumulative and untouched, so fouling out at 5 still works.
-      away: periodChanged ? { ...matchRef.current.away, fouls: 0 } : matchRef.current.away,
-      home: periodChanged ? { ...matchRef.current.home, fouls: 0 } : matchRef.current.home,
-      clock: secondsToClock(getDefaultClockSeconds(period, periodSettings)),
+      away: { ...restorePeriodLineup(current.away, saved?.lineups.away), fouls: periodFouls(current, period, "away") },
+      home: { ...restorePeriodLineup(current.home, saved?.lineups.home), fouls: periodFouls(current, period, "home") },
+      clock: saved?.clock ?? (isNewPeriod ? secondsToClock(getDefaultClockSeconds(period, periodSettings)) : "00:00"),
       period,
       periodLabel: getPeriodLabel(period, periodSettings.periodCount),
-      shotClock: FULL_SHOT_CLOCK,
+      shotClock: saved?.shotClock ?? FULL_SHOT_CLOCK,
+      possession: saved?.possession ?? current.possession,
     };
 
     // Equalization (puntos de equiparación): at the start of the 3rd quarter the
     // larger squad receives 2 points per additional player, evaluated against the
     // attendance as it stands right now. Applied once and undoable from the feed.
-    let nextMatch = baseMatch;
-    if (period === 3 && !matchRef.current.equalizationApplied) {
+    let nextMatch: LiveMatch = baseMatch;
+    if (period === 3 && isNewPeriod && !matchRef.current.equalizationApplied) {
       const equalization = computeEqualization(baseMatch);
       if (equalization) {
         nextMatch = applyEqualization(baseMatch, equalization);
@@ -1634,6 +1659,7 @@ function App() {
 
     matchRef.current = nextMatch;
     setMatch(nextMatch);
+    if (periodChanged) writeStoredGameDayRoster(nextMatch);
     syncFlowState("Period changed", nextMatch);
   }
 
@@ -1643,10 +1669,26 @@ function App() {
     const label = `Inicio ${getPeriodLabel(matchRef.current.period, periodSettings.periodCount)}`;
     commitLineupChange("away", awayKeys, label);
     commitLineupChange("home", homeKeys, label);
+    const current = matchRef.current;
+    const nextMatch = { ...current, periodStates: { ...current.periodStates,
+      [current.period]: { ...capturePeriod(current), starters: { away: awayKeys, home: homeKeys } } } };
+    matchRef.current = nextMatch;
+    setMatch(nextMatch);
+    writeStoredGameDayRoster(nextMatch);
     setPeriodStartersOpen(false);
   }
 
+  function openClockEditor() {
+    clockRunningRef.current = false;
+    setIsClockRunning(false);
+    syncFlowState("Clock paused for editing", matchRef.current);
+    setClockEditorOpen(true);
+  }
+
   function setGameClock(seconds: number) {
+    if (!Number.isFinite(seconds) || seconds < 0 || seconds > 5999) return;
+    clockRunningRef.current = false;
+    mutationRevisionRef.current += 1;
     setIsClockRunning(false);
     const nextMatch = {
       ...matchRef.current,
@@ -1905,6 +1947,8 @@ function App() {
       score: committedDetail.points > 0 ? `${nextAwayScore}-${nextHomeScore}` : undefined,
       shotLocation: committedDetail.shotLocation,
       shotType: committedDetail.shotType,
+      freeThrowsAttempted: committedDetail.freeThrowsAttempted,
+      freeThrowsMade: committedDetail.freeThrowsMade,
       team: actingTeam,
       time: baseMatch.clock,
     };
@@ -2249,7 +2293,7 @@ function App() {
   // Records a personal foul on the committing player, plus (optionally) who drew the foul and
   // any resulting free throws shot by that fouled player. The foul and the FTs are two events
   // with explicit ids so they don't collide, and commitAction chains them off matchRef.
-  function recordFoul(result: { fouledPlayer?: Player; freeThrowsAttempted: number; freeThrowsMade: number }) {
+  function recordFoul(result: FoulResult) {
     if (!foulPrompt) {
       return;
     }
@@ -2257,6 +2301,9 @@ function App() {
     const committer = foulPrompt.player;
     const committerTeam = foulPrompt.team;
     const opponentTeam = oppositeTeam(committerTeam);
+    const basketValue = result.basketValue ?? 0;
+    if ((basketValue > 0 || result.freeThrowsAttempted > 0) && !result.fouledPlayer) return;
+    if (result.fouledPlayer && isPlayerUnavailable(result.fouledPlayer)) return;
     const baseId = nextEventId(matchRef.current.events);
 
     const fouledNote = result.fouledPlayer ? ` · falta a ${formatPlayer(result.fouledPlayer)}` : "";
@@ -2266,13 +2313,20 @@ function App() {
     const foulRecorded = commitAction(
       {
         action: "personal foul",
-        label: `P. Foul${fouledNote}${ftNote}`,
+        label: `P. Foul${fouledNote}${basketValue ? ` · canasta de ${basketValue}` : ""}${ftNote}`,
         points: 0,
       },
       { player: committer, team: committerTeam },
       baseId,
     );
     if (!foulRecorded) return;
+
+    if (basketValue && result.fouledPlayer) {
+      commitAction({ action: basketValue === 3 ? "made 3pt" : "made 2pt", points: basketValue,
+        label: `Canasta de ${basketValue} + falta`, foulOnShot: true,
+        shotType: basketValue === 3 ? "3pt" : "2pt", shotValue: basketValue, shotMade: true },
+        { player: result.fouledPlayer, team: opponentTeam }, baseId + 1);
+    }
 
     let freeThrowsRecorded = false;
     if (result.fouledPlayer && result.freeThrowsAttempted > 0) {
@@ -2288,7 +2342,7 @@ function App() {
           shotValue: 1,
         },
         { player: result.fouledPlayer, team: opponentTeam },
-        baseId + 1,
+        baseId + (basketValue ? 2 : 1),
       ));
     }
 
@@ -2378,6 +2432,8 @@ function App() {
       player: formatPlayer(pair.inPlayer),
       playerId: pair.inPlayer.id,
       playerLocalId: pair.inPlayer.localId,
+      subInKey: getPlayerKey(pair.inPlayer),
+      subOutKey: getPlayerKey(pair.outPlayer),
       points: 0,
       team,
       time: current.clock,
@@ -2442,6 +2498,8 @@ function App() {
         nextAwayScore: nextMatch.awayScore,
         nextHomeScore: nextMatch.homeScore,
         note: index === 0 ? reasonText : undefined,
+        subInKey: event.subInKey,
+        subOutKey: event.subOutKey,
         player: pair.inPlayer,
         points: 0,
         selectedTeam: team,
@@ -2493,11 +2551,16 @@ function App() {
   // Warnings do not change fouls or scores. Choose the type, then its player or team.
   function commitWarning(type: WarningType, team: TeamId, player?: Player) {
     const current = matchRef.current;
-    const label = `Warning · ${type.label}${player ? ` ${formatPlayer(player)}` : ""}`;
+    const defenseTechnical = type.key === "defensa" && hasDefenseWarning(current.events, team);
+    const action = defenseTechnical ? "admin tech" : "warning";
+    const note = defenseTechnical ? "Técnica por warning de defensa" : type.label;
+    const label = defenseTechnical ? note : `Warning · ${type.label}${player ? ` ${formatPlayer(player)}` : ""}`;
+    if (defenseTechnical) stopClockForFoul();
     const event: GameEvent = {
-      action: "warning",
-      icon: getEventIcon("warning", 0),
-      id: Date.now(),
+      action,
+      note,
+      icon: getEventIcon(action, 0),
+      id: nextEventId(current.events),
       issuedByRef: true,
       label,
       period: current.period,
@@ -2509,7 +2572,7 @@ function App() {
       time: current.clock,
     };
     const undoItem: UndoItem = {
-      detail: { action: "warning", issuedByRef: true, label, points: 0 },
+      detail: { action, note, issuedByRef: true, label, points: 0 },
       event,
       eventId: event.id,
       period: current.period,
@@ -2525,16 +2588,16 @@ function App() {
     setUndoStack((stack) => [undoItem, ...stack].slice(0, UNDO_LIMIT));
     setWarningOpen(false);
     setWarningTarget(undefined);
-    appendLog(createLog("info", "Warning", `${nextMatch[team].name}: ${type.label}`));
+    appendLog(createLog("info", defenseTechnical ? "Técnica por defensa" : "Warning", `${nextMatch[team].name}: ${note}`));
 
     void dispatchSaveAction({
-      action: "warning",
+      action,
       issuedByRef: true,
       label,
       match: nextMatch,
       nextAwayScore: nextMatch.awayScore,
       nextHomeScore: nextMatch.homeScore,
-      note: type.label,
+      note,
       player: player ?? WARNING_PLACEHOLDER_PLAYER,
       points: 0,
       selectedTeam: team,
@@ -2701,12 +2764,16 @@ function App() {
     }
 
     const returning = undoItem.detail.subOutKey && findPlayerByKey(matchRef.current[undoItem.selectedTeam], undoItem.detail.subOutKey);
-    if (returning && isPlayerUnavailable(returning)) {
+    if (returning && undoItem.period === matchRef.current.period && isPlayerUnavailable(returning)) {
       appendLog(createLog("warning", "Undo blocked", "Corrige primero la falta o suspensión antes de regresar al jugador."));
       return;
     }
-    canceledEventIdsRef.current.add(eventId);
+    mutationRevisionRef.current += 1;
     const nextMatch = applyPlayerDiscipline(revertMatchAfterAction(matchRef.current, undoItem));
+    if (nextMatch.events.some(candidate => candidate.id === eventId)) {
+      appendLog(createLog("warning", "Usa Editar titulares", "No hay una alineación guardada para deshacer esta sustitución antigua."));
+      return;
+    }
     if (undoItem.detail.action === "substitution") {
       mutationRevisionRef.current += 1;
       writeStoredStarterKeys(nextMatch, undoItem.selectedTeam);
@@ -2725,24 +2792,25 @@ function App() {
     setUndoStack((current) => current.filter((item) => item.eventId !== eventId));
     appendLog(createLog("info", "Event undone", undoItem.event.label));
 
-    // If the undone action is still parked in the outbox and was never sent, cancel it —
-    // to Odoo it simply never happened, so no server correction is needed. (An action that
-    // is mid-flight falls through; the canceledEventIdsRef path corrects it once it syncs.)
-    const queuedOp = pendingOpsRef.current.find((op) => "eventId" in op && op.eventId === eventId);
-    if (queuedOp && !inFlightOpIdsRef.current.has(queuedOp.id)) {
-      setPendingOps((current) => current.filter((op) => op.id !== queuedOp.id));
-      return;
-    }
-
-    void saveMatchCorrection(apiClient, {
+    queueEventCorrection(undoItem.event, {
       label: `Undo ${undoItem.event.label}`,
       match: nextMatch,
       players: [correctedPlayer, correctedOpponent].filter((player): player is Player => Boolean(player)),
       serverEventId: undoItem.serverEventId,
-    }).then((result) => {
-      appendLog(result.log);
-      setConnectionStatus(result.log.level === "error" ? "error" : result.saved ? "connected" : "local");
     });
+  }
+
+  function queueEventCorrection(event: GameEvent, input: SaveMatchCorrectionInput) {
+    persistStoredLiveMatch(input.match);
+    if (!apiClient.enabled || !input.match.gameId) return;
+    // Keep the original queued action ahead of its correction. Later queued snapshots
+    // may include its stats, so a final absolute correction is required even offline.
+    const original = pendingOpsRef.current.find(op => op.kind === "action" && op.eventId === event.id);
+    const correction: OutboxOp = { ...input, match: trimMatchForOutbox(input.match),
+      id: makeOpId(), kind: "correction", createdAt: Date.now(), attempts: 0, localEventId: event.id,
+      serverEventId: input.serverEventId ?? event.serverEventId, operationIdToCorrect: original?.id };
+    setPendingOps(current => [...current, correction]);
+    void flushOutbox();
   }
 
   function editEvent(eventId: number) {
@@ -2756,6 +2824,7 @@ function App() {
     if (!nextLabel || nextLabel === event.label) {
       return;
     }
+    mutationRevisionRef.current += 1;
 
     const nextMatch = {
       ...matchRef.current,
@@ -2778,10 +2847,7 @@ function App() {
     );
     appendLog(createLog("info", "Event updated", nextLabel));
 
-    void saveGameEventLabel(apiClient, event, nextLabel).then((result) => {
-      appendLog(result.log);
-      setConnectionStatus(result.log.level === "error" ? "error" : result.saved ? "connected" : "local");
-    });
+    queueEventCorrection(event, { label: "Edit event", updatedLabel: nextLabel, match: nextMatch });
   }
 
   async function retryDatabaseSync() {
@@ -2949,6 +3015,9 @@ function App() {
             shotClock={match.shotClock}
             statsMode={statsMode}
             status={match.status}
+            periodCount={periodSettings.periodCount}
+            onEditClock={openClockEditor}
+            onOpenPeriods={() => { clockRunningRef.current = false; setIsClockRunning(false); setPeriodReviewOpen(true); }}
             onBackToDashboard={() => setScreenMode("dashboard")}
             onSelectTeam={setSelectedTeam}
             onToggleFoulBall={toggleFoulBall}
@@ -2956,6 +3025,10 @@ function App() {
 
           <section aria-label="Live scoring" className="live-scoring order-2 flex min-h-0 min-w-0 flex-col bg-neutral-950 md:col-span-2 lg:col-span-3 lg:col-start-1 lg:row-start-2">
             {databaseStatus}
+            {match.period < highestPeriod(match) && <div role="status" className="flex flex-wrap items-center justify-between gap-2 border-b border-amber-400/30 bg-amber-400/10 px-4 py-2 text-sm text-amber-200">
+              <span>Editando {getPeriodLabel(match.period, periodSettings.periodCount)} · período anterior</span>
+              <button type="button" className="min-h-9 rounded-md border border-amber-300/50 px-3 font-bold" onClick={() => setPeriod(highestPeriod(match))}>Volver al período más reciente</button>
+            </div>}
             <ScoringToolbar teams={{ away: match.away, home: match.home }} sides={courtSides}
               selected={selectedTeam} view={scoringView} onSelect={setSelectedTeam}
               onView={setScoringView} onSwitch={switchCourtSides}
@@ -3028,7 +3101,7 @@ function App() {
             onResetMatchState={resetMatchState}
             onResetGameClock={resetGameClock}
             onResetShotClock={resetShotClock}
-            onSetGameClock={setGameClock}
+            onEditClock={openClockEditor}
             onSetFoulOnShot={setFoulOnShot}
             onStopTimeoutClock={stopTimeoutClock}
             onToggleClock={toggleClock}
@@ -3036,6 +3109,13 @@ function App() {
         </div>
       </section>
 
+      {clockEditorOpen && <ClockEditor clock={match.clock} onClose={() => setClockEditorOpen(false)}
+        onSave={seconds => { setGameClock(seconds); setClockEditorOpen(false); }} />}
+      {periodReviewOpen && <PeriodReviewDialog match={match} settings={periodSettings}
+        onSettingsChange={updatePeriodSettings} onClose={() => setPeriodReviewOpen(false)}
+        onSelect={period => { setPeriod(period); setEndPeriodPrompt(undefined); setPeriodReviewOpen(false); }}
+        onStarters={period => { setPeriod(period); setEndPeriodPrompt(undefined); setPeriodReviewOpen(false); setPeriodStartersOpen(true); }}
+        onEditEvent={editEvent} onUndoEvent={undoEvent} />}
       {substitutionOpen && (
         <SubstitutionDialog period={match.period} teams={{ away: match.away, home: match.home }}
           onApply={handleApplyLineup} onClose={closeSubstitution} />
@@ -3081,11 +3161,12 @@ function App() {
           description="Choose the player receiving this warning." teams={{ away: match.away, home: match.home }}
           sides={courtSides} initialTeam={selectedTeam} onClose={() => setWarningTarget(undefined)}
           onPick={(team, player) => commitWarning(warningTarget, team, player)} /> :
-        <ScoringDialog title={`Warning · ${warningTarget.label}`} description="Choose the team receiving this warning." onClose={() => setWarningTarget(undefined)}>
+        <ScoringDialog title={`Warning · ${warningTarget.label}`} description={warningTarget.key === "defensa" ? "Una advertencia de defensa por equipo y juego. Las siguientes se registran como técnica por defensa." : "Choose the team receiving this warning."} onClose={() => setWarningTarget(undefined)}>
           <div className="grid grid-cols-2 gap-3 p-4">
             {courtOrder(courtSides).map((team) => <button key={team} type="button"
               className="min-h-16 rounded-lg border border-neutral-700 bg-neutral-900 p-3 font-bold focus-visible:ring-2 focus-visible:ring-neutral-400"
-              onClick={() => commitWarning(warningTarget, team)}>{match[team].name}</button>)}
+              onClick={() => commitWarning(warningTarget, team)}>{match[team].name}
+              {warningTarget.key === "defensa" && <span className="mt-2 block text-xs text-amber-300">{hasDefenseWarning(match.events, team) ? "Registrar técnica por defensa" : "Primera advertencia"}</span>}</button>)}
           </div>
         </ScoringDialog>
       )}
@@ -3151,7 +3232,9 @@ function App() {
           periodCount={periodSettings.periodCount}
           summary={summary}
           onClose={() => setEndPeriodPrompt(undefined)}
+          onFinish={() => { setEndPeriodPrompt(undefined); endGame(); }}
           onContinue={() => {
+            if (matchRef.current.period === endPeriodPrompt) setPeriod(endPeriodPrompt + 1);
             setEndPeriodPrompt(undefined);
             setPeriodStartersOpen(true);
           }}
@@ -3161,6 +3244,7 @@ function App() {
       {periodStartersOpen && (
         <PeriodStartersDialog
           periodLabel={getPeriodLabel(match.period, periodSettings.periodCount)}
+          initialStarters={match.periodStates?.[match.period]?.starters}
           teams={{ away: match.away, home: match.home }}
           onApply={applyPeriodStarters}
           onClose={() => setPeriodStartersOpen(false)}
@@ -3759,6 +3843,59 @@ function GameTeamLine({
   );
 }
 
+function PeriodReviewDialog({ match, settings, onSettingsChange, onClose, onSelect, onStarters, onEditEvent, onUndoEvent }: {
+  match: LiveMatch; settings: PeriodSettings; onSettingsChange: (settings: Partial<PeriodSettings>) => void;
+  onClose: () => void; onSelect: (period: number) => void; onStarters: (period: number) => void;
+  onEditEvent: (id: number) => void; onUndoEvent: (id: number) => void;
+}) {
+  const [period, selectPeriod] = useState(match.period);
+  const [undo, setUndo] = useState<GameEvent>();
+  const latest = highestPeriod(match);
+  const periods = Array.from({ length: Math.min(12, Math.max(settings.periodCount, latest + 1)) }, (_, index) => index + 1);
+  const events = match.events.filter(event => event.period === period);
+  return <ScoringDialog title="Períodos y titulares" description="Revisa un cuarto, corrige sus acciones o vuelve a elegir sus titulares. Cada período conserva su reloj y alineación en este dispositivo." onClose={onClose} wide>
+    <div className="min-h-0 space-y-4 overflow-y-auto p-4">
+      <PeriodSettingsControls settings={settings} onChange={onSettingsChange} />
+      <div className="flex flex-wrap gap-2" role="group" aria-label="Período a revisar">
+        {periods.map(value => <button key={value} type="button" aria-pressed={period === value} onClick={() => selectPeriod(value)}
+          className={cn("min-h-11 rounded-lg border px-3 text-sm font-bold tabular-nums focus-visible:ring-2 focus-visible:ring-neutral-400", period === value ? "border-neutral-300 bg-neutral-100 text-neutral-950" : "border-neutral-700 text-neutral-300")}>
+          {value > settings.periodCount ? `OT ${value - settings.periodCount}` : `P${value}`}{value === match.period ? " · seleccionado" : ""}
+        </button>)}
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        {BENCH_ORDER.map(side => <div key={side} className="rounded-lg border border-neutral-700 bg-neutral-900 p-3">
+          <h3 className="truncate text-sm font-bold text-balance">{match[side].name}</h3>
+          <p className="mt-2 text-sm tabular-nums">Puntos: {period <= 4 ? getRoster(match[side]).reduce((sum, player) => sum + player[getPlayerPeriodKey(period)], 0) : events.filter(event => event.team === side).reduce((sum, event) => sum + (event.points ?? 0), 0)} · Faltas: {periodFouls(match, period, side)}</p>
+        </div>)}
+      </div>
+      <p className="text-sm text-neutral-400 text-pretty">{period < latest ? "Al editar este período, las nuevas acciones se registrarán en él. Vuelve al período más reciente antes de continuar el juego." : "Selecciona los titulares o continúa anotando en este período."}</p>
+      <div className="flex flex-wrap gap-2">
+        <button type="button" onClick={() => onSelect(period)} className="min-h-11 rounded-lg bg-neutral-100 px-4 text-sm font-bold text-neutral-950">{period > latest ? "Iniciar período" : "Editar este período"}</button>
+        <button type="button" onClick={() => onStarters(period)} className="min-h-11 rounded-lg border border-neutral-600 px-4 text-sm font-bold">Editar titulares</button>
+        {match.period < latest && <button type="button" onClick={() => onSelect(latest)} className="min-h-11 rounded-lg border border-amber-400/50 px-4 text-sm font-bold text-amber-200">Volver a {getPeriodLabel(latest, settings.periodCount)}</button>}
+      </div>
+      <div className="space-y-2">
+        <h3 className="text-sm font-bold text-balance">Acciones del período</h3>
+        {!events.length && <p className="text-sm text-neutral-400 text-pretty">Sin acciones. Usa “Editar este período” para registrar una.</p>}
+        {events.map(event => <div key={event.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-neutral-800 p-3">
+          <div className="min-w-0"><p className="text-xs text-neutral-400 tabular-nums">{event.time} · {match[event.team].name} · {event.player}</p><p className="text-sm text-pretty">{event.label}</p></div>
+          <div className="flex gap-2"><button type="button" onClick={() => onEditEvent(event.id)} className="min-h-9 rounded-md border border-neutral-700 px-3 text-xs">Editar nota</button>
+            <button type="button" onClick={() => setUndo(event)} className="min-h-9 rounded-md border border-neutral-700 px-3 text-xs text-red-300">Deshacer</button></div>
+        </div>)}
+      </div>
+    </div>
+    {undo && <AlertDialog.Root open onOpenChange={open => { if (!open) setUndo(undefined); }}><AlertDialog.Portal>
+      <AlertDialog.Overlay className="fixed inset-0 z-50 bg-black/80" />
+      <AlertDialog.Content className="fixed left-1/2 top-1/2 z-50 w-[calc(100%-2rem)] max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-xl border border-neutral-700 bg-neutral-900 p-4 text-neutral-100">
+        <AlertDialog.Title className="font-bold text-balance">¿Deshacer esta acción?</AlertDialog.Title>
+        <AlertDialog.Description className="mt-2 text-sm text-neutral-400 text-pretty">{undo.time} · {undo.player} · {undo.label}. Se corregirán los puntos o faltas correspondientes.</AlertDialog.Description>
+        <div className="mt-4 flex justify-end gap-2"><AlertDialog.Cancel className="min-h-11 rounded-lg border border-neutral-700 px-3">Cancelar</AlertDialog.Cancel>
+          <AlertDialog.Action onClick={() => { onUndoEvent(undo.id); setUndo(undefined); }} className="min-h-11 rounded-lg border border-red-400 px-3 text-red-200">Deshacer acción</AlertDialog.Action></div>
+      </AlertDialog.Content>
+    </AlertDialog.Portal></AlertDialog.Root>}
+  </ScoringDialog>;
+}
+
 function PeriodSettingsControls({
   settings,
   onChange,
@@ -3772,6 +3909,7 @@ function PeriodSettingsControls({
         <Clock3 size={14} />
         Period Setup
       </div>
+      <p className="mb-3 text-xs text-neutral-400 text-pretty">{settings.periodCount} períodos de {secondsToMinutes(settings.periodSeconds)} min. La prórroga empieza después del último período.</p>
       <div className="grid grid-cols-3 gap-2">
         <NumberField
           label="Periods"
@@ -3816,6 +3954,15 @@ function NumberField({
   value: number;
   onChange: (value: number) => void;
 }) {
+  const [draft, setDraft] = useState<string | undefined>();
+  const [error, setError] = useState(false);
+  function commit(valueText: string) {
+    const parsed = Number(valueText);
+    const valid = valueText.trim() !== "" && Number.isFinite(parsed) && parsed >= min && parsed <= max &&
+      Math.abs((parsed - min) / step - Math.round((parsed - min) / step)) < 0.000001;
+    setError(!valid);
+    if (valid) { onChange(parsed); setDraft(undefined); }
+  }
   return (
     <label className="block">
       <span className="mb-1 block text-[11px] font-semibold text-neutral-500">{label}</span>
@@ -3825,9 +3972,14 @@ function NumberField({
         min={min}
         step={step}
         type="number"
-        value={value}
-        onChange={(event) => onChange(Number(event.currentTarget.value))}
+        value={draft ?? String(value)}
+        aria-invalid={error}
+        onFocus={(event) => event.currentTarget.select()}
+        onChange={(event) => { setDraft(event.currentTarget.value); setError(false); }}
+        onBlur={(event) => commit(event.currentTarget.value)}
+        onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); event.currentTarget.blur(); } }}
       />
+      {error && <span role="status" className="mt-1 block text-xs text-amber-300">Usa {min}–{max}{step < 1 ? `, en pasos de ${step}` : ""}. Guardado: {value}.</span>}
     </label>
   );
 }
@@ -4002,6 +4154,9 @@ function ScoreHeader({
   onBackToDashboard,
   onSelectTeam,
   onToggleFoulBall,
+  periodCount,
+  onEditClock,
+  onOpenPeriods,
 }: {
   courtSides: CourtSides;
   away: Team;
@@ -4022,6 +4177,9 @@ function ScoreHeader({
   onBackToDashboard: () => void;
   onSelectTeam: (team: TeamId) => void;
   onToggleFoulBall: () => void;
+  periodCount: number;
+  onEditClock: () => void;
+  onOpenPeriods: () => void;
 }) {
   const teams = { away, home };
   const scores = { away: awayScore, home: homeScore };
@@ -4075,14 +4233,16 @@ function ScoreHeader({
           <span>{foulBallTeam === "away" ? "Visitor" : "Home"}</span>
         </button>
         <button aria-label="Change game" className="live-change-game flex h-9 w-full items-center justify-between gap-2 rounded-lg border border-neutral-700 bg-neutral-900 px-2 text-xs text-neutral-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300" onClick={onBackToDashboard}><span className="truncate">{matchName}</span><span className="shrink-0 text-amber-300">Change game</span></button>
-        <div aria-label="Game clock" role="timer" className="live-game-clock mt-0.5 font-mono text-5xl font-black leading-none text-neutral-50 tabular-nums lg:text-4xl 2xl:text-5xl">
-          {clock}
-        </div>
+        <button type="button" aria-label="Editar tiempo desde marcador" onClick={onEditClock}
+          className="mt-0.5 flex items-center gap-2 rounded-lg px-2 py-1 hover:bg-neutral-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400">
+          <span aria-label="Game clock" role="timer" className="live-game-clock font-mono text-5xl font-black leading-none text-neutral-50 tabular-nums lg:text-4xl 2xl:text-5xl">{clock}</span>
+          <Pencil size={16} className="text-neutral-400" />
+        </button>
         <div className="live-period-tags flex flex-wrap items-center justify-center gap-1">
         {statsMode !== "youth" && <div className="live-compact-shot-clock font-mono font-bold text-neutral-200" aria-label="Shot clock">SC {shotClock}</div>}
-        <div className="rounded-full bg-amber-400/10 px-3 py-0.5 text-[11px] font-black uppercase tracking-wide text-amber-300">
-          {periodLabel}
-        </div>
+        <button type="button" aria-label="Períodos y titulares" onClick={onOpenPeriods} className="min-h-9 rounded-lg border border-neutral-700 px-3 py-1 text-[11px] font-bold text-amber-300 hover:bg-neutral-800 focus-visible:ring-2 focus-visible:ring-neutral-400">
+          {periodLabel} · {periodCount} períodos · Editar
+        </button>
         {equalizationApplied && equalizationPoints ? (
           <div
             className="rounded-full border border-amber-500/50 bg-amber-500/10 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wide text-amber-300"
@@ -4519,7 +4679,7 @@ function CourtShooterGrid({
         </div>
       ) : (
         <div className="mt-1 grid grid-cols-5 gap-1.5">
-          {players.map((player) => (
+          {sortPlayersByJersey(players).map((player) => (
             <button
               className="flex h-11 items-center justify-center rounded-lg border bg-neutral-900 font-mono text-lg font-black tabular-nums transition-colors hover:bg-white/5 focus:outline-none focus:ring-2 focus:ring-neutral-500 lg:h-9"
               style={accentStyle}
@@ -4548,7 +4708,7 @@ function RosterPanel({ side, team, position, selectedTeam, selectedPlayerKey, on
       <span className="font-mono text-xs tabular-nums text-neutral-400">{team.players.length}/5</span>
     </button>
     <div className="live-player-list grid grid-cols-5 lg:block">
-      {team.players.map((player) => <PlayerRow side={side} compact key={getPlayerKey(player)} player={player}
+      {sortPlayersByJersey(team.players).map((player) => <PlayerRow side={side} compact key={getPlayerKey(player)} player={player}
         selected={selectedTeam && selectedPlayerKey === getPlayerKey(player)} onClick={() => onSelectPlayer(side, player)} />)}
     </div>
     {team.players.length === 0 && <p className="p-4 text-xs text-neutral-400">Set the lineup in Pre-game.</p>}
@@ -4647,41 +4807,11 @@ function WarningDialog({
   onClose: () => void;
 }) {
   const cBase = `var(--c-${side})`;
-  const cSoft = `var(--c-${side}-soft)`;
 
   return (
-    <div
-      aria-modal="true"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
-      role="dialog"
-      onClick={onClose}
-    >
-      <div
-        className="flex max-h-[92vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-neutral-700 bg-neutral-900 shadow-2xl shadow-black/60"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <div className="flex items-center justify-between gap-3 border-b border-neutral-800 px-4 py-3">
-          <div className="flex min-w-0 items-center gap-3">
-            <TriangleAlert className="shrink-0 text-amber-300" size={20} />
-            <div className="min-w-0">
-              <div className="text-[10px] font-black uppercase tracking-widest" style={{ color: cSoft }}>
-                Referee Warning · {team.label}
-              </div>
-              <h2 className="truncate text-lg font-black text-neutral-50">{team.name}</h2>
-            </div>
-          </div>
-          <button
-            aria-label="Close warnings"
-            className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-neutral-800 bg-neutral-950 text-neutral-400 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500"
-            type="button"
-            onClick={onClose}
-          >
-            <CircleX size={18} />
-          </button>
-        </div>
-
+    <ScoringDialog title={`Advertencias · ${team.name}`} description="Elige el tipo de advertencia para el jugador o equipo." onClose={onClose}>
         <div className="border-b border-neutral-800 px-4 py-2 text-xs font-semibold text-neutral-400">
-          Choose the warning type, then its player or team. No foul, no score change.
+          Elige el tipo y luego el equipo o jugador. La segunda advertencia de defensa es una técnica del equipo.
         </div>
 
         <div className="grid min-h-0 flex-1 gap-2 overflow-y-auto scrollbar-slim p-3 sm:grid-cols-2">
@@ -4718,8 +4848,7 @@ function WarningDialog({
             Cancel
           </button>
         </div>
-      </div>
-    </div>
+    </ScoringDialog>
   );
 }
 
@@ -5024,21 +5153,20 @@ function FoulDialog({
   committerSide: TeamId;
   opponent: Team;
   opponentSide: TeamId;
-  onConfirm: (result: { fouledPlayer?: Player; freeThrowsAttempted: number; freeThrowsMade: number }) => void;
+  onConfirm: (result: FoulResult) => void;
   onClose: () => void;
 }) {
-  const cBase = `var(--c-${committerSide})`;
-  const cSoft = `var(--c-${committerSide}-soft)`;
   // Only players currently on court can draw a foul that ends in free throws.
-  const roster = opponent.players;
+  const roster = sortPlayersByJersey(opponent.players);
   const [fouledKey, setFouledKey] = useState<string | undefined>(undefined);
   const [ftCount, setFtCount] = useState(0);
   const [ftMade, setFtMade] = useState<boolean[]>([true, true, true]);
+  const [basketValue, setBasketValue] = useState<0 | 2 | 3>(0);
 
   const fouledPlayer = roster.find((player) => getPlayerKey(player) === fouledKey);
   const madeCount = ftMade.slice(0, ftCount).filter(Boolean).length;
-  const needsFouled = ftCount > 0;
-  const canConfirm = !needsFouled || Boolean(fouledPlayer);
+  const needsFouled = ftCount > 0 || basketValue > 0;
+  const canConfirm = !needsFouled || Boolean(fouledPlayer && !isPlayerUnavailable(fouledPlayer));
 
   function toggleFt(index: number, made: boolean) {
     setFtMade((current) => current.map((value, i) => (i === index ? made : value)));
@@ -5052,42 +5180,12 @@ function FoulDialog({
       fouledPlayer,
       freeThrowsAttempted: ftCount,
       freeThrowsMade: madeCount,
+      basketValue,
     });
   }
 
   return (
-    <div
-      aria-modal="true"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
-      role="dialog"
-      onClick={onClose}
-    >
-      <div
-        className="flex max-h-[92vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-neutral-700 bg-neutral-900 shadow-2xl shadow-black/60"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <div className="flex items-center justify-between gap-3 border-b border-neutral-800 px-4 py-3">
-          <div className="flex min-w-0 items-center gap-3">
-            <span aria-hidden className="h-9 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: cBase }} />
-            <div className="min-w-0">
-              <div className="text-[10px] font-black uppercase tracking-widest" style={{ color: cSoft }}>
-                Falta personal
-              </div>
-              <h2 className="truncate text-lg font-black text-neutral-50">
-                Cometida por <span style={{ color: cSoft }}>#{committer.number}</span>
-              </h2>
-            </div>
-          </div>
-          <button
-            aria-label="Close foul"
-            className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-neutral-800 bg-neutral-950 text-neutral-400 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500"
-            type="button"
-            onClick={onClose}
-          >
-            <CircleX size={18} />
-          </button>
-        </div>
-
+    <ScoringDialog title={`Falta personal · #${committer.number} · ${committerSide === "away" ? "Visitor" : "Home"}`} description="Elige quién recibió la falta, la canasta y los tiros libres." onClose={onClose}>
         <div className="min-h-0 flex-1 overflow-y-auto scrollbar-slim p-3">
           {/* Who drew the foul (opponent). Required only when there are free throws. */}
           <div className="flex items-center justify-between gap-2">
@@ -5128,6 +5226,18 @@ function FoulDialog({
               })}
             </div>
           )}
+
+          <fieldset className="mt-4">
+            <legend className="text-sm font-bold">¿Encestó al recibir la falta?</legend>
+            <div className="mt-2 grid grid-cols-3 gap-2">
+              {([0, 2, 3] as const).map(value => <button key={value} type="button" aria-pressed={basketValue === value}
+                onClick={() => { setBasketValue(value); if (value > 0) setFtCount(1); }}
+                className={cn("min-h-11 rounded-lg border px-2 text-xs font-bold focus-visible:ring-2 focus-visible:ring-neutral-400", basketValue === value ? "border-amber-400 bg-amber-400/10 text-amber-200" : "border-neutral-700 text-neutral-300")}>
+                {value ? `Encestó ${value} puntos` : "Sin canasta"}
+              </button>)}
+            </div>
+            {basketValue > 0 && <p className="mt-2 text-xs text-neutral-300 text-pretty">Se sumarán {basketValue} puntos a quien recibió la falta, más los tiros libres anotados.</p>}
+          </fieldset>
 
           {/* Free throws */}
           <div className="mt-4 flex items-center justify-between gap-2">
@@ -5205,7 +5315,7 @@ function FoulDialog({
         <div className="flex items-center justify-between gap-3 border-t border-neutral-800 px-4 py-3">
           <div className="min-w-0 truncate text-xs font-semibold text-neutral-400">
             {fouledPlayer
-              ? `Falta a #${fouledPlayer.number}${ftCount > 0 ? ` · ${madeCount}/${ftCount} TL` : ""}`
+              ? `Falta a #${fouledPlayer.number}${basketValue ? ` · +${basketValue} PT` : ""}${ftCount > 0 ? ` · ${madeCount}/${ftCount} TL` : ""}`
               : "Falta sin tiros (o elige quién la recibió)"}
           </div>
           <div className="flex shrink-0 items-center gap-2">
@@ -5227,8 +5337,7 @@ function FoulDialog({
             </button>
           </div>
         </div>
-      </div>
-    </div>
+    </ScoringDialog>
   );
 }
 
@@ -5380,6 +5489,7 @@ function EndOfPeriodDialog({
   summary,
   onClose,
   onContinue,
+  onFinish,
 }: {
   endedPeriod: number;
   match: LiveMatch;
@@ -5387,6 +5497,7 @@ function EndOfPeriodDialog({
   summary: Array<{ label: string; value: string }>;
   onClose: () => void;
   onContinue: () => void;
+  onFinish: () => void;
 }) {
   const periodKey = getPlayerPeriodKey(endedPeriod);
   const periodPts = (team: Team) =>
@@ -5415,34 +5526,7 @@ function EndOfPeriodDialog({
   ];
 
   return (
-    <div
-      aria-modal="true"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
-      role="dialog"
-      onClick={onClose}
-    >
-      <div
-        className="flex max-h-[92vh] w-full max-w-xl flex-col overflow-hidden rounded-2xl border border-neutral-700 bg-neutral-900 shadow-2xl shadow-black/60"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <div className="flex items-center justify-between gap-3 border-b border-neutral-800 px-4 py-3">
-          <div className="flex min-w-0 items-center gap-2.5">
-            <Clock3 className="shrink-0 text-amber-400" size={20} />
-            <div className="min-w-0">
-              <div className="text-[10px] font-black uppercase tracking-widest text-amber-400">Fin del periodo</div>
-              <h2 className="truncate text-lg font-black text-neutral-50">End of {label}</h2>
-            </div>
-          </div>
-          <button
-            aria-label="Close period summary"
-            className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-neutral-800 bg-neutral-950 text-neutral-400 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500"
-            type="button"
-            onClick={onClose}
-          >
-            <CircleX size={18} />
-          </button>
-        </div>
-
+    <ScoringDialog title={`Fin de ${label}`} description="Resumen del período y próximos pasos." onClose={onClose}>
         <div className="min-h-0 flex-1 overflow-y-auto scrollbar-slim p-4">
           {/* Period score — the headline visual feedback. */}
           <div className="rounded-2xl border border-neutral-800 bg-neutral-950 p-4">
@@ -5481,7 +5565,7 @@ function EndOfPeriodDialog({
                 <div className="mt-2 grid grid-cols-2 gap-1.5 text-center">
                   <EndPeriodStat label="Periodo" value={String(row.pts)} />
                   <EndPeriodStat label="Total" value={String(row.total)} />
-                  <EndPeriodStat label="Faltas" value={String(row.team.fouls)} warn={row.team.fouls >= 7} />
+                  <EndPeriodStat label="Faltas" value={String(periodFouls(match, endedPeriod, row.side))} warn={periodFouls(match, endedPeriod, row.side) >= 7} />
                   <EndPeriodStat label="Tiempos" value={String(row.team.timeouts)} />
                 </div>
                 <div className="mt-2 flex items-center justify-between rounded-lg border border-neutral-800 bg-neutral-900 px-2.5 py-1.5">
@@ -5518,19 +5602,19 @@ function EndOfPeriodDialog({
             type="button"
             onClick={onClose}
           >
-            Saltar
+            Cerrar resumen
           </button>
+          {endedPeriod >= periodCount && <button type="button" onClick={onFinish} className="min-h-11 rounded-lg border border-neutral-600 px-3 text-sm font-semibold">Finalizar juego</button>}
           <button
             className="flex h-11 items-center gap-2 rounded-lg border border-lime-500/50 bg-lime-500/15 px-5 text-sm font-black uppercase tracking-wide text-lime-100 transition-colors hover:bg-lime-500/25 focus:outline-none focus:ring-2 focus:ring-lime-500/50"
             type="button"
             onClick={onContinue}
           >
-            Elegir titulares
+            {endedPeriod >= periodCount && match.period === endedPeriod ? "Iniciar prórroga" : "Elegir titulares"}
             <ChevronRight size={18} />
           </button>
         </div>
-      </div>
-    </div>
+    </ScoringDialog>
   );
 }
 
@@ -5545,7 +5629,7 @@ function EndPeriodStat({ label, value, warn }: { label: string; value: string; w
 
 // Attendance and roster removals apply to every selection during the game.
 function eligiblePlayers(team: Team): Player[] {
-  return getRoster(team).filter(
+  return sortPlayersByJersey(getRoster(team)).filter(
     (player) => !isPlayerUnavailable(player) && player.present !== false && !player.removedFromRoster,
   );
 }
@@ -5628,51 +5712,28 @@ function FoulOutDialog({
 
 function PeriodStartersDialog({
   periodLabel,
+  initialStarters,
   teams,
   onApply,
   onClose,
 }: {
   periodLabel: string;
+  initialStarters?: Record<TeamId, string[]>;
   teams: Record<TeamId, Team>;
   onApply: (awayKeys: string[], homeKeys: string[]) => void;
   onClose: () => void;
 }) {
   const awayTarget = Math.min(5, eligiblePlayers(teams.away).length);
   const homeTarget = Math.min(5, eligiblePlayers(teams.home).length);
-  const [awayKeys, setAwayKeys] = useState<string[]>(() => teams.away.players.filter(p => !isPlayerUnavailable(p)).map(getPlayerKey));
-  const [homeKeys, setHomeKeys] = useState<string[]>(() => teams.home.players.filter(p => !isPlayerUnavailable(p)).map(getPlayerKey));
+  const initialKeys = (side: TeamId) => (initialStarters?.[side] ?? teams[side].players.map(getPlayerKey))
+    .filter(key => eligiblePlayers(teams[side]).some(player => getPlayerKey(player) === key));
+  const [awayKeys, setAwayKeys] = useState<string[]>(() => initialKeys("away"));
+  const [homeKeys, setHomeKeys] = useState<string[]>(() => initialKeys("home"));
 
   const canApply = awayKeys.length === awayTarget && homeKeys.length === homeTarget;
 
   return (
-    <div
-      aria-modal="true"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
-      role="dialog"
-      onClick={onClose}
-    >
-      <div
-        className="flex max-h-[92vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-neutral-700 bg-neutral-900 shadow-2xl shadow-black/60"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <div className="flex items-center justify-between gap-3 border-b border-neutral-800 px-4 py-3">
-          <div className="flex min-w-0 items-center gap-2.5">
-            <Users className="shrink-0 text-amber-300" size={20} />
-            <div className="min-w-0">
-              <div className="text-[10px] font-black uppercase tracking-widest text-amber-300">Titulares · {periodLabel}</div>
-              <h2 className="truncate text-lg font-black text-neutral-50">Quién empieza el periodo</h2>
-            </div>
-          </div>
-          <button
-            aria-label="Close period starters"
-            className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-neutral-800 bg-neutral-950 text-neutral-400 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500"
-            type="button"
-            onClick={onClose}
-          >
-            <CircleX size={18} />
-          </button>
-        </div>
-
+    <ScoringDialog title={`Titulares · ${periodLabel}`} description="Elige los titulares del período seleccionado. Puedes volver a editarlos desde Períodos y titulares." onClose={onClose} wide>
         <div className="grid min-h-0 flex-1 gap-px overflow-y-auto scrollbar-slim bg-neutral-800 sm:grid-cols-2">
           <PeriodStartersColumn side="away" team={teams.away} selectedKeys={awayKeys} target={awayTarget} onChange={setAwayKeys} />
           <PeriodStartersColumn side="home" team={teams.home} selectedKeys={homeKeys} target={homeTarget} onChange={setHomeKeys} />
@@ -5701,8 +5762,7 @@ function PeriodStartersDialog({
             </button>
           </div>
         </div>
-      </div>
-    </div>
+    </ScoringDialog>
   );
 }
 
@@ -6679,7 +6739,7 @@ function PreGameTeamColumn({
   onToggleStarter: (team: TeamId, player: Player) => void;
   onUpdatePlayer: (team: TeamId, player: Player, values: Pick<Player, "name" | "number">) => void;
 }) {
-  const allPlayers = [...team.players, ...team.bench];
+  const allPlayers = sortPlayersByJersey([...team.players, ...team.bench]);
   const roster = allPlayers.filter((player) => !player.removedFromRoster);
   const removedPlayers = allPlayers.filter((player) => player.removedFromRoster);
   const starterKeys = new Set(team.players.map(getPlayerKey));
@@ -6856,7 +6916,7 @@ function ConfirmPlayerRemovalDialog({
     <AlertDialog.Root open onOpenChange={(open) => !open && onCancel()}>
       <AlertDialog.Portal>
       <AlertDialog.Overlay className="fixed inset-0 z-50 bg-black/80" />
-      <AlertDialog.Content className="fixed left-1/2 top-1/2 z-50 w-[calc(100%-2rem)] max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-xl border border-red-500/50 bg-neutral-900 p-4 shadow-xl">
+      <AlertDialog.Content onClick={event => event.stopPropagation()} className="fixed left-1/2 top-1/2 z-50 w-[calc(100%-2rem)] max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-xl border border-red-500/50 bg-neutral-900 p-4 shadow-xl">
         <AlertDialog.Title className="text-base font-black text-balance text-neutral-50">Remove player from this game?</AlertDialog.Title>
         <AlertDialog.Description className="mt-1 text-sm text-pretty text-neutral-400">
           #{player.number || "—"} {player.name || "Unnamed player"}{player.id && player.id > 0 ? " will be marked absent and can be restored here. Their team record and statistics stay intact." : " has not synced yet and will be removed from this game-day roster."}
@@ -7009,7 +7069,7 @@ function ActionPanel({
   onResetMatchState,
   onResetGameClock,
   onResetShotClock,
-  onSetGameClock,
+  onEditClock,
   onSetFoulOnShot,
   onStopTimeoutClock,
   onToggleClock,
@@ -7055,7 +7115,7 @@ function ActionPanel({
   onResetMatchState: () => void;
   onResetGameClock: () => void;
   onResetShotClock: (seconds: number) => void;
-  onSetGameClock: (seconds: number) => void;
+  onEditClock: () => void;
   onSetFoulOnShot: (enabled: boolean) => void;
   onStopTimeoutClock: () => void;
   onToggleClock: () => void;
@@ -7069,22 +7129,6 @@ function ActionPanel({
             action.key === "warning",
         )
       : statActions;
-
-  const [editingClock, setEditingClock] = useState(false);
-  const [clockDraft, setClockDraft] = useState(clock);
-
-  function startClockEdit() {
-    setClockDraft(clock);
-    setEditingClock(true);
-  }
-
-  function commitClockEdit() {
-    const seconds = parseClockInput(clockDraft);
-    if (seconds !== undefined) {
-      onSetGameClock(seconds);
-    }
-    setEditingClock(false);
-  }
 
   return (
     <aside className="live-console order-5 flex min-h-0 flex-col bg-neutral-950 p-3 md:col-span-2 lg:col-span-3 lg:col-start-1 lg:row-start-3 2xl:col-span-1 2xl:col-start-4 2xl:row-span-3 2xl:row-start-1 2xl:h-full 2xl:overflow-y-auto 2xl:p-1.5">
@@ -7139,25 +7183,6 @@ function ActionPanel({
           <div className="rounded-xl border border-neutral-800 bg-neutral-900 p-3 shadow-sm shadow-black/20 2xl:rounded-md 2xl:p-1.5">
             <div className="flex items-center justify-between gap-3">
               <span className="text-[11px] font-black uppercase tracking-wide text-neutral-500">Game Clock</span>
-              {editingClock ? (
-                <input
-                  aria-label="Edit remaining time — type mmss (e.g. 1000 = 10:00) or mm:ss"
-                  autoFocus
-                  className="w-28 rounded-md border border-lime-500/50 bg-neutral-950 px-2 text-right font-mono text-3xl font-black leading-none tabular-nums text-lime-300 outline-none focus:ring-2 focus:ring-lime-500/50 2xl:w-20 2xl:text-xl"
-                  inputMode="numeric"
-                  placeholder="mmss"
-                  value={clockDraft}
-                  onBlur={commitClockEdit}
-                  onChange={(event) => setClockDraft(event.currentTarget.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") {
-                      commitClockEdit();
-                    } else if (event.key === "Escape") {
-                      setEditingClock(false);
-                    }
-                  }}
-                />
-              ) : (
                 <button
                   aria-label="Edit remaining time"
                   className={cn(
@@ -7166,11 +7191,10 @@ function ActionPanel({
                   )}
                   title="Click to set the remaining time (mm:ss)"
                   type="button"
-                  onClick={startClockEdit}
+                  onClick={onEditClock}
                 >
                   {clock}
                 </button>
-              )}
             </div>
             <div className="mt-3 grid grid-cols-5 gap-1.5 2xl:mt-1 2xl:gap-1">
               <TimerButton label="-10" onClick={() => onAdjustClock(-10)}>
@@ -7214,7 +7238,7 @@ function ActionPanel({
               <button
                 className="flex h-10 items-center justify-center gap-1 rounded-lg border border-neutral-800 bg-neutral-950 text-[11px] font-black uppercase text-neutral-300 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-500 2xl:h-7 2xl:rounded-md"
                 type="button"
-                onClick={startClockEdit}
+                onClick={onEditClock}
               >
                 <Pencil size={12} />
                 Edit Time
@@ -7775,47 +7799,6 @@ function secondsToClock(totalSeconds: number) {
   return `${minutes.toString().padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`;
 }
 
-// Accepts "M:SS" / "MM:SS", or digits-only entered scoreboard-style where the last two
-// digits are the seconds ("1000" -> 10:00, "230" -> 2:30, "45" -> 0:45). Returns total
-// seconds or undefined. Digits-only is NOT read as a raw seconds count — on a numeric
-// tablet keypad the colon is awkward to type, and reading "1000" as 1000s (16:40) was the
-// source of the "I typed a number and got a different time" confusion.
-function parseClockInput(value: string): number | undefined {
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return undefined;
-  }
-
-  if (trimmed.includes(":")) {
-    const [rawMinutes, rawSeconds = "0"] = trimmed.split(":");
-    const minutes = Number(rawMinutes);
-    const seconds = Number(rawSeconds);
-    if (
-      !Number.isFinite(minutes) ||
-      !Number.isFinite(seconds) ||
-      minutes < 0 ||
-      seconds < 0 ||
-      seconds >= 60
-    ) {
-      return undefined;
-    }
-    return clampWholeNumber(minutes * 60 + seconds, 0, 99 * 60 + 59);
-  }
-
-  if (!/^\d+$/.test(trimmed)) {
-    return undefined;
-  }
-
-  // Digits-only: last two digits are seconds, the rest are minutes (MMSS).
-  const asNumber = Number(trimmed);
-  const minutes = Math.floor(asNumber / 100);
-  const seconds = asNumber % 100;
-  if (seconds >= 60) {
-    return undefined;
-  }
-  return clampWholeNumber(minutes * 60 + seconds, 0, 99 * 60 + 59);
-}
-
 function secondsToMinutes(seconds: number) {
   return Math.round((seconds / 60) * 10) / 10;
 }
@@ -7833,7 +7816,7 @@ function clampWholeNumber(value: number, min: number, max: number) {
 }
 
 function createPeriodOptions(periodCount: number) {
-  return Array.from({ length: periodCount + 1 }, (_, index) => index + 1);
+  return Array.from({ length: Math.min(12, periodCount + 1) }, (_, index) => index + 1);
 }
 
 function getDefaultClockSeconds(period: LiveMatch["period"], settings: PeriodSettings) {
@@ -7894,11 +7877,7 @@ function validateGameDayRoster(match: LiveMatch): string[] {
   const errors: string[] = [];
   for (const side of ["away", "home"] as TeamId[]) {
     const team = match[side];
-    const roster = getRoster(team);
-    if (roster.length === 0) {
-      errors.push(`${team.name}: add at least one player.`);
-      continue;
-    }
+    const roster = getRoster(team).filter(player => !player.removedFromRoster);
     for (const player of roster) {
       const error = getGameDayPlayerError(team, player);
       if (error) {
@@ -7910,6 +7889,7 @@ function validateGameDayRoster(match: LiveMatch): string[] {
 }
 
 function getGameDayPlayerError(team: Team, player: Player): string | undefined {
+  if (player.removedFromRoster) return undefined;
   const number = player.number.trim();
   if (!number) {
     return "Jersey number is required.";
@@ -7923,7 +7903,7 @@ function getGameDayPlayerError(team: Team, player: Player): string | undefined {
   const duplicateCount = getRoster(team).filter(
     (candidate) =>
       (player.present ?? true) &&
-      (candidate.present ?? true) &&
+      (candidate.present ?? true) && !candidate.removedFromRoster &&
       /^\d{1,3}$/.test(candidate.number.trim()) &&
       Number(candidate.number) === Number(number),
   ).length;
@@ -7938,7 +7918,7 @@ function getRoster(team: Team) {
 }
 
 function findPlayerByKey(team: Team, playerKey: string) {
-  return getRoster(team).find((player) => getPlayerKey(player) === playerKey);
+  return getRoster(team).find((player) => getPlayerKey(player) === playerKey || (player.id && playerKey === `id:${player.id}`));
 }
 
 function findEventPlayer(match: LiveMatch, event: GameEvent) {
@@ -7956,10 +7936,12 @@ function normalizeEventPeriod(period: number | undefined, fallback: LiveMatch["p
 }
 
 function createUndoItemFromEvent(match: LiveMatch, event: GameEvent): UndoItem | undefined {
-  const player = findEventPlayer(match, event);
+  const player = findEventPlayer(match, event) ??
+    (event.action === "warning" || event.action === "admin tech" ? WARNING_PLACEHOLDER_PLAYER : undefined);
   if (!event.action || !player) {
     return undefined;
   }
+  if (event.action === "substitution" && (!event.subInKey || !event.subOutKey)) return undefined;
 
   const opponentTeam = oppositeTeam(event.team);
   const opponentTurnoverPlayer =
@@ -7973,6 +7955,9 @@ function createUndoItemFromEvent(match: LiveMatch, event: GameEvent): UndoItem |
     (event.shotType === "3pt" ? 3 : event.shotType === "2pt" ? 2 : event.shotType === "free throw" ? 1 : undefined);
   const detail: ActionDetail = {
     action: event.action,
+    subInKey: event.subInKey ? getPlayerKey(findPlayerByKey(match[event.team], event.subInKey) ?? player) : undefined,
+    subOutKey: event.subOutKey && findPlayerByKey(match[event.team], event.subOutKey) ? getPlayerKey(findPlayerByKey(match[event.team], event.subOutKey)!) : undefined,
+    subTeam: event.action === "substitution" ? event.team : undefined,
     label: event.label,
     opponentTurnoverPlayer,
     opponentTurnoverTeam: opponentTurnoverPlayer ? opponentTeam : undefined,
@@ -7984,9 +7969,11 @@ function createUndoItemFromEvent(match: LiveMatch, event: GameEvent): UndoItem |
   };
 
   if (event.shotType === "free throw") {
-    detail.freeThrowsAttempted = 1;
-    detail.freeThrowsMade = event.points && event.points > 0 ? 1 : 0;
+    const legacyThrows = event.label.match(/Free throws\s+(\d+)\/(\d+)/i);
+    detail.freeThrowsAttempted = event.freeThrowsAttempted ?? (legacyThrows ? Number(legacyThrows[2]) : 1);
+    detail.freeThrowsMade = event.freeThrowsMade ?? event.points ?? 0;
   }
+  if (event.action === "substitution" && (!detail.subInKey || !detail.subOutKey)) return undefined;
 
   return {
     detail,
@@ -8201,7 +8188,13 @@ function rewriteOutboxRoster(op: OutboxOp, resolved: LiveMatch): OutboxOp {
     };
   }
 
-  return { ...op, match: mergeResolvedRosterIds(op.match, resolved) };
+  const match = mergeResolvedRosterIds(op.match, resolved);
+  if (op.kind === "correction") {
+    const update = (player: Player) => [...getRoster(match.away), ...getRoster(match.home)]
+      .find(candidate => getPlayerKey(candidate) === getPlayerKey(player)) ?? player;
+    return { ...op, match, player: op.player && update(op.player), players: op.players?.map(update) };
+  }
+  return { ...op, match };
 }
 
 function applyStoredStarters(match: LiveMatch): LiveMatch {
@@ -8535,6 +8528,15 @@ function revertMatchAfterAction(match: LiveMatch, undoItem: UndoItem): LiveMatch
   const { detail, event, period, playerKey, previousPossession, previousShotClock, selectedTeam } = undoItem;
 
   if (detail.action === "substitution" && detail.subTeam && detail.subInKey && detail.subOutKey) {
+    if (period !== match.period) {
+      const saved = match.periodStates?.[period];
+      if (!saved) return match;
+      const historical = { ...match, [detail.subTeam]: restorePeriodLineup(match[detail.subTeam], saved.lineups[detail.subTeam]) };
+      const reverted = withSubstitution(historical, detail.subTeam, detail.subInKey, detail.subOutKey);
+      return { ...match, periodStates: { ...match.periodStates, [period]: { ...saved,
+        lineups: { ...saved.lineups, [detail.subTeam]: reverted[detail.subTeam].players.map(getPlayerKey) } } },
+        events: match.events.filter(candidate => candidate.id !== event.id) };
+    }
     const reverted = withSubstitution(match, detail.subTeam, detail.subInKey, detail.subOutKey);
     return {
       ...reverted,
@@ -8611,7 +8613,7 @@ function revertMatchAfterAction(match: LiveMatch, undoItem: UndoItem): LiveMatch
     [selectedTeam]: {
       ...side,
       bench: side.bench.map(updatePlayer),
-      fouls: subtractStat(side.fouls, foulValue),
+      fouls: subtractStat(side.fouls, period === match.period ? foulValue : 0),
       players: side.players.map(updatePlayer),
     },
     ...(detail.opponentTurnoverTeam && detail.opponentTurnoverTeam !== selectedTeam

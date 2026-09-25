@@ -3,7 +3,8 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import vm from "node:vm";
 import ts from "typescript";
-import { BENCH_ORDER, computeEqualization, isPlayerUnavailable, nextEventId, playerKey } from "../src/scoring.ts";
+import { BENCH_ORDER, computeEqualization, hasDefenseWarning, isPlayerUnavailable, nextEventId, playerKey, sortPlayersByJersey } from "../src/scoring.ts";
+import { capturePeriod, highestPeriod, periodFouls, restorePeriodLineup } from "../src/periods.ts";
 
 // Execute the real application handlers with isolated storage and no network.
 const source = ts.createSourceFile("App.tsx", readFileSync(new URL("../src/App.tsx", import.meta.url), "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
@@ -17,15 +18,18 @@ function handler(name) {
   assert.ok(found, name);
   return ts.transpile(found, { target: ts.ScriptTarget.ES2022 });
 }
-const player = id => ({ id, number: String(id), name: `Player ${id}`, present: true, fouls: 0, techFouls: 0 });
+const player = id => ({ id, number: String(id), name: `Player ${id}`, present: true, fouls: 0, techFouls: 0,
+  points: 0, q1: 0, q2: 0, q3: 0, q4: 0, ot: 0, assists: 0, blocks: 0, steals: 0, turnovers: 0,
+  freeThrowsAttempted: 0, freeThrowsMade: 0, twoPointersMade: 0, twoPointersAttempted: 0,
+  threePointersMade: 0, threePointersAttempted: 0, offensiveRebounds: 0, defensiveRebounds: 0 });
 function harness() {
   const storage = {};
-  const side = offset => ({ name: "Team", players: [1, 2, 3, 4, 5].map(id => player(id + offset)), bench: [6, 7, 8, 9, 10].map(id => player(id + offset)) });
+  const side = offset => ({ name: "Team", fouls: 0, timeouts: 0, presentCount: 10, players: [1, 2, 3, 4, 5].map(id => player(id + offset)), bench: [6, 7, 8, 9, 10].map(id => player(id + offset)) });
   const match = { gameId: 42, period: 2, clock: "08:00", away: side(0), home: side(10), events: [] };
   const context = vm.createContext({
     matchRef: { current: match }, mutationRevisionRef: { current: 0 }, selectedPlayersRef: { current: {} },
     clockRunningRef: { current: true }, running: true, STORAGE_KEYS: { starters: "starters", gameDayRosters: "rosters" }, UNDO_LIMIT: 50,
-    getPlayerKey: playerKey, isPlayerUnavailable, nextEventId,
+    getPlayerKey: playerKey, isPlayerUnavailable, nextEventId, capturePeriod, highestPeriod, periodFouls, restorePeriodLineup, sortPlayersByJersey, hasDefenseWarning,
     readStoredJson: key => storage[key], writeStoredJson: (key, value) => { storage[key] = JSON.parse(JSON.stringify(value)); },
     getEventIcon: () => "", formatPlayer: p => `#${p.number}`, appendLog: () => {}, createLog: () => {},
     setMatch: () => {}, setUndoStack: () => {}, setSelectedPlayers: () => {}, setConnectionStatus: () => {},
@@ -265,4 +269,100 @@ test("free throws do not restart an expired period, timeout, ended game or unava
     assert.equal(app.running, false);
     assert.equal(app.clockRunningRef.current, false);
   }
+});
+
+test("period navigation retains the ended fouls, clock and both lineups, including after reload", () => {
+  const app = equalizationHarness(10, 10);
+  const match = app.matchRef.current;
+  Object.assign(match, { period: 1, clock: "01:23", shotClock: 7, possession: "away" });
+  match.away.fouls = 3;
+  match.events = [1, 2, 3].map(id => ({ id, action: "personal foul", team: "away", period: 1 }));
+  let ended;
+  app.setEndPeriodPrompt = value => { ended = value; };
+  app.setPeriod(2);
+  assert.equal(ended, 1);
+  assert.equal(app.matchRef.current.away.fouls, 0);
+  assert.equal(periodFouls(app.matchRef.current, 1, "away"), 3);
+  app.commitLineupChange("away", [2, 3, 4, 5, 6].map(id => `id:${id}`));
+  app.matchRef.current.clock = "06:17";
+  app.matchRef.current.away.fouls = 1;
+  app.matchRef.current = JSON.parse(JSON.stringify(app.matchRef.current));
+  ended = undefined;
+  app.setPeriod(1);
+  assert.equal(ended, undefined, "reviewing a past quarter must not announce a new quarter");
+  assert.equal(app.matchRef.current.clock, "01:23");
+  assert.equal(app.matchRef.current.shotClock, 7);
+  assert.equal(app.matchRef.current.away.fouls, 3);
+  assert.deepEqual(Array.from(app.matchRef.current.away.players, p => p.id).sort(), [1, 2, 3, 4, 5]);
+  app.matchRef.current.clock = "00:58";
+  app.setPeriod(2);
+  assert.equal(app.matchRef.current.clock, "06:17");
+  assert.equal(app.matchRef.current.away.fouls, 1);
+  assert.deepEqual(Array.from(app.matchRef.current.away.players, p => p.id).sort(), [2, 3, 4, 5, 6]);
+  app.setPeriod(2);
+  assert.equal(app.matchRef.current.clock, "06:17", "reselecting the same period never resets time");
+});
+
+test("expiry advances ordinary quarters, but regulation needs an explicit overtime choice", () => {
+  for (const [periodCount, expected] of [[4, 2], [1, 1]]) {
+    const app = equalizationHarness(10, 10);
+    app.matchRef.current.period = 1;
+    app.periodSettings.periodCount = periodCount;
+    app.clockExpiryHandledRef = { current: true };
+    vm.runInContext(handler("advanceOnClockExpiry"), app);
+    app.advanceOnClockExpiry();
+    assert.equal(app.matchRef.current.period, expected);
+  }
+});
+
+test("and-one foul records separate basket, personal foul and free throws in the correct quarter", () => {
+  for (const basketValue of [2, 3]) {
+    const app = freeThrowHarness();
+    Object.assign(app, { FULL_SHOT_CLOCK: 24, WARNING_PLACEHOLDER_PLAYER: player(undefined) });
+    for (const name of ["getPlayerPeriodKey", "isSamePlayer", "updateMatchAfterAction", "getPossessionAfterAction", "revertMatchAfterAction", "subtractStat", "findEventPlayer", "normalizeEventPeriod", "createUndoItemFromEvent"])
+      vm.runInContext(handler(name), app);
+    Object.assign(app.matchRef.current, { awayScore: 0, homeScore: 0, possession: "home" });
+    app.commitAction = (detail, actor, id) => {
+      const current = app.matchRef.current;
+      const event = { ...detail, id, icon: "made", period: current.period, team: actor.team, playerId: actor.player.id, player: `#${actor.player.number}` };
+      app.matchRef.current = app.updateMatchAfterAction(current, actor.team, actor.player, detail, event,
+        current.awayScore + (actor.team === "away" ? detail.points : 0), current.homeScore + (actor.team === "home" ? detail.points : 0));
+      return true;
+    };
+    app.recordFoul({ basketValue, fouledPlayer: app.matchRef.current.home.players[0], freeThrowsAttempted: 1, freeThrowsMade: 1 });
+    const match = app.matchRef.current;
+    assert.equal(match.away.players[0].fouls, 1);
+    assert.equal(match.away.fouls, 1);
+    assert.equal(match.homeScore, basketValue + 1);
+    assert.equal(match.home.players[0].q2, basketValue + 1);
+    assert.equal(match.home.players[0][basketValue === 3 ? "threePointersMade" : "twoPointersMade"], 1);
+    assert.equal(match.home.players[0].freeThrowsMade, 1);
+    assert.equal(new Set(match.events.map(event => event.id)).size, 3);
+    assert.equal(match.events.every(event => event.period === 2), true);
+    const oldFoul = match.events.find(event => event.action === "personal foul");
+    const reviewed = { ...match, periodStates: { 2: capturePeriod(match) }, period: 3, away: { ...match.away, fouls: 4 } };
+    const corrected = app.revertMatchAfterAction(reviewed, app.createUndoItemFromEvent(reviewed, oldFoul));
+    assert.equal(corrected.away.fouls, 4, "undo a prior quarter's foul without changing the current bonus");
+    assert.equal(periodFouls(corrected, 2, "away"), 0);
+    assert.equal(corrected.away.players[0].fouls, 0);
+  }
+});
+
+test("defense warning is once per team per game, survives reload, and the next becomes team technical", () => {
+  const app = harness();
+  Object.assign(app, { WARNING_PLACEHOLDER_PLAYER: player(undefined), setWarningOpen: () => {}, setWarningTarget: () => {} });
+  vm.runInContext(handler("commitWarning"), app);
+  const warning = { key: "defensa", label: "Por defensa" };
+  app.commitWarning(warning, "away");
+  assert.equal(app.matchRef.current.events[0].action, "warning");
+  app.matchRef.current = JSON.parse(JSON.stringify(app.matchRef.current));
+  app.matchRef.current.period = 3;
+  app.commitWarning(warning, "away");
+  assert.equal(app.matchRef.current.events[0].action, "admin tech");
+  assert.equal(app.matchRef.current.events[0].note, "Técnica por warning de defensa");
+  assert.equal(app.running, false);
+  assert.equal(app.matchRef.current.away.players[0].techFouls, 0, "no arbitrary player receives a team technical");
+  app.commitWarning(warning, "home");
+  assert.equal(app.matchRef.current.events[0].action, "warning");
+  assert.equal(hasDefenseWarning([], "away"), false, "a different game starts fresh");
 });
