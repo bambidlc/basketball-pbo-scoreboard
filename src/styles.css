@@ -132,7 +132,11 @@ input[type="number"] {
   .live-clock-category > span { line-height: 14px; }
   .live-shot-clock { display: none; }
   .live-compact-shot-clock { display: block; }
-  .live-clock-header > .live-game-clock { grid-column: 2; grid-row: 1; min-width: 0; font-size: 34px; margin: 0; white-space: nowrap; align-self: center; }
+  .live-clock-header > .live-game-clock-controls { grid-column: 2; grid-row: 1; min-width: 0; margin: 0; white-space: nowrap; align-self: center; gap: 0; }
+  .live-game-clock-controls .live-game-clock { min-width: 0; padding: 0; }
+  .live-game-clock-controls .live-game-clock span { font-size: 28px; }
+  .live-game-clock-controls .live-game-clock svg { display: none; }
+  .live-game-clock-controls > button:last-child { width: 28px; height: 32px; }
   .live-clock-header > button[aria-label="Possession arrow"] { grid-column: 1; grid-row: 2; height: 32px; gap: 4px; padding: 0 3px; font-size: 10px; }
   .live-clock-header > button[aria-label="Possession arrow"] > span:first-child { display: none; }
   .live-clock-header > .live-period-tags { grid-column: 2; grid-row: 2; min-width: 0; flex-wrap: wrap; gap: 1px; align-content: center; }

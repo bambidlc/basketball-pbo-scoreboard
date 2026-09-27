@@ -1700,7 +1700,8 @@ function App() {
   }
 
   function toggleClock() {
-    if (isClockRunning) {
+    if (clockRunningRef.current) {
+      clockRunningRef.current = false;
       setIsClockRunning(false);
       syncFlowState("Clock paused");
       return;
@@ -1722,6 +1723,7 @@ function App() {
     }
 
     appendLog(createLog("info", "Clock started", matchRef.current.clock));
+    clockRunningRef.current = true;
     setIsClockRunning(true);
   }
 
@@ -3003,6 +3005,7 @@ function App() {
             away={match.away}
             awayScore={match.awayScore}
             clock={match.clock}
+            isClockRunning={isClockRunning}
             equalizationApplied={match.equalizationApplied}
             equalizationPoints={match.equalizationPoints}
             equalizationTeam={match.equalizationTeam}
@@ -3017,6 +3020,7 @@ function App() {
             status={match.status}
             periodCount={periodSettings.periodCount}
             onEditClock={openClockEditor}
+            onToggleClock={toggleClock}
             onOpenPeriods={() => { clockRunningRef.current = false; setIsClockRunning(false); setPeriodReviewOpen(true); }}
             onBackToDashboard={() => setScreenMode("dashboard")}
             onSelectTeam={setSelectedTeam}
@@ -4139,6 +4143,7 @@ function ScoreHeader({
   away,
   awayScore,
   clock,
+  isClockRunning,
   equalizationApplied,
   equalizationPoints,
   equalizationTeam,
@@ -4156,12 +4161,14 @@ function ScoreHeader({
   onToggleFoulBall,
   periodCount,
   onEditClock,
+  onToggleClock,
   onOpenPeriods,
 }: {
   courtSides: CourtSides;
   away: Team;
   awayScore: number;
   clock: string;
+  isClockRunning: boolean;
   equalizationApplied?: boolean;
   equalizationPoints?: number;
   equalizationTeam?: TeamId;
@@ -4179,6 +4186,7 @@ function ScoreHeader({
   onToggleFoulBall: () => void;
   periodCount: number;
   onEditClock: () => void;
+  onToggleClock: () => void;
   onOpenPeriods: () => void;
 }) {
   const teams = { away, home };
@@ -4233,11 +4241,18 @@ function ScoreHeader({
           <span>{foulBallTeam === "away" ? "Visitor" : "Home"}</span>
         </button>
         <button aria-label="Change game" className="live-change-game flex h-9 w-full items-center justify-between gap-2 rounded-lg border border-neutral-700 bg-neutral-900 px-2 text-xs text-neutral-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300" onClick={onBackToDashboard}><span className="truncate">{matchName}</span><span className="shrink-0 text-amber-300">Change game</span></button>
-        <button type="button" aria-label="Editar tiempo desde marcador" onClick={onEditClock}
-          className="mt-0.5 flex items-center gap-2 rounded-lg px-2 py-1 hover:bg-neutral-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400">
-          <span aria-label="Game clock" role="timer" className="live-game-clock font-mono text-5xl font-black leading-none text-neutral-50 tabular-nums lg:text-4xl 2xl:text-5xl">{clock}</span>
-          <Pencil size={16} className="text-neutral-400" />
-        </button>
+        <div className="live-game-clock-controls mt-0.5 flex items-center justify-center gap-1">
+          <button type="button" aria-label={isClockRunning ? "Pausar reloj" : "Iniciar reloj"} aria-pressed={isClockRunning}
+            title={isClockRunning ? "Pausar reloj" : "Iniciar reloj"} onClick={onToggleClock}
+            className="live-game-clock flex items-center gap-1 rounded-lg px-1 py-1 hover:bg-neutral-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400">
+            <span role="timer" className={cn("font-mono text-5xl font-black leading-none tabular-nums lg:text-4xl 2xl:text-5xl", isClockRunning ? "text-lime-400" : "text-neutral-50")}>{clock}</span>
+            {isClockRunning ? <Pause size={16} aria-hidden="true" /> : <Play size={16} aria-hidden="true" />}
+          </button>
+          <button type="button" aria-label="Editar tiempo desde marcador" title="Editar tiempo" onClick={onEditClock}
+            className="flex size-9 shrink-0 items-center justify-center rounded-lg text-neutral-400 hover:bg-neutral-800 hover:text-neutral-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400">
+            <Pencil size={16} aria-hidden="true" />
+          </button>
+        </div>
         <div className="live-period-tags flex flex-wrap items-center justify-center gap-1">
         {statsMode !== "youth" && <div className="live-compact-shot-clock font-mono font-bold text-neutral-200" aria-label="Shot clock">SC {shotClock}</div>}
         <button type="button" aria-label="Períodos y titulares" onClick={onOpenPeriods} className="min-h-9 rounded-lg border border-neutral-700 px-3 py-1 text-[11px] font-bold text-amber-300 hover:bg-neutral-800 focus-visible:ring-2 focus-visible:ring-neutral-400">
