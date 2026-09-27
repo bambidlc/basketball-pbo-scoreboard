@@ -1,11 +1,32 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { sortPlayersByJersey } from "../src/scoring.ts";
-import { applyPlayerDiscipline, technicalSuspensionNote, isPlayerUnavailable, formatGameCategory, BENCH_ORDER, courtOrder, lineupReview, nextEventId, playerKey, shotLocationFromCoordinates, swappedCourts } from "../src/scoring.ts";
+import { applyPlayerDiscipline, technicalSuspensionNote, isPlayerUnavailable, formatGameCategory, removeOlderCategoryEqualization, BENCH_ORDER, courtOrder, lineupReview, nextEventId, playerKey, shotLocationFromCoordinates, swappedCourts } from "../src/scoring.ts";
 
 const player = (id, extras = {}) => ({ id, name: `Player ${id}`, number: String(id), present: true, fouls: 0, ...extras });
 const team = () => ({ players: [1, 2, 3, 4, 5].map((id) => player(id)), bench: [player(6), player(7)] });
 const draft = (ids, reason = "") => ({ keys: ids.map((id) => playerKey(player(id))), reason });
+
+test("stored equalization in a 16U live game is removed from the score and feed", () => {
+  const match = { away: { category: "16u" }, home: { category: "16u" }, awayScore: 17, homeScore: 11,
+    equalizationApplied: true, equalizationPoints: 6, equalizationTeam: "away",
+    events: [{ id: -1, equalization: true }, { id: 1, action: "made 2pt" }] };
+  const corrected = removeOlderCategoryEqualization(match);
+  assert.equal(corrected.awayScore, 11);
+  assert.equal(corrected.homeScore, 11);
+  assert.equal(corrected.equalizationApplied, false);
+  assert.equal(corrected.equalizationPoints, 0);
+  assert.equal(corrected.equalizationTeam, undefined);
+  assert.deepEqual(corrected.events.map(event => event.id), [1]);
+  assert.equal(removeOlderCategoryEqualization(corrected), corrected);
+  const staleFeed = { ...corrected, events: match.events };
+  assert.deepEqual(removeOlderCategoryEqualization(staleFeed).events.map(event => event.id), [1]);
+  assert.equal(removeOlderCategoryEqualization(staleFeed).awayScore, 11);
+  const younger = { ...match, away: { category: "13u" }, home: { category: "13u" } };
+  assert.equal(removeOlderCategoryEqualization(younger), younger);
+  const unknown = { ...match, away: { category: undefined }, home: { category: undefined } };
+  assert.equal(removeOlderCategoryEqualization(unknown), unknown);
+});
 
 test("player pickers use ascending numeric jerseys without mutating lineup or identity", () => {
   const roster = [23, 2, 11, 0, 8, 4].map(id => player(id));

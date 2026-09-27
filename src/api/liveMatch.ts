@@ -22,7 +22,7 @@ import {
 import { OdooClient, type OdooRecord } from "./odooClient";
 import { resolveClubColor } from "./colorPalette";
 import { currentOdooDateTimeKey } from "../schedule";
-import { applyPlayerDiscipline, playerKey, shotLocationFromCoordinates } from "../scoring";
+import { applyPlayerDiscipline, playerKey, removeOlderCategoryEqualization, shotLocationFromCoordinates } from "../scoring";
 import type { PeriodState } from "../periods";
 
 export type TeamId = "away" | "home";
@@ -469,6 +469,16 @@ export async function saveMatchAction(
     };
   }
 
+  const correctedMatch = removeOlderCategoryEqualization(input.match);
+  if (correctedMatch !== input.match) {
+    input = {
+      ...input,
+      nextAwayScore: input.nextAwayScore + correctedMatch.awayScore - input.match.awayScore,
+      nextHomeScore: input.nextHomeScore + correctedMatch.homeScore - input.match.homeScore,
+      match: correctedMatch,
+    };
+  }
+
   try {
     const capabilities = await getSchemaCapabilities(client);
     // An event is created only after stats and game flow have succeeded. Recognize
@@ -478,7 +488,7 @@ export async function saveMatchAction(
       log: createLog("success", "Action already synced", "Jugada ya confirmada en Odoo; se conserva el marcador actual.") };
     playerStatValues(input, capabilities); // Preflight schema/identity before writing a score.
     gameFlowValues(input.match, capabilities, { strict: true });
-    const written = await client.write(MODELS.game, [input.match.gameId], {
+    const written = await client.write(MODELS.game, [input.match.gameId!], {
       [GAME.awayScore]: input.nextAwayScore,
       [GAME.homeScore]: input.nextHomeScore,
       [GAME.status]: "Live",
@@ -489,7 +499,7 @@ export async function saveMatchAction(
     const forcedTurnoverResult = await saveForcedTurnoverStat(client, input, capabilities);
     const flowMessage = await saveGameFlowFields(client, input.match, capabilities, { strict: true });
     const eventResult = await saveGameEvent(client, input, capabilities, true);
-    const [verified] = await client.read<OdooRecord>(MODELS.game, [input.match.gameId], [GAME.awayScore, GAME.homeScore]);
+    const [verified] = await client.read<OdooRecord>(MODELS.game, [input.match.gameId!], [GAME.awayScore, GAME.homeScore]);
     if (!verified || numberValue(verified[GAME.awayScore], -1) !== input.nextAwayScore ||
         numberValue(verified[GAME.homeScore], -1) !== input.nextHomeScore) {
       throw new Error("El marcador de Odoo no coincide con la jugada enviada. Revisa otras consolas abiertas.");
@@ -558,6 +568,8 @@ export async function saveMatchStatus(
     };
   }
 
+  match = removeOlderCategoryEqualization(match);
+
   try {
     const capabilities = await getSchemaCapabilities(client);
     const trimmedNote = note?.trim();
@@ -575,7 +587,7 @@ export async function saveMatchStatus(
       },
       capabilities.game,
     );
-    const written = await client.write(MODELS.game, [match.gameId], gameValues);
+    const written = await client.write(MODELS.game, [match.gameId!], gameValues);
     if (!written) {
       throw new Error("Odoo did not confirm the game result update.");
     }
@@ -584,7 +596,7 @@ export async function saveMatchStatus(
       [GAME.awayScore, GAME.homeScore, GAME.status],
       capabilities.game,
     );
-    const [verifiedGame] = await client.read<OdooRecord>(MODELS.game, [match.gameId], verificationFields);
+    const [verifiedGame] = await client.read<OdooRecord>(MODELS.game, [match.gameId!], verificationFields);
     if (
       !verifiedGame ||
       numberValue(verifiedGame[GAME.awayScore], -1) !== match.awayScore ||
@@ -1131,6 +1143,8 @@ export async function saveMatchCorrection(
     };
   }
 
+  input = { ...input, match: removeOlderCategoryEqualization(input.match) };
+
   try {
     const capabilities = await getSchemaCapabilities(client);
     const messages = input.updatedLabel !== undefined ? [] : [await saveGameFlowFields(client, input.match, capabilities)];
@@ -1571,7 +1585,7 @@ async function normalizeGameRecord(
         ]
       : events;
 
-  return applyPlayerDiscipline({
+  return applyPlayerDiscipline(removeOlderCategoryEqualization({
     away,
     awayScore: numberValue(game[GAME.awayScore]),
     clock: secondsToClock(clockSeconds),
@@ -1600,7 +1614,7 @@ async function normalizeGameRecord(
     statusNote: events.find((event) => (event.action === "suspension" || event.action === "cancellation") && event.note)?.note,
     syncMessage: "Live data connected",
     syncedAt: new Date().toISOString(),
-  });
+  }));
 }
 
 function normalizeTeam(
@@ -2085,6 +2099,7 @@ async function saveGameFlowFields(
 }
 
 function gameFlowValues(match: LiveMatch, capabilities: SchemaCapabilities, options: { includeScores?: boolean; strict?: boolean }) {
+  match = removeOlderCategoryEqualization(match);
   const fullValues: Record<string, unknown> = {
     [GAME.awayScore]: match.awayScore,
     [GAME.awayTimeouts]: match.away.timeouts,

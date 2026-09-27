@@ -1,5 +1,5 @@
 import type { LiveMatch, Player, SaveMatchActionInput, SaveMatchCorrectionInput, TeamId } from "./liveMatch";
-import { playerKey } from "../scoring";
+import { playerKey, removeOlderCategoryEqualization } from "../scoring";
 
 // A durable, FIFO queue of Odoo mutations that have not yet been confirmed synced. While
 // the device is offline (or a write fails), the optimistic local match is the source of
@@ -157,12 +157,14 @@ export function applyPendingResult<T extends { awayScore: number; homeScore: num
   return ops.reduce((current, op) => {
     const snapshot = op.kind === "action" ? op.input.match : op.match;
     if (!gameId || snapshot.gameId !== gameId || op.kind === "roster") return current;
-    if (op.kind === "action") return { ...current, awayScore: op.input.nextAwayScore,
-      homeScore: op.input.nextHomeScore, status: "Live" };
+    const corrected = removeOlderCategoryEqualization(snapshot);
+    if (op.kind === "action") return { ...current,
+      awayScore: op.input.nextAwayScore + corrected.awayScore - snapshot.awayScore,
+      homeScore: op.input.nextHomeScore + corrected.homeScore - snapshot.homeScore, status: "Live" };
     if (op.kind === "flow") return op.includeScores
-      ? { ...current, awayScore: snapshot.awayScore, homeScore: snapshot.homeScore } : current;
-    if (op.kind === "correction") return { ...current, awayScore: op.match.awayScore, homeScore: op.match.homeScore };
-    return { ...current, awayScore: op.match.awayScore, homeScore: op.match.homeScore,
+      ? { ...current, awayScore: corrected.awayScore, homeScore: corrected.homeScore } : current;
+    if (op.kind === "correction") return { ...current, awayScore: corrected.awayScore, homeScore: corrected.homeScore };
+    return { ...current, awayScore: corrected.awayScore, homeScore: corrected.homeScore,
       status: op.status, statusNote: op.note || undefined };
   }, value);
 }
@@ -206,13 +208,13 @@ export function restorePendingMatch(server: LiveMatch, cached: LiveMatch | undef
       }
     }
   }
-  if (restored !== server) return { ...restored, events: [...events.values()].sort((a, b) => b.id - a.id), syncMessage: "Cambios guardados en este dispositivo; pendientes de Odoo." };
+  if (restored !== server) return removeOlderCategoryEqualization({ ...restored, events: [...events.values()].sort((a, b) => b.id - a.id), syncMessage: "Cambios guardados en este dispositivo; pendientes de Odoo." });
   // Protect legacy local games with evidence of scoring from an empty Scheduled record.
   // Do not override an intentional final/cancelled result or choose the maximum score.
   if (cached && cached.gameId === server.gameId && server.gameId && server.status === "Scheduled" &&
       server.awayScore === 0 && server.homeScore === 0 && server.events.length === 0 &&
       (cached.awayScore > 0 || cached.homeScore > 0) && cached.events.some(event => (event.points ?? 0) > 0)) {
-    return { ...cached, syncMessage: "Odoo devolvió 0–0 sin jugadas. Se conservó el marcador local; revisa la sincronización." };
+    return removeOlderCategoryEqualization({ ...cached, syncMessage: "Odoo devolvió 0–0 sin jugadas. Se conservó el marcador local; revisa la sincronización." });
   }
-  return server;
+  return removeOlderCategoryEqualization(server);
 }

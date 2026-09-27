@@ -9,7 +9,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 const vite = await createServer({ appType: "custom", logLevel: "silent", server: { middlewareMode: true } });
 try {
   const { restorePendingMatch, applyPendingResult, trimMatchForOutbox, operationGameId, nextPendingOperation, pendingGameChanged, queueRosterCorrection, rosterSignature } = await vite.ssrLoadModule("/src/api/outbox.ts");
-  const { playerKey } = await vite.ssrLoadModule("/src/scoring.ts");
+  const { playerKey, removeOlderCategoryEqualization } = await vite.ssrLoadModule("/src/scoring.ts");
   const { fallbackMatch, saveMatchAction, saveMatchFlowState, saveMatchCorrection } = await vite.ssrLoadModule("/src/api/liveMatch.ts");
   const schema = await vite.ssrLoadModule("/src/api/schema.ts");
   const { GAME: G, PLAYER_STAT: P, GAME_EVENT: E, MODELS: M } = schema;
@@ -43,6 +43,16 @@ try {
   assert.equal(missingCache.events[0].playerId, 201);
   assert.equal(missingCache.events[0].points, 2);
 
+  const older = { ...match(17, 11), away: { ...match().away, category: "16u" }, home: { ...match().home, category: "16u" },
+    equalizationApplied: true, equalizationPoints: 6, equalizationTeam: "away",
+    events: [{ id: -1, equalization: true, team: "away" }] };
+  const staleFlow = [{ id: "older-flow", kind: "flow", match: older, includeScores: true }];
+  const correctedOlder = restorePendingMatch(match(), older, staleFlow);
+  assert.equal(correctedOlder.awayScore, 11);
+  assert.equal(correctedOlder.equalizationApplied, false);
+  assert.equal(correctedOlder.events.some(event => event.equalization), false);
+  assert.equal(applyPendingResult(match(), older.gameId, staleFlow).awayScore, 11);
+
   class Client {
     enabled = true;
     game = { id: 260, [G.awayScore]: 0, [G.homeScore]: 0 };
@@ -71,6 +81,24 @@ try {
       return id;
     }
   }
+  const olderClient = new Client();
+  const olderAction = input(2);
+  olderAction.match = { ...olderAction.match, awayScore: 19, homeScore: 11,
+    away: { ...olderAction.match.away, category: "16u" }, home: { ...olderAction.match.home, category: "16u" },
+    equalizationApplied: true, equalizationPoints: 6, equalizationTeam: "away" };
+  olderAction.nextAwayScore = 19;
+  olderAction.nextHomeScore = 11;
+  const olderResult = await saveMatchAction(olderClient, olderAction);
+  assert.equal(olderResult.saved, true, olderResult.log.detail);
+  assert.equal(olderClient.game[G.awayScore], 13);
+  assert.equal(olderClient.game[G.homeScore], 11);
+  assert.equal(olderClient.game[G.equalizationApplied], false);
+  assert.equal(olderClient.game[G.equalizationPoints], 0);
+  const olderFlowClient = new Client();
+  assert.equal((await saveMatchFlowState(olderFlowClient, older, true)).saved, true);
+  assert.equal(olderFlowClient.game[G.awayScore], 11);
+  assert.equal(olderFlowClient.game[G.equalizationApplied], false);
+
   const missingClock = new Client();
   const searchMetadata = missingClock.searchRead.bind(missingClock);
   missingClock.searchRead = async (model, ...args) => {
@@ -234,7 +262,7 @@ try {
   assert.deepEqual(gameOrder, [259, 260, 261, 259, 260, 261, 259, 260, 261], "three backlogged games all get turns");
 
   let persisted;
-  Object.assign(context, { trimMatchForOutbox, restorePendingMatch, matchRef: { current: restored }, makeOpId: () => "quarter-transition",
+  Object.assign(context, { trimMatchForOutbox, restorePendingMatch, removeOlderCategoryEqualization, matchRef: { current: restored }, makeOpId: () => "quarter-transition",
     flushOutbox: context.flush, persistStoredLiveMatch: value => { persisted = structuredClone(value); } });
   context.navigator.onLine = false;
   vm.runInContext(ts.transpile(`var syncFlow = ${flowWriter}`, { target: ts.ScriptTarget.ES2022 }), context);
@@ -281,7 +309,8 @@ try {
     setIsRefreshing() {}, setConnectionStatus() {}, setMatchOptions() {}, appendLog() {}, isRateLimitLog: () => false,
     currentMatch: match(18), readStoredLiveMatch: () => undefined, restorePendingMatch,
     applyStoredOfficials: value => value, applyStoredAttendance: value => value, applyStoredStarters: value => value,
-    applyStoredGameDayRoster: value => value, applyPlayerDiscipline: value => value, mergeEventHistory: (_current, loaded) => loaded,
+    applyStoredGameDayRoster: value => value, applyPlayerDiscipline: value => value, removeOlderCategoryEqualization,
+    mergeEventHistory: (_current, loaded) => loaded,
   });
   refreshContext.setMatch = fn => { refreshContext.currentMatch = fn(refreshContext.currentMatch); };
   refreshContext.setSelectedGameId = value => { refreshContext.selected = value; };

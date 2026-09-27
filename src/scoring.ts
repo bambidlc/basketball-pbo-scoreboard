@@ -15,11 +15,36 @@ export function computeEqualization(match: Pick<LiveMatch, "away" | "home">): { 
 }
 
 export function isEqualizationEligible(match: Pick<LiveMatch, "away" | "home">): boolean {
-  const ages = [match.away.category, match.home.category].map(category => {
-    const value = category?.trim().match(/^(\d{1,2})u$/i);
-    return value ? Number(value[1]) : undefined;
-  });
+  const ages = [match.away.category, match.home.category].map(categoryAge);
   return ages.every(age => age !== undefined && age > 0 && age <= MAX_EQUALIZATION_AGE) && ages[0] === ages[1];
+}
+
+// Old device snapshots and Odoo records can retain points awarded before the age rule
+// was enforced. Remove them only when a known team category is older than 13U.
+export function removeOlderCategoryEqualization(match: LiveMatch): LiveMatch {
+  const ages = [match.away.category, match.home.category].map(categoryAge);
+  if (!ages.some(age => age !== undefined && age > MAX_EQUALIZATION_AGE)) return match;
+  if (!match.equalizationApplied && !match.equalizationPoints && !match.equalizationTeam &&
+      !match.events.some(event => event.equalization)) return match;
+
+  const points = match.equalizationPoints ?? 0;
+  const side = match.equalizationTeam;
+  const canSubtract = match.equalizationApplied && side && Number.isSafeInteger(points) && points > 0 &&
+    match[side === "away" ? "awayScore" : "homeScore"] >= points;
+  return {
+    ...match,
+    awayScore: match.awayScore - (canSubtract && side === "away" ? points : 0),
+    homeScore: match.homeScore - (canSubtract && side === "home" ? points : 0),
+    equalizationApplied: false,
+    equalizationPoints: 0,
+    equalizationTeam: undefined,
+    events: match.events.filter(event => !event.equalization),
+  };
+}
+
+function categoryAge(category?: string): number | undefined {
+  const value = category?.trim().match(/^(\d{1,2})u$/i);
+  return value ? Number(value[1]) : undefined;
 }
 
 export function isPlayerUnavailable(player: Player) {

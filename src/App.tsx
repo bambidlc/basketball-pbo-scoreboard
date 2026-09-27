@@ -85,7 +85,7 @@ import { DatabaseSyncStatus } from "./components/DatabaseSyncStatus";
 import { ClockEditor } from "./components/ClockEditor";
 import { capturePeriod, highestPeriod, periodFouls, restorePeriodLineup } from "./periods";
 import { hasDefenseWarning, sortPlayersByJersey } from "./scoring";
-import { computeEqualization, isEqualizationEligible, applyPlayerDiscipline, isPlayerUnavailable, technicalSuspensionNote, formatGameCategory, BENCH_ORDER, courtOrder, lineupReview, nextEventId, playerKey as getPlayerKey, swappedCourts, type CourtSides, type LineupDrafts, type ScoringView } from "./scoring";
+import { computeEqualization, isEqualizationEligible, removeOlderCategoryEqualization, applyPlayerDiscipline, isPlayerUnavailable, technicalSuspensionNote, formatGameCategory, BENCH_ORDER, courtOrder, lineupReview, nextEventId, playerKey as getPlayerKey, swappedCourts, type CourtSides, type LineupDrafts, type ScoringView } from "./scoring";
 import { cn } from "./lib/cn";
 
 const loadMotionFeatures = () => import("./motionFeatures").then((module) => module.default);
@@ -698,7 +698,7 @@ function App() {
             applyStoredOfficials(applyStoredAttendance(applyStoredStarters(sourceMatch))),
             cachedMatch, [...new Map([...pendingAtStart, ...pendingOpsRef.current].map(op => [op.id, op])).values()]));
 
-          return applyPlayerDiscipline({
+          return applyPlayerDiscipline(removeOlderCategoryEqualization({
             ...loadedMatch,
             periodStates: (current.gameId === loadedMatch.gameId ? current.periodStates : cachedMatch?.periodStates) ?? loadedMatch.periodStates,
             syncMessage: scheduleError
@@ -710,7 +710,7 @@ function App() {
                   loadedMatch.events,
                 )
               : loadedMatch.events,
-          });
+          }));
         });
 
         if (optionsResult) {
@@ -7730,7 +7730,7 @@ function readStoredLiveMatch(gameId: number | undefined): LiveMatch | undefined 
   const storedMatches = readStoredJson<Record<string, StoredLiveMatch>>(STORAGE_KEYS.liveMatches);
   const storedForGame = storedMatches?.[String(gameId)];
   if (storedForGame?.match) {
-    return applyStoredGameDayRoster(restorePendingMatch(storedForGame.match, storedForGame.match, readStoredJson<OutboxOp[]>(STORAGE_KEYS.outbox) ?? []));
+    return removeOlderCategoryEqualization(applyStoredGameDayRoster(restorePendingMatch(storedForGame.match, storedForGame.match, readStoredJson<OutboxOp[]>(STORAGE_KEYS.outbox) ?? [])));
   }
 
   // Backward compatibility with the original single-game offline snapshot.
@@ -7738,7 +7738,7 @@ function readStoredLiveMatch(gameId: number | undefined): LiveMatch | undefined 
   const ops = readStoredJson<OutboxOp[]>(STORAGE_KEYS.outbox) ?? [];
   const pending = ops.map(op => op.kind === "action" ? op.input.match : op.match).find(snapshot => snapshot.gameId === gameId);
   const snapshot = legacy?.gameId === gameId ? legacy.match : pending;
-  return snapshot ? applyStoredGameDayRoster(restorePendingMatch(snapshot, snapshot, ops)) : undefined;
+  return snapshot ? removeOlderCategoryEqualization(applyStoredGameDayRoster(restorePendingMatch(snapshot, snapshot, ops))) : undefined;
 }
 
 function persistStoredLiveMatch(match: LiveMatch) {
