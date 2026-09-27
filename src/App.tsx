@@ -6650,7 +6650,7 @@ function PreGameDialog({
                   {match[equalization.team].name} +{equalization.points} at Q3 · equiparación
                 </span>
               ) : (
-                <span className="text-neutral-500">{isEqualizationEligible(match) ? "Even rosters — no equalization" : "Sin equiparación · solo aplica a categorías menores de 14U"}</span>
+                <span className="text-neutral-500">{isEqualizationEligible(match) ? "Plantillas iguales · sin equiparación" : "Sin equiparación · solo aplica hasta 13U"}</span>
               )}
             </div>
           </div>

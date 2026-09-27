@@ -1,6 +1,7 @@
 import type { GameEvent, LiveMatch, Player, ShotLocation, Team, TeamId } from "./api/liveMatch";
 
 export const PLAYER_SUSPENSION_PREFIX = "Suspensión del jugador por este partido: ";
+const MAX_EQUALIZATION_AGE = 13;
 
 export function computeEqualization(match: Pick<LiveMatch, "away" | "home">): { points: number; team: TeamId } | undefined {
   if (!isEqualizationEligible(match)) return undefined;
@@ -18,7 +19,7 @@ export function isEqualizationEligible(match: Pick<LiveMatch, "away" | "home">):
     const value = category?.trim().match(/^(\d{1,2})u$/i);
     return value ? Number(value[1]) : undefined;
   });
-  return ages.every(age => age !== undefined && age > 0 && age < 14) && ages[0] === ages[1];
+  return ages.every(age => age !== undefined && age > 0 && age <= MAX_EQUALIZATION_AGE) && ages[0] === ages[1];
 }
 
 export function isPlayerUnavailable(player: Player) {

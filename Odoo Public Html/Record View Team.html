@@ -12,11 +12,11 @@
         --pbo-text: #3c3225;
         --pbo-muted: #8c8170;
         --pbo-subtle: #b1a48f;
-        --pbo-accent: #f4ab5d;
-        --pbo-accent-strong: #de8f3a;
-        --pbo-accent-deep: #b86f1d;
-        --pbo-accent-soft: #fdecd7;
-        --pbo-accent-line: #f4d4a8;
+        --pbo-accent: #D36F22;
+        --pbo-accent-strong: #B85A18;
+        --pbo-accent-deep: #8F4310;
+        --pbo-accent-soft: #FBE6D2;
+        --pbo-accent-line: #EFC9A0;
         --pbo-made: #1f9d57;
         --pbo-made-soft: #e4f5ea;
         --pbo-missed: #e2574b;
@@ -99,7 +99,7 @@
         width: 5px;
         height: 18px;
         border-radius: 999px;
-        background: var(--pbo-team-accent, linear-gradient(180deg, var(--pbo-accent), var(--pbo-accent-strong)));
+        background: var(--pbo-team-accent, var(--pbo-accent));
       }
 
       .pbo-section-heading .pbo-count {
@@ -172,7 +172,7 @@
         inset: 0 auto 0 0;
         width: 5px;
         /* Defaults to the brand orange; overridden by the team's club shirt color when set. */
-        background: var(--pbo-team-accent, linear-gradient(180deg, var(--pbo-accent), var(--pbo-accent-strong)));
+        background: var(--pbo-team-accent, var(--pbo-accent));
       }
 
       .pbo-team-dot {
@@ -290,7 +290,7 @@
       }
 
       .pbo-tile-accent::after {
-        background: var(--pbo-team-accent, linear-gradient(90deg, var(--pbo-accent), var(--pbo-accent-strong)));
+        background: var(--pbo-team-accent, var(--pbo-accent));
       }
 
       .pbo-tile-good::after {
@@ -588,17 +588,19 @@
       .pbo-jersey {
         display: inline-grid;
         place-items: center;
-        min-width: 30px;
-        height: 26px;
-        padding: 0 6px;
+        min-width: 22px;
+        height: 22px;
+        padding: 0 5px;
         border: 0;
-        border-radius: 7px;
+        border-radius: 6px;
         background: var(--pbo-ink);
         color: #fff;
         font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-        font-weight: 900;
-        font-size: 0.8rem;
+        font-weight: 800;
+        font-size: 0.72rem;
         font-variant-numeric: tabular-nums;
+        letter-spacing: -0.01em;
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
       }
 
       .pbo-pos {
@@ -1237,6 +1239,874 @@
           justify-content: flex-start;
         }
       }
+      /* ---------- PBO 2026 eligibility assistant ---------- */
+      .pbo-rule-lab {
+        margin: 20px 0;
+        border: 1px solid var(--pbo-border-strong);
+        border-radius: 18px;
+        background: var(--pbo-panel);
+        box-shadow: var(--pbo-shadow);
+        overflow: hidden;
+      }
+
+      .pbo-rule-head {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 20px;
+        align-items: start;
+        padding: 24px;
+        border-bottom: 1px solid var(--pbo-border);
+        background: var(--pbo-panel-softer);
+      }
+
+      .pbo-rule-eyebrow {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 7px;
+        color: var(--pbo-accent-deep);
+        font-size: 0.75rem;
+        font-weight: 900;
+        text-transform: uppercase;
+      }
+
+      .pbo-rule-eyebrow::before {
+        width: 9px;
+        height: 9px;
+        border-radius: 50%;
+        background: var(--pbo-accent);
+        content: "";
+      }
+
+      .pbo-rule-title {
+        margin: 0;
+        color: var(--pbo-ink);
+        font-size: clamp(1.45rem, 3vw, 2.15rem);
+        font-weight: 900;
+        line-height: 1.08;
+        text-wrap: balance;
+      }
+
+      .pbo-rule-intro {
+        max-width: 720px;
+        margin: 9px 0 0;
+        color: var(--pbo-muted);
+        line-height: 1.55;
+        text-wrap: pretty;
+      }
+
+      .pbo-rule-privacy {
+        max-width: 250px;
+        border: 1px solid var(--pbo-accent-line);
+        border-radius: 12px;
+        background: var(--pbo-accent-soft);
+        padding: 10px 12px;
+        color: var(--pbo-accent-deep);
+        font-size: 0.78rem;
+        font-weight: 800;
+        line-height: 1.4;
+      }
+
+      .pbo-rule-body {
+        padding: 20px 24px 24px;
+      }
+
+      .pbo-rule-config {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 12px;
+        margin-bottom: 16px;
+      }
+
+      .pbo-rule-field {
+        display: grid;
+        gap: 6px;
+      }
+
+      .pbo-rule-field label,
+      .pbo-rule-mini-label {
+        color: var(--pbo-muted);
+        font-size: 0.72rem;
+        font-weight: 900;
+        text-transform: uppercase;
+      }
+
+      .pbo-rule-input,
+      .pbo-rule-select {
+        width: 100%;
+        min-height: 42px;
+        border: 1px solid var(--pbo-border-strong);
+        border-radius: 10px;
+        background: #fff;
+        padding: 8px 10px;
+        color: var(--pbo-ink);
+        font: inherit;
+      }
+
+      .pbo-rule-input:focus,
+      .pbo-rule-select:focus,
+      .pbo-rule-player summary:focus-visible,
+      .pbo-rule-btn:focus-visible,
+      .pbo-rule-remove:focus-visible {
+        outline: 3px solid rgba(211, 111, 34, 0.24);
+        outline-offset: 2px;
+        border-color: var(--pbo-accent);
+      }
+
+      .pbo-rule-metrics {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 10px;
+        margin-bottom: 18px;
+      }
+
+      .pbo-rule-metric {
+        border: 1px solid var(--pbo-border);
+        border-radius: 12px;
+        background: var(--pbo-panel-softer);
+        padding: 12px;
+      }
+
+      .pbo-rule-metric strong {
+        display: block;
+        margin-top: 3px;
+        color: var(--pbo-ink);
+        font-size: 1.5rem;
+        font-variant-numeric: tabular-nums;
+        line-height: 1;
+      }
+
+      .pbo-rule-metric span {
+        color: var(--pbo-muted);
+        font-size: 0.76rem;
+        font-weight: 800;
+      }
+
+      .pbo-rule-status {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr);
+        gap: 12px;
+        align-items: center;
+        margin-bottom: 18px;
+        border: 1px solid var(--pbo-border-strong);
+        border-left: 5px solid var(--pbo-subtle);
+        border-radius: 12px;
+        background: #fff;
+        padding: 13px 14px;
+      }
+
+      .pbo-rule-status.is-ready {
+        border-left-color: var(--pbo-made);
+        background: var(--pbo-made-soft);
+      }
+
+      .pbo-rule-status.is-review {
+        border-left-color: var(--pbo-accent);
+        background: var(--pbo-accent-soft);
+      }
+
+      .pbo-rule-status.is-blocked {
+        border-left-color: var(--pbo-missed);
+        background: var(--pbo-missed-soft);
+      }
+
+      .pbo-rule-status-badge {
+        border-radius: 999px;
+        background: var(--pbo-ink);
+        padding: 6px 10px;
+        color: #fff;
+        font-size: 0.74rem;
+        font-weight: 900;
+        white-space: nowrap;
+      }
+
+      .pbo-rule-status-copy strong {
+        display: block;
+        color: var(--pbo-ink);
+      }
+
+      .pbo-rule-status-copy span {
+        color: var(--pbo-muted);
+        font-size: 0.84rem;
+        line-height: 1.4;
+      }
+
+      .pbo-rule-section-head {
+        display: flex;
+        gap: 12px;
+        align-items: end;
+        justify-content: space-between;
+        margin: 20px 0 10px;
+      }
+
+      .pbo-rule-section-head h3 {
+        margin: 0;
+        color: var(--pbo-ink);
+        font-size: 1rem;
+        font-weight: 900;
+      }
+
+      .pbo-rule-section-head p {
+        margin: 3px 0 0;
+        color: var(--pbo-muted);
+        font-size: 0.78rem;
+      }
+
+      .pbo-rule-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+
+      .pbo-rule-btn {
+        min-height: 38px;
+        border: 1px solid var(--pbo-border-strong);
+        border-radius: 999px;
+        background: #fff;
+        padding: 7px 13px;
+        color: var(--pbo-text);
+        font: inherit;
+        font-size: 0.8rem;
+        font-weight: 900;
+        cursor: pointer;
+      }
+
+      .pbo-rule-btn:hover {
+        border-color: var(--pbo-accent);
+        color: var(--pbo-accent-deep);
+      }
+
+      .pbo-rule-btn-primary {
+        border-color: var(--pbo-accent);
+        background: var(--pbo-accent);
+        color: #fff;
+      }
+
+      .pbo-rule-btn-primary:hover {
+        border-color: var(--pbo-accent-strong);
+        background: var(--pbo-accent-strong);
+        color: #fff;
+      }
+
+      .pbo-rule-roster {
+        display: grid;
+        gap: 8px;
+      }
+
+      .pbo-rule-player {
+        border: 1px solid var(--pbo-border);
+        border-radius: 12px;
+        background: var(--pbo-panel-softer);
+        overflow: hidden;
+      }
+
+      .pbo-rule-player.is-ready {
+        border-left: 4px solid var(--pbo-made);
+      }
+
+      .pbo-rule-player.is-review {
+        border-left: 4px solid var(--pbo-accent);
+      }
+
+      .pbo-rule-player.is-blocked {
+        border-left: 4px solid var(--pbo-missed);
+      }
+
+      .pbo-rule-player-main {
+        display: grid;
+        grid-template-columns: 34px minmax(170px, 1.5fr) minmax(145px, 0.8fr) minmax(130px, 0.8fr) auto auto;
+        gap: 8px;
+        align-items: center;
+        padding: 10px;
+      }
+
+      .pbo-rule-player-num {
+        display: grid;
+        place-items: center;
+        width: 30px;
+        height: 30px;
+        border-radius: 50%;
+        background: var(--pbo-accent-soft);
+        color: var(--pbo-accent-deep);
+        font-size: 0.78rem;
+        font-weight: 900;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .pbo-rule-player-result {
+        min-width: 92px;
+        border-radius: 999px;
+        background: var(--pbo-border);
+        padding: 6px 9px;
+        color: var(--pbo-muted);
+        font-size: 0.72rem;
+        font-weight: 900;
+        text-align: center;
+        white-space: nowrap;
+      }
+
+      .pbo-rule-player.is-ready .pbo-rule-player-result {
+        background: var(--pbo-made-soft);
+        color: #176b3d;
+      }
+
+      .pbo-rule-player.is-review .pbo-rule-player-result {
+        background: var(--pbo-accent-soft);
+        color: var(--pbo-accent-deep);
+      }
+
+      .pbo-rule-player.is-blocked .pbo-rule-player-result {
+        background: var(--pbo-missed-soft);
+        color: #a33d34;
+      }
+
+      .pbo-rule-remove {
+        border: 0;
+        border-radius: 8px;
+        background: transparent;
+        padding: 7px 9px;
+        color: var(--pbo-muted);
+        font: inherit;
+        font-size: 0.74rem;
+        font-weight: 900;
+        cursor: pointer;
+      }
+
+      .pbo-rule-remove:hover {
+        background: var(--pbo-missed-soft);
+        color: #a33d34;
+      }
+
+      .pbo-rule-player details {
+        border-top: 1px solid var(--pbo-border);
+      }
+
+      .pbo-rule-player summary {
+        padding: 8px 12px;
+        color: var(--pbo-muted);
+        font-size: 0.76rem;
+        font-weight: 900;
+        cursor: pointer;
+      }
+
+      .pbo-rule-player-extra {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 10px;
+        padding: 4px 12px 12px;
+      }
+
+      .pbo-rule-checks {
+        display: grid;
+        grid-column: 1 / -1;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 8px;
+      }
+
+      .pbo-rule-check {
+        display: flex;
+        gap: 8px;
+        align-items: flex-start;
+        border: 1px solid var(--pbo-border);
+        border-radius: 9px;
+        background: #fff;
+        padding: 9px;
+        color: var(--pbo-text);
+        font-size: 0.78rem;
+        font-weight: 750;
+        line-height: 1.35;
+      }
+
+      .pbo-rule-check input {
+        width: 17px;
+        height: 17px;
+        margin: 0;
+        accent-color: var(--pbo-accent);
+      }
+
+      .pbo-rule-reason {
+        display: none;
+        margin: 0 12px 10px;
+        border-radius: 9px;
+        background: #fff;
+        padding: 8px 10px;
+        color: var(--pbo-muted);
+        font-size: 0.76rem;
+        line-height: 1.4;
+      }
+
+      .pbo-rule-player.has-reason .pbo-rule-reason {
+        display: block;
+      }
+
+      .pbo-rule-output-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1.2fr) minmax(300px, 0.8fr);
+        gap: 14px;
+        margin-top: 18px;
+      }
+
+      .pbo-rule-panel {
+        border: 1px solid var(--pbo-border);
+        border-radius: 12px;
+        background: var(--pbo-panel-softer);
+        padding: 14px;
+      }
+
+      .pbo-rule-panel h3 {
+        margin: 0 0 9px;
+        color: var(--pbo-ink);
+        font-size: 0.95rem;
+        font-weight: 900;
+      }
+
+      .pbo-rule-findings {
+        display: grid;
+        gap: 7px;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+
+      .pbo-rule-findings li {
+        border-left: 3px solid var(--pbo-border-strong);
+        background: #fff;
+        padding: 8px 10px;
+        color: var(--pbo-text);
+        font-size: 0.8rem;
+        line-height: 1.45;
+      }
+
+      .pbo-rule-findings li.is-good { border-left-color: var(--pbo-made); }
+      .pbo-rule-findings li.is-warn { border-left-color: var(--pbo-accent); }
+      .pbo-rule-findings li.is-bad { border-left-color: var(--pbo-missed); }
+
+      .pbo-rule-periods {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(110px, 1fr));
+        gap: 8px;
+        overflow-x: auto;
+        padding-bottom: 4px;
+      }
+
+      .pbo-rule-period {
+        min-width: 110px;
+        border: 1px solid var(--pbo-border);
+        border-radius: 10px;
+        background: #fff;
+        padding: 10px;
+      }
+
+      .pbo-rule-period strong {
+        display: block;
+        margin-bottom: 7px;
+        color: var(--pbo-accent-deep);
+        font-size: 0.76rem;
+        font-weight: 900;
+      }
+
+      .pbo-rule-period span {
+        display: block;
+        overflow: hidden;
+        margin-top: 5px;
+        color: var(--pbo-text);
+        font-size: 0.76rem;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .pbo-rule-equalization {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+        align-items: end;
+      }
+
+      .pbo-rule-equal-result {
+        grid-column: 1 / -1;
+        min-height: 48px;
+        border: 1px solid var(--pbo-accent-line);
+        border-radius: 10px;
+        background: var(--pbo-accent-soft);
+        padding: 10px;
+        color: var(--pbo-accent-deep);
+        font-size: 0.82rem;
+        font-weight: 850;
+        line-height: 1.4;
+      }
+
+      .pbo-rule-citations {
+        margin: 14px 0 0;
+        color: var(--pbo-muted);
+        font-size: 0.72rem;
+        line-height: 1.5;
+        text-wrap: pretty;
+      }
+
+      .pbo-participation {
+        margin-top: 20px;
+        border: 1px solid var(--pbo-accent-line);
+        border-radius: 14px;
+        background: var(--pbo-panel-softer);
+        padding: 18px;
+      }
+
+      .pbo-participation-head {
+        display: flex;
+        gap: 18px;
+        align-items: start;
+        justify-content: space-between;
+      }
+
+      .pbo-participation-head h3 {
+        margin: 0;
+        color: var(--pbo-ink);
+        font-size: 1.25rem;
+        font-weight: 900;
+        text-wrap: balance;
+      }
+
+      .pbo-participation-head p {
+        max-width: 680px;
+        margin: 6px 0 0;
+        color: var(--pbo-muted);
+        font-size: 0.84rem;
+        line-height: 1.45;
+        text-wrap: pretty;
+      }
+
+      .pbo-part-score {
+        min-width: 100px;
+        border: 1px solid var(--pbo-accent-line);
+        border-radius: 12px;
+        background: var(--pbo-accent-soft);
+        padding: 10px 12px;
+        text-align: center;
+      }
+
+      .pbo-part-score strong {
+        display: block;
+        color: var(--pbo-accent-deep);
+        font-size: 1.45rem;
+        font-variant-numeric: tabular-nums;
+        line-height: 1;
+      }
+
+      .pbo-part-score span {
+        color: var(--pbo-muted);
+        font-size: 0.68rem;
+        font-weight: 900;
+      }
+
+      .pbo-part-tabs {
+        display: flex;
+        gap: 6px;
+        margin-top: 16px;
+        overflow-x: auto;
+        padding-bottom: 3px;
+      }
+
+      .pbo-part-tabs button {
+        min-height: 38px;
+        border: 1px solid var(--pbo-border-strong);
+        border-radius: 999px;
+        background: #fff;
+        padding: 7px 12px;
+        color: var(--pbo-muted);
+        font: inherit;
+        font-size: 0.76rem;
+        font-weight: 900;
+        white-space: nowrap;
+        cursor: pointer;
+      }
+
+      .pbo-part-tabs button.is-active {
+        border-color: var(--pbo-accent);
+        background: var(--pbo-accent);
+        color: #fff;
+      }
+
+      .pbo-part-tabs button:disabled {
+        display: none;
+      }
+
+      .pbo-part-tabs button:focus-visible,
+      .pbo-part-player:focus-visible {
+        outline: 3px solid rgba(211, 111, 34, 0.24);
+        outline-offset: 2px;
+      }
+
+      .pbo-part-rule {
+        margin-top: 10px;
+        border-left: 4px solid var(--pbo-accent);
+        border-radius: 0 9px 9px 0;
+        background: #fff;
+        padding: 10px 12px;
+        color: var(--pbo-text);
+        font-size: 0.82rem;
+        font-weight: 800;
+        line-height: 1.45;
+      }
+
+      .pbo-part-player-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 8px;
+        margin-top: 10px;
+      }
+
+      .pbo-part-player {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr) auto;
+        gap: 9px;
+        align-items: center;
+        min-height: 58px;
+        border: 1px solid var(--pbo-border);
+        border-radius: 11px;
+        background: #fff;
+        padding: 9px 10px;
+        color: var(--pbo-text);
+        font: inherit;
+        text-align: left;
+        cursor: pointer;
+      }
+
+      .pbo-part-player:hover:not(:disabled) {
+        border-color: var(--pbo-accent);
+      }
+
+      .pbo-part-player.is-selected {
+        border-color: var(--pbo-accent);
+        background: var(--pbo-accent-soft);
+      }
+
+      .pbo-part-player:disabled {
+        border-style: dashed;
+        background: #f3eee6;
+        color: var(--pbo-muted);
+        cursor: not-allowed;
+        opacity: 0.72;
+      }
+
+      .pbo-part-checkmark {
+        display: grid;
+        place-items: center;
+        width: 24px;
+        height: 24px;
+        border: 1px solid var(--pbo-border-strong);
+        border-radius: 7px;
+        background: #fff;
+        color: transparent;
+        font-size: 0.8rem;
+        font-weight: 900;
+      }
+
+      .pbo-part-player.is-selected .pbo-part-checkmark {
+        border-color: var(--pbo-accent);
+        background: var(--pbo-accent);
+        color: #fff;
+      }
+
+      .pbo-part-player-copy {
+        min-width: 0;
+      }
+
+      .pbo-part-player-copy strong,
+      .pbo-part-player-copy span {
+        display: block;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .pbo-part-player-copy strong {
+        color: var(--pbo-ink);
+        font-size: 0.82rem;
+      }
+
+      .pbo-part-player-copy span {
+        margin-top: 2px;
+        color: var(--pbo-muted);
+        font-size: 0.69rem;
+      }
+
+      .pbo-part-player-state {
+        border-radius: 999px;
+        background: var(--pbo-made-soft);
+        padding: 4px 7px;
+        color: #176b3d;
+        font-size: 0.66rem;
+        font-weight: 900;
+        white-space: nowrap;
+      }
+
+      .pbo-part-player:disabled .pbo-part-player-state {
+        background: var(--pbo-missed-soft);
+        color: #a33d34;
+      }
+
+      .pbo-part-validation {
+        margin-top: 10px;
+        border: 1px solid var(--pbo-border);
+        border-radius: 9px;
+        background: #fff;
+        padding: 9px 11px;
+        color: var(--pbo-muted);
+        font-size: 0.78rem;
+        font-weight: 800;
+        line-height: 1.4;
+      }
+
+      .pbo-part-validation.is-good {
+        border-color: #a8dabb;
+        background: var(--pbo-made-soft);
+        color: #176b3d;
+      }
+
+      .pbo-part-validation.is-bad {
+        border-color: #efbbb5;
+        background: var(--pbo-missed-soft);
+        color: #a33d34;
+      }
+
+      .pbo-part-actions {
+        justify-content: flex-end;
+        margin-top: 10px;
+      }
+
+      .pbo-part-timeline {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: 7px;
+        margin-top: 12px;
+      }
+
+      .pbo-part-timeline-item {
+        min-width: 0;
+        border: 1px solid var(--pbo-border);
+        border-radius: 9px;
+        background: #fff;
+        padding: 8px;
+      }
+
+      .pbo-part-timeline-item strong {
+        display: block;
+        margin-bottom: 4px;
+        color: var(--pbo-accent-deep);
+        font-size: 0.69rem;
+      }
+
+      .pbo-part-timeline-item span {
+        display: block;
+        overflow: hidden;
+        color: var(--pbo-muted);
+        font-size: 0.68rem;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      @media (max-width: 900px) {
+        .pbo-rule-player-main {
+          grid-template-columns: 34px minmax(0, 1fr) auto;
+        }
+
+        .pbo-rule-player-main .pbo-rule-date,
+        .pbo-rule-player-main .pbo-rule-docs {
+          grid-column: 2 / -1;
+        }
+
+        .pbo-rule-player-result {
+          grid-column: 2;
+          justify-self: start;
+        }
+
+        .pbo-rule-remove {
+          grid-column: 3;
+          grid-row: 1;
+        }
+
+        .pbo-rule-output-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .pbo-part-player-grid {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .pbo-part-timeline {
+          overflow-x: auto;
+        }
+
+        .pbo-part-timeline-item {
+          min-width: 130px;
+        }
+      }
+
+      @media (max-width: 640px) {
+        .pbo-rule-head {
+          grid-template-columns: 1fr;
+          padding: 18px;
+        }
+
+        .pbo-rule-privacy {
+          max-width: none;
+        }
+
+        .pbo-rule-body {
+          padding: 16px;
+        }
+
+        .pbo-rule-config,
+        .pbo-rule-player-extra,
+        .pbo-rule-checks {
+          grid-template-columns: 1fr;
+        }
+
+        .pbo-rule-metrics {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .pbo-rule-section-head {
+          display: grid;
+          align-items: start;
+        }
+
+        .pbo-rule-status {
+          grid-template-columns: 1fr;
+        }
+
+        .pbo-rule-equalization {
+          grid-template-columns: 1fr;
+        }
+
+        .pbo-rule-equal-result {
+          grid-column: auto;
+        }
+
+        .pbo-participation {
+          padding: 14px;
+        }
+
+        .pbo-participation-head {
+          display: grid;
+        }
+
+        .pbo-part-score {
+          justify-self: start;
+        }
+
+        .pbo-part-player-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .pbo-part-actions {
+          justify-content: stretch;
+        }
+
+        .pbo-part-actions .pbo-rule-btn {
+          flex: 1 1 auto;
+        }
+      }
     </style>
 
     <main id="o_website_record_page" class="pbo-public">
@@ -1326,7 +2196,7 @@
               </div>
               <div class="pbo-hero-headings">
                 <div class="pbo-kicker">
-                  <span t-if="team_color" class="pbo-team-dot" t-att-style="'background:%s' % team_color"/>Team Profile
+                  <span t-if="team_color" class="pbo-team-dot" t-att-style="'background:%s' % team_color"/>Ficha del equipo
                 </div>
                 <h1 id="pbo-team-record-title" class="pbo-title">
                   <t t-out="team_label"/>
@@ -1339,21 +2209,21 @@
               </div>
             </div>
 
-            <div t-if="record.x_studio_coach or record.x_studio_assitant_coach or record.x_studio_assistant_coach_2 or record.x_studio_contact" class="pbo-staff-list" aria-label="Team staff">
+            <div t-if="record.x_studio_coach or record.x_studio_assitant_coach or record.x_studio_assistant_coach_2 or record.x_studio_contact" class="pbo-staff-list" aria-label="Personal del equipo">
               <div t-if="record.x_studio_coach" class="pbo-staff-item">
-                <div class="pbo-staff-role">Head Coach</div>
+                <div class="pbo-staff-role">Dirigente</div>
                 <div class="pbo-staff-name"><span t-field="record.x_studio_coach"/></div>
               </div>
               <div t-if="record.x_studio_assitant_coach" class="pbo-staff-item">
-                <div class="pbo-staff-role">Assistant</div>
+                <div class="pbo-staff-role">Asistente</div>
                 <div class="pbo-staff-name"><span t-field="record.x_studio_assitant_coach"/></div>
               </div>
               <div t-if="record.x_studio_assistant_coach_2" class="pbo-staff-item">
-                <div class="pbo-staff-role">Assistant 2</div>
+                <div class="pbo-staff-role">Asistente 2</div>
                 <div class="pbo-staff-name"><span t-field="record.x_studio_assistant_coach_2"/></div>
               </div>
               <div t-if="record.x_studio_contact" class="pbo-staff-item">
-                <div class="pbo-staff-role">Contact</div>
+                <div class="pbo-staff-role">Contacto</div>
                 <div class="pbo-staff-name"><span t-field="record.x_studio_contact"/></div>
               </div>
             </div>
@@ -1361,54 +2231,243 @@
 
         </section>
 
-        <section class="pbo-tile-grid" aria-label="Team summary">
+        <section class="pbo-tile-grid" aria-label="Resumen del equipo">
           <div class="pbo-tile pbo-tile-accent">
-            <div class="pbo-tile-label">Record</div>
+            <div class="pbo-tile-label">Récord</div>
             <div class="pbo-tile-value"><t t-out="wins"/>-<t t-out="losses"/></div>
-            <div class="pbo-tile-sub">Win-Loss</div>
+            <div class="pbo-tile-sub">Victorias-Derrotas</div>
           </div>
           <div class="pbo-tile pbo-tile-accent">
-            <div class="pbo-tile-label">Win Rate</div>
+            <div class="pbo-tile-label">Porcentaje</div>
             <div class="pbo-tile-value"><t t-out="win_pct_display"/></div>
-            <div class="pbo-tile-sub"><t t-out="games_played"/> played</div>
+            <div class="pbo-tile-sub"><t t-out="games_played"/> jugados</div>
           </div>
           <div class="pbo-tile pbo-tile-good">
-            <div class="pbo-tile-label">Points / G</div>
+            <div class="pbo-tile-label">Puntos / J</div>
             <div class="pbo-tile-value"><t t-out="ppg_display"/></div>
-            <div class="pbo-tile-sub"><t t-out="pts_for"/> for</div>
+            <div class="pbo-tile-sub"><t t-out="pts_for"/> a favor</div>
           </div>
           <div class="pbo-tile pbo-tile-bad">
-            <div class="pbo-tile-label">Opp / G</div>
+            <div class="pbo-tile-label">Rival / J</div>
             <div class="pbo-tile-value"><t t-out="opp_ppg_display"/></div>
-            <div class="pbo-tile-sub"><t t-out="pts_against"/> against</div>
+            <div class="pbo-tile-sub"><t t-out="pts_against"/> en contra</div>
           </div>
           <div t-attf-class="pbo-tile #{'pbo-tile-good' if diff_value &gt; 0 else 'pbo-tile-bad' if diff_value &lt; 0 else ''}">
-            <div class="pbo-tile-label">Net / Total</div>
+            <div class="pbo-tile-label">Diferencia total</div>
             <div class="pbo-tile-value"><t t-out="diff_display"/></div>
-            <div class="pbo-tile-sub">Point margin</div>
+            <div class="pbo-tile-sub">Margen de puntos</div>
           </div>
           <div class="pbo-tile">
             <div class="pbo-tile-label">Roster</div>
             <div class="pbo-tile-value"><t t-out="len(players)"/></div>
-            <div class="pbo-tile-sub">Players</div>
+            <div class="pbo-tile-sub">Jugadores</div>
           </div>
           <div class="pbo-tile pbo-tile-wide pbo-tile-accent">
-            <div class="pbo-tile-label">Leading Scorer</div>
+            <div class="pbo-tile-label">Líder anotador</div>
             <div class="pbo-tile-value pbo-tile-value-text"><t t-out="top_name or '--'"/></div>
-            <div class="pbo-tile-sub"><t t-out="top_pts"/> total points</div>
+            <div class="pbo-tile-sub"><t t-out="top_pts"/> puntos totales</div>
+          </div>
+        </section>
+
+        <section id="pbo-elegibilidad" class="pbo-rule-lab" data-pbo-rule-lab="1" t-att-data-category="record.x_studio_categoria or ''" aria-labelledby="pbo-rule-title">
+          <header class="pbo-rule-head">
+            <div>
+              <div class="pbo-rule-eyebrow">Motor de reglas · temporada 2026</div>
+              <h2 id="pbo-rule-title" class="pbo-rule-title">Asistente de participación por período</h2>
+              <p class="pbo-rule-intro">Arma el 1.er quinteto y prueba quién puede entrar en el 2.º. El sistema bloquea repeticiones no permitidas, controla cuántos jugadores nuevos faltan y continúa validando cada período según la categoría y el tamaño del roster.</p>
+            </div>
+            <div class="pbo-rule-privacy">Privado por diseño: lo que escribas se procesa solamente en esta pestaña y no se guarda en Odoo.</div>
+          </header>
+
+          <div class="pbo-rule-body">
+            <div class="pbo-rule-config">
+              <div class="pbo-rule-field">
+                <label for="pbo-rule-category">Categoría</label>
+                <select id="pbo-rule-category" class="pbo-rule-select" data-rule-category="1">
+                  <option value="7u">7U</option>
+                  <option value="8u">8U</option>
+                  <option value="9u">9U</option>
+                  <option value="10u">10U</option>
+                  <option value="11u">11U</option>
+                  <option value="12u">12U</option>
+                  <option value="13u">13U</option>
+                  <option value="14u">14U</option>
+                  <option value="15u">15U</option>
+                  <option value="16u">16U</option>
+                  <option value="17u">17U</option>
+                  <option value="18u">18U</option>
+                </select>
+              </div>
+              <div class="pbo-rule-field">
+                <label for="pbo-rule-phase">Etapa</label>
+                <select id="pbo-rule-phase" class="pbo-rule-select" data-rule-phase="1">
+                  <option value="regular">Serie regular</option>
+                  <option value="post">Postemporada</option>
+                </select>
+              </div>
+              <div class="pbo-rule-field">
+                <label for="pbo-rule-opponent">Rival hábil al iniciar el 3.er período</label>
+                <input id="pbo-rule-opponent" class="pbo-rule-input" data-rule-opponent="1" type="number" min="0" max="13" inputmode="numeric" placeholder="Ej. 9"/>
+              </div>
+            </div>
+
+            <div class="pbo-rule-metrics" aria-label="Resumen de elegibilidad">
+              <div class="pbo-rule-metric"><span>Roster evaluado</span><strong data-rule-metric="roster">0</strong></div>
+              <div class="pbo-rule-metric"><span>Hábiles confirmados</span><strong data-rule-metric="ready">0</strong></div>
+              <div class="pbo-rule-metric"><span>Por confirmar</span><strong data-rule-metric="review">0</strong></div>
+              <div class="pbo-rule-metric"><span>No pueden jugar</span><strong data-rule-metric="blocked">0</strong></div>
+            </div>
+
+            <div class="pbo-rule-status" data-rule-status="1" aria-live="polite">
+              <span class="pbo-rule-status-badge" data-rule-status-badge="1">Sin evaluar</span>
+              <div class="pbo-rule-status-copy">
+                <strong data-rule-status-title="1">Añade o completa jugadores</strong>
+                <span data-rule-status-copy="1">Se necesitan al menos 8 jugadores hábiles para comenzar el partido.</span>
+              </div>
+            </div>
+
+            <div class="pbo-rule-section-head">
+              <div>
+                <h3>Jugadores</h3>
+                <p>Los nombres del roster público se cargan automáticamente; completa solamente lo necesario para el chequeo.</p>
+              </div>
+              <div class="pbo-rule-actions">
+                <button type="button" class="pbo-rule-btn" data-rule-undo="1" hidden="hidden">Deshacer eliminación</button>
+                <button type="button" class="pbo-rule-btn" data-rule-add="1">+ Añadir jugador</button>
+                <button type="button" class="pbo-rule-btn pbo-rule-btn-primary" data-rule-run="1">Evaluar roster</button>
+              </div>
+            </div>
+
+            <div class="pbo-rule-roster" data-rule-roster="1" role="list"></div>
+
+            <template data-rule-player-template="1">
+              <article class="pbo-rule-player" data-rule-player="1" role="listitem">
+                <div class="pbo-rule-player-main">
+                  <span class="pbo-rule-player-num" data-rule-number="1">1</span>
+                  <input class="pbo-rule-input" data-rule-name="1" type="text" autocomplete="off" placeholder="Nombre del jugador" aria-label="Nombre del jugador"/>
+                  <input class="pbo-rule-input pbo-rule-date" data-rule-birth="1" type="date" aria-label="Fecha de nacimiento"/>
+                  <select class="pbo-rule-select pbo-rule-docs" data-rule-docs="1" aria-label="Documentos oficiales">
+                    <option value="unknown">Documentos: confirmar</option>
+                    <option value="yes">Documentos: completos</option>
+                    <option value="no">Documentos: faltan</option>
+                  </select>
+                  <span class="pbo-rule-player-result" data-rule-player-result="1">Pendiente</span>
+                  <button type="button" class="pbo-rule-remove" data-rule-remove="1" aria-label="Quitar jugador">Quitar</button>
+                </div>
+                <details>
+                  <summary>Disponibilidad, uniforme y casos especiales</summary>
+                  <div class="pbo-rule-player-extra">
+                    <div class="pbo-rule-field">
+                      <label>Presencia</label>
+                      <select class="pbo-rule-select" data-rule-arrival="1">
+                        <option value="pregame">Presente antes del juego</option>
+                        <option value="before3">Llegó antes del 3.er período</option>
+                        <option value="after3">Llegó iniciado el 3.er período</option>
+                        <option value="absent">Ausente / no disponible</option>
+                      </select>
+                    </div>
+                    <div class="pbo-rule-field">
+                      <label>Uniforme oficial</label>
+                      <select class="pbo-rule-select" data-rule-uniform="1">
+                        <option value="unknown">Por confirmar</option>
+                        <option value="yes">Completo y correcto</option>
+                        <option value="no">Incompleto / incorrecto</option>
+                      </select>
+                    </div>
+                    <div class="pbo-rule-field">
+                      <label>Juegos con período obligatorio</label>
+                      <input class="pbo-rule-input" data-rule-postgames="1" type="number" min="0" max="99" value="0" inputmode="numeric" aria-label="Juegos de serie regular con período obligatorio"/>
+                    </div>
+                    <div class="pbo-rule-checks">
+                      <label class="pbo-rule-check"><input type="checkbox" data-rule-inactive="1"/> Jugador inactivo o no autorizado</label>
+                      <label class="pbo-rule-check"><input type="checkbox" data-rule-suspended="1"/> Cumple suspensión</label>
+                      <label class="pbo-rule-check"><input type="checkbox" data-rule-national="1"/> Designado jugador nacional</label>
+                      <label class="pbo-rule-check"><input type="checkbox" data-rule-dual="1"/> Doble participación simultánea</label>
+                    </div>
+                  </div>
+                </details>
+                <p class="pbo-rule-reason" data-rule-reason="1"></p>
+              </article>
+            </template>
+
+            <div hidden="hidden" data-rule-source-roster="1">
+              <t t-foreach="players" t-as="rule_player">
+                <span data-rule-source-player="1" t-att-data-name="rule_player.x_name or ''"></span>
+              </t>
+            </div>
+
+            <section class="pbo-participation" aria-labelledby="pbo-participation-title">
+              <div class="pbo-participation-head">
+                <div>
+                  <div class="pbo-rule-eyebrow">Lo importante en cancha</div>
+                  <h3 id="pbo-participation-title">Planificador de quintetos</h3>
+                  <p>Selecciona exactamente 5 jugadores. Al cambiar de período, cada jugador muestra si puede entrar y por qué.</p>
+                </div>
+                <div class="pbo-part-score"><strong data-part-count="1">0/5</strong><span>seleccionados</span></div>
+              </div>
+              <div class="pbo-part-tabs" aria-label="Seleccionar período">
+                <button type="button" class="is-active" data-part-period="0" aria-pressed="true">1.er período</button>
+                <button type="button" data-part-period="1" aria-pressed="false">2.º período</button>
+                <button type="button" data-part-period="2" aria-pressed="false">3.er período</button>
+                <button type="button" data-part-period="3" aria-pressed="false">4.º período</button>
+                <button type="button" data-part-period="4" aria-pressed="false">5.º período</button>
+              </div>
+              <div class="pbo-part-rule" data-part-rule="1">Elige los 5 jugadores que comenzarán el partido.</div>
+              <div class="pbo-part-player-grid" data-part-player-grid="1"></div>
+              <div class="pbo-part-validation" data-part-validation="1" aria-live="polite" tabindex="-1">Selecciona 5 jugadores para validar el período.</div>
+              <div class="pbo-rule-actions pbo-part-actions">
+                <button type="button" class="pbo-rule-btn" data-part-clear="1">Vaciar este período</button>
+                <button type="button" class="pbo-rule-btn" data-part-suggest="1">Usar rotación sugerida</button>
+                <button type="button" class="pbo-rule-btn pbo-rule-btn-primary" data-part-next="1">Siguiente período</button>
+              </div>
+              <div class="pbo-part-timeline" data-part-timeline="1" aria-label="Resumen de participación"></div>
+            </section>
+
+            <div class="pbo-rule-output-grid">
+              <div class="pbo-rule-panel">
+                <h3>Diagnóstico explicable</h3>
+                <ul class="pbo-rule-findings" data-rule-findings="1">
+                  <li>Completa el roster para ver hallazgos vinculados a cada regla.</li>
+                </ul>
+              </div>
+              <div class="pbo-rule-panel">
+                <h3>Equiparación al 3.er período</h3>
+                <div class="pbo-rule-equalization">
+                  <div class="pbo-rule-field">
+                    <span class="pbo-rule-mini-label">Propios potencialmente hábiles</span>
+                    <output class="pbo-rule-input" data-rule-own-count="1">0</output>
+                  </div>
+                  <div class="pbo-rule-field">
+                    <span class="pbo-rule-mini-label">Diferencia</span>
+                    <output class="pbo-rule-input" data-rule-difference="1">0</output>
+                  </div>
+                  <div class="pbo-rule-equal-result" data-rule-equal-result="1">En 7U–13U, añade la cantidad hábil del rival para calcular los puntos de equiparación.</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="pbo-rule-section-head">
+              <div>
+                <h3>Rotación reglamentaria sugerida</h3>
+                <p data-rule-format="1">La propuesta aparecerá cuando haya al menos 8 jugadores potencialmente hábiles.</p>
+              </div>
+            </div>
+            <div class="pbo-rule-periods" data-rule-periods="1"></div>
+
+            <p class="pbo-rule-citations">Basado en el Reglamento Liga PBO 2026: reglas 2.1–2.2, 3.1–3.2, 4.1–4.12, 10.1, 10.12, 38 y 39. Es una orientación preventiva, no una certificación oficial. El documento contiene pasajes contradictorios y referencias heredadas a ACB; ante una alerta de revisión, confirma con la mesa o la dirección de PBO.</p>
           </div>
         </section>
 
         <div class="pbo-content-grid">
           <section class="pbo-card" data-pbo-box="1" aria-labelledby="pbo-roster-title">
             <div class="pbo-panel-head">
-              <h2 id="pbo-roster-title" class="pbo-panel-title">Season Box Score</h2>
-              <span class="pbo-count"><t t-out="len(players)"/> players</span>
+              <h2 id="pbo-roster-title" class="pbo-panel-title">Estadísticas de temporada</h2>
+              <span class="pbo-count"><t t-out="len(players)"/> jugadores</span>
             </div>
             <div t-if="players" class="pbo-box-toolbar">
-              <div class="pbo-seg" role="group" aria-label="Stat view">
-                <button type="button" class="is-active" data-pbo-box-mode="score">Scoring</button>
-                <button type="button" data-pbo-box-mode="qtr">By Quarter</button>
+              <div class="pbo-seg" role="group" aria-label="Vista de estadísticas">
+                <button type="button" class="is-active" data-pbo-box-mode="score">Anotación</button>
+                <button type="button" data-pbo-box-mode="qtr">Por período</button>
               </div>
             </div>
             <div class="pbo-box-wrap mode-score" data-pbo-box-wrap="1">
@@ -1417,7 +2476,7 @@
                   <thead>
                     <tr>
                       <th data-sort="num" title="Jersey">#</th>
-                      <th data-sort="text">Player</th>
+                      <th data-sort="text">Jugador</th>
                       <th data-sort="text">Pos</th>
                       <th data-sort="num" title="Games played">GP</th>
                       <th data-sort="num" title="Total points">PTS</th>
@@ -1555,7 +2614,7 @@
                   <tfoot t-if="players">
                     <tr data-pbo-box-totals="1">
                       <td></td>
-                      <td>Team Totals</td>
+                      <td>Totales del equipo</td>
                       <td></td>
                       <td class="pbo-num"><t t-out="games_played"/></td>
                       <td><span class="pbo-pts" data-total="pts"><t t-out="team_pts"/></span></td>
@@ -1573,15 +2632,15 @@
                     </tr>
                   </tfoot>
                 </table>
-                <div t-if="not players" class="pbo-empty">Player stats appear here after players are assigned to this team.</div>
+                <div t-if="not players" class="pbo-empty">Las estadísticas aparecerán cuando se asignen jugadores al equipo.</div>
               </div>
             </div>
           </section>
 
           <aside class="pbo-card" aria-labelledby="pbo-schedule-title">
             <div class="pbo-panel-head">
-              <h2 id="pbo-schedule-title" class="pbo-panel-title">Games</h2>
-              <span class="pbo-count"><t t-out="len(games)"/> games</span>
+              <h2 id="pbo-schedule-title" class="pbo-panel-title">Partidos</h2>
+              <span class="pbo-count"><t t-out="len(games)"/> juegos</span>
             </div>
             <div class="pbo-schedule-list">
               <t t-foreach="games" t-as="game">
@@ -1622,14 +2681,14 @@
                   </div>
                 </article>
               </t>
-              <div t-if="not games" class="pbo-empty">Games appear here after they are assigned to this team.</div>
+              <div t-if="not games" class="pbo-empty">Los partidos aparecerán cuando se asignen al equipo.</div>
             </div>
           </aside>
         </div>
 
         <div class="pbo-section-heading">
-          <h2>Match Box Scores</h2>
-          <span class="pbo-count">per-game player stats</span>
+          <h2>Estadísticas por partido</h2>
+          <span class="pbo-count">rendimiento de cada jugador</span>
         </div>
 
         <div class="pbo-match-stack">
@@ -1677,9 +2736,9 @@
               </summary>
 
               <div class="pbo-box-toolbar">
-                <div class="pbo-seg" role="group" aria-label="Stat view">
-                  <button type="button" class="is-active" data-pbo-box-mode="score">Scoring</button>
-                  <button type="button" data-pbo-box-mode="qtr">By Quarter</button>
+                <div class="pbo-seg" role="group" aria-label="Vista de estadísticas">
+                  <button type="button" class="is-active" data-pbo-box-mode="score">Anotación</button>
+                  <button type="button" data-pbo-box-mode="qtr">Por período</button>
                 </div>
               </div>
               <div class="pbo-box-wrap mode-score" data-pbo-box-wrap="1">
@@ -1688,7 +2747,7 @@
                     <thead>
                       <tr>
                         <th data-sort="num" title="Jersey">#</th>
-                        <th data-sort="text">Player</th>
+                        <th data-sort="text">Jugador</th>
                         <th data-sort="num" title="Points">PTS</th>
                         <th class="col-score" data-sort="num">2P</th>
                         <th class="col-score" data-sort="num">3P</th>
@@ -1771,7 +2830,7 @@
                     <tfoot>
                       <tr data-pbo-box-totals="1">
                         <td></td>
-                        <td>Totals</td>
+                        <td>Totales</td>
                         <td><span class="pbo-pts" data-total="pts"><t t-out="mb_pts"/></span></td>
                         <td class="col-score pbo-num" data-total="2pm"><t t-out="mb_2pm"/></td>
                         <td class="col-score pbo-num" data-total="3pm"><t t-out="mb_3pm"/></td>
@@ -1789,15 +2848,15 @@
               </div>
             </details>
           </t>
-          <div t-if="not games" class="pbo-card"><div class="pbo-empty">Match box scores appear here after this team plays a scored game.</div></div>
+          <div t-if="not games" class="pbo-card"><div class="pbo-empty">Las estadísticas aparecerán después del primer partido anotado.</div></div>
         </div>
 
         <div class="pbo-section-heading">
-          <h2>Player Game Detail</h2>
-          <span class="pbo-count">cumulative &#183; per-game &#183; shot map</span>
+          <h2>Detalle por jugador</h2>
+          <span class="pbo-count">acumulado &#183; por juego &#183; mapa de tiros</span>
         </div>
 
-        <section class="pbo-card" aria-label="Player game detail">
+        <section class="pbo-card" aria-label="Detalle por jugador">
           <t t-foreach="players" t-as="player">
             <t t-set="d_gp" t-value="0"/>
             <t t-set="d_pts" t-value="0"/>
@@ -1987,11 +3046,11 @@
                       <svg class="pbo-court" preserveAspectRatio="xMidYMid meet" role="img" shape-rendering="geometricPrecision" viewBox="0 0 760 440" xmlns="http://www.w3.org/2000/svg">
                         <title>Player shot map</title>
                         <rect width="760" height="440" rx="12" fill="#fcebd2"/>
-                        <g fill="#f4ab5d" fill-opacity="0.16">
+                        <g fill="#D36F22" fill-opacity="0.16">
                           <rect x="42" y="154" width="152" height="132"/>
                           <rect x="566" y="154" width="152" height="132"/>
                         </g>
-                        <circle cx="380" cy="220" r="45" fill="#f4ab5d" fill-opacity="0.1"/>
+                        <circle cx="380" cy="220" r="45" fill="#D36F22" fill-opacity="0.1"/>
                         <g fill="none" stroke="#cf9c5f" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.6" vector-effect="non-scaling-stroke">
                           <rect x="42" y="42" width="676" height="356"/>
                           <line x1="380" x2="380" y1="42" y2="398"/>
@@ -2195,6 +3254,724 @@
               document.addEventListener("DOMContentLoaded", boot);
             } else {
               boot();
+            }
+          }());
+        ]]>
+      </script>
+
+      <script>
+        <![CDATA[
+          (function () {
+            var CUTOFF_YEAR = 2026;
+
+            function one(root, selector) { return root.querySelector(selector); }
+            function all(root, selector) { return Array.prototype.slice.call(root.querySelectorAll(selector)); }
+            function numberValue(node) { return Math.max(0, parseInt(node && node.value, 10) || 0); }
+
+            function initRuleLab(lab) {
+              if (lab.getAttribute("data-rule-ready") === "1") { return; }
+              lab.setAttribute("data-rule-ready", "1");
+
+              var roster = one(lab, "[data-rule-roster]");
+              var template = one(lab, "[data-rule-player-template]");
+              var category = one(lab, "[data-rule-category]");
+              var phase = one(lab, "[data-rule-phase]");
+              var opponent = one(lab, "[data-rule-opponent]");
+              var addButton = one(lab, "[data-rule-add]");
+              var undoButton = one(lab, "[data-rule-undo]");
+              var runButton = one(lab, "[data-rule-run]");
+              var removedPlayer = null;
+              var removedLineups = null;
+              var nextPlayerId = 1;
+              var activePeriod = 0;
+              var lineups = [[], [], [], [], []];
+              var currentPlayers = [];
+              var currentPotential = [];
+              var currentMaxAge = 18;
+
+              var recordCategory = (lab.getAttribute("data-category") || "").toLowerCase();
+              if (one(category, 'option[value="' + recordCategory + '"]')) { category.value = recordCategory; }
+
+              function addPlayer(name) {
+                var fragment = template.content.cloneNode(true);
+                var player = fragment.querySelector("[data-rule-player]");
+                player.setAttribute("data-rule-player-id", "player-" + nextPlayerId);
+                nextPlayerId += 1;
+                if (name) { one(player, "[data-rule-name]").value = name; }
+                roster.appendChild(fragment);
+                renumber();
+                return player;
+              }
+
+              function renumber() {
+                all(roster, "[data-rule-player]").forEach(function (player, index) {
+                  one(player, "[data-rule-number]").textContent = String(index + 1);
+                  var remove = one(player, "[data-rule-remove]");
+                  remove.setAttribute("aria-label", "Quitar jugador " + (index + 1));
+                });
+              }
+
+              function ageAtCutoff(value) {
+                if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) { return null; }
+                return CUTOFF_YEAR - parseInt(value.slice(0, 4), 10);
+              }
+
+              function readPlayer(node, index, maxAge, isPost) {
+                var name = one(node, "[data-rule-name]").value.trim();
+                var birth = one(node, "[data-rule-birth]").value;
+                var docs = one(node, "[data-rule-docs]").value;
+                var arrival = one(node, "[data-rule-arrival]").value;
+                var uniform = one(node, "[data-rule-uniform]").value;
+                var postGames = numberValue(one(node, "[data-rule-postgames]"));
+                var hasInput = Boolean(name || birth || docs !== "unknown" || uniform !== "unknown" || arrival !== "pregame" || postGames ||
+                  one(node, "[data-rule-inactive]").checked || one(node, "[data-rule-suspended]").checked ||
+                  one(node, "[data-rule-national]").checked || one(node, "[data-rule-dual]").checked);
+                if (!hasInput) { return null; }
+
+                var label = name || ("Jugador " + (index + 1));
+                var age = ageAtCutoff(birth);
+                var blockers = [];
+                var reviews = [];
+
+                if (age === null) { reviews.push("falta fecha de nacimiento para aplicar la Regla 2.1"); }
+                else if (age < 0) { blockers.push("fecha de nacimiento inválida"); }
+                else if (age > maxAge) { blockers.push("cumple " + age + " años en 2026 y excede " + maxAge + "U (Regla 2.1)"); }
+
+                if (docs === "no") { blockers.push("documentación oficial incompleta (Reglas 2.1–2.2)"); }
+                else if (docs === "unknown") { reviews.push("documentos sin confirmar"); }
+
+                if (uniform === "no") { blockers.push("uniforme oficial incompleto o incorrecto (Regla 10.1)"); }
+                else if (uniform === "unknown") { reviews.push("uniforme sin confirmar"); }
+
+                if (arrival === "after3") { blockers.push("llegó después de comenzar el 3.er período (Reglas 4.4 y 10.12)"); }
+                if (arrival === "absent") { blockers.push("no está presente o disponible"); }
+                if (one(node, "[data-rule-inactive]").checked) { blockers.push("figura inactivo o no autorizado"); }
+                if (one(node, "[data-rule-suspended]").checked) { blockers.push("cumple suspensión"); }
+                if (one(node, "[data-rule-national]").checked) { blockers.push("designado jugador nacional (Regla 39)"); }
+                if (one(node, "[data-rule-dual]").checked) { blockers.push("doble participación simultánea (Regla 39)"); }
+                if (isPost && postGames < 2) { blockers.push("no acredita 2 juegos de serie regular con período obligatorio (Regla 38)"); }
+
+                return {
+                  node: node,
+                  name: label,
+                  age: age,
+                  blockers: blockers,
+                  reviews: reviews,
+                  postGames: postGames
+                };
+              }
+
+              function setPlayerState(player) {
+                var node = player.node;
+                node.classList.remove("is-ready", "is-review", "is-blocked", "has-reason");
+                var result = one(node, "[data-rule-player-result]");
+                var reason = one(node, "[data-rule-reason]");
+                if (player.blockers.length) {
+                  node.classList.add("is-blocked", "has-reason");
+                  result.textContent = "No puede jugar";
+                  reason.textContent = player.blockers.join(" · ");
+                } else if (player.reviews.length) {
+                  node.classList.add("is-review", "has-reason");
+                  result.textContent = "Por confirmar";
+                  reason.textContent = player.reviews.join(" · ");
+                } else {
+                  node.classList.add("is-ready");
+                  result.textContent = "Hábil";
+                  reason.textContent = "Sin impedimentos detectados con los datos suministrados.";
+                }
+              }
+
+              function emptyPlayerState(node) {
+                node.classList.remove("is-ready", "is-review", "is-blocked", "has-reason");
+                one(node, "[data-rule-player-result]").textContent = "Pendiente";
+                one(node, "[data-rule-reason]").textContent = "";
+              }
+
+              function metric(key, value) {
+                var target = one(lab, '[data-rule-metric="' + key + '"]');
+                if (target) { target.textContent = String(value); }
+              }
+
+              function finding(text, type) {
+                var item = document.createElement("li");
+                if (type) { item.className = "is-" + type; }
+                item.textContent = text;
+                return item;
+              }
+
+              function formatFor(maxAge) {
+                if (maxAge <= 13) { return "5 períodos · participación obligatoria en 2 períodos"; }
+                if (maxAge <= 16) { return "4 períodos · modalidad 5-3"; }
+                return "4 períodos · modalidad 5-1";
+              }
+
+              function buildYouthPlan(players) {
+                var count = Math.min(players.length, 12);
+                var maps = {
+                  8: [[0,1,2,3,4],[5,6,7,0,1],[2,3,4,5,6],[7,0,1,2,3],[4,5,6,7,0]],
+                  9: [[0,1,2,3,4],[5,6,7,8,0],[1,2,3,4,5],[6,7,8,1,2],[3,4,5,6,7]],
+                  10: [[0,1,2,3,4],[5,6,7,8,9],[0,1,2,3,4],[5,6,7,8,9],[0,1,2,3,4]],
+                  11: [[0,1,2,3,4],[5,6,7,8,9],[10,0,1,2,3],[4,5,6,7,8],[9,10,0,1,2]],
+                  12: [[0,1,2,3,4],[5,6,7,8,9],[10,11,0,1,2],[3,4,5,6,7],[8,9,10,11,0]]
+                };
+                var plan = maps[count] || [];
+                return plan.map(function (period) {
+                  return period.map(function (index) { return players[index]; });
+                });
+              }
+
+              function buildOlderPlan(players, maxAge) {
+                var count = players.length;
+                var newCount = maxAge <= 16 ? 3 : 1;
+                var first = [0, 1, 2, 3, 4];
+                var second = [];
+                var index;
+                for (index = 5; index < Math.min(count, 5 + newCount); index += 1) { second.push(index); }
+                for (index = 0; second.length < 5; index += 1) { second.push(index); }
+                var periods = [first, second];
+                var usage = [];
+                for (index = 0; index < count; index += 1) { usage[index] = 0; }
+                periods.forEach(function (period) { period.forEach(function (i) { usage[i] += 1; }); });
+                for (var round = 0; round < 2; round += 1) {
+                  var order = usage.map(function (uses, i) { return { i: i, uses: uses }; });
+                  order.sort(function (a, b) { return a.uses - b.uses || a.i - b.i; });
+                  var free = order.slice(0, 5).map(function (item) { return item.i; });
+                  free.forEach(function (i) { usage[i] += 1; });
+                  periods.push(free);
+                }
+                return periods.map(function (period) {
+                  return period.map(function (i) { return players[i]; });
+                });
+              }
+
+              function renderPlan(potential, maxAge) {
+                var container = one(lab, "[data-rule-periods]");
+                var format = one(lab, "[data-rule-format]");
+                container.innerHTML = "";
+                format.textContent = formatFor(maxAge) + ". La rotación es una guía preventiva y debe validarse en mesa.";
+                if (potential.length < 8) {
+                  var message = document.createElement("div");
+                  message.className = "pbo-empty";
+                  message.textContent = "Faltan jugadores potencialmente hábiles para construir una rotación.";
+                  container.appendChild(message);
+                  return;
+                }
+                var scheduled = potential.slice(0, maxAge <= 13 ? 12 : 13);
+                var plan = maxAge <= 13 ? buildYouthPlan(scheduled) : buildOlderPlan(scheduled, maxAge);
+                plan.forEach(function (period, index) {
+                  var card = document.createElement("div");
+                  card.className = "pbo-rule-period";
+                  var title = document.createElement("strong");
+                  title.textContent = "Período " + (index + 1);
+                  card.appendChild(title);
+                  period.forEach(function (player) {
+                    var chip = document.createElement("span");
+                    chip.textContent = player.name + (player.reviews.length ? " · revisar" : "");
+                    chip.title = chip.textContent;
+                    card.appendChild(chip);
+                  });
+                  container.appendChild(card);
+                });
+              }
+
+              function playerId(player) {
+                return player.node.getAttribute("data-rule-player-id");
+              }
+
+              function priorCount(id, period) {
+                var count = 0;
+                for (var i = 0; i < period; i += 1) {
+                  if (lineups[i].indexOf(id) !== -1) { count += 1; }
+                }
+                return count;
+              }
+
+              function periodLabel(index) {
+                return ["1.er", "2.º", "3.er", "4.º", "5.º"][index] + " período";
+              }
+
+              function requiredNewPlayers(period, rosterSize, maxAge) {
+                if (period !== 1) { return 0; }
+                if (maxAge <= 13) { return Math.min(5, Math.max(0, rosterSize - 5)); }
+                if (maxAge <= 16) { return 3; }
+                return 1;
+              }
+
+              function periodRuleText(period, rosterSize, maxAge) {
+                if (period === 0) { return "Elige los 5 jugadores que comenzarán el partido."; }
+                if (period === 1) {
+                  var fresh = requiredNewPlayers(period, rosterSize, maxAge);
+                  var repeats = 5 - fresh;
+                  if (!repeats) { return "Los 5 deben ser nuevos: nadie del 1.er período puede repetir."; }
+                  return "Deben comenzar al menos " + fresh + " jugadores nuevos. Pueden repetir hasta " + repeats + " del 1.er período.";
+                }
+                if (maxAge > 13) { return "Participación libre, luego de cumplir la modalidad " + (maxAge <= 16 ? "5-3" : "5-1") + " en el 2.º período."; }
+                if (period === 2) {
+                  if (rosterSize === 12) { return "Deben entrar 2 jugadores que aún no han jugado y 3 del 1.º o 2.º período."; }
+                  if (rosterSize === 11) { return "Debe entrar 1 jugador que aún no ha jugado y 4 del 1.º o 2.º período."; }
+                  if (rosterSize === 10) { return "Los 5 completan su 2.º período; no hay sustitución."; }
+                  return "Deben jugar 5 que tengan exactamente 1 período. Quien repitió en el 2.º no puede jugar aquí.";
+                }
+                if (period === 3) {
+                  if (rosterSize >= 10) { return "Prioriza jugadores con solo 1 período para que completen el 2.º. No pueden jugar los cuatro primeros corridos."; }
+                  if (rosterSize === 9) { return "Deben entrar 3 con solo 1 período y 2 que ya cumplieron 2; no hay sustitución."; }
+                  return "Debe entrar 1 con solo 1 período y 4 que ya cumplieron 2; no hay sustitución.";
+                }
+                if (rosterSize === 12) { return "Cuatro completan su 2.º período y uno participa en su 3.º."; }
+                if (rosterSize === 11) { return "La guía pide 3 que completen su 2.º y 2 escogidos; la redacción requiere revisión de mesa."; }
+                if (rosterSize === 10) { return "Deben jugar los 5 que no participaron en el 4.º; no hay sustitución."; }
+                if (rosterSize === 8) { return "Cuatro que llevan 2 períodos y uno que entra a su 3.º; no hay sustitución."; }
+                return "Completa la participación obligatoria sin que nadie juegue 5 períodos.";
+              }
+
+              function roleCapacityReached(player, period, potential, maxAge) {
+                var id = playerId(player);
+                var rosterSize = Math.min(potential.length, 12);
+                var selected = lineups[period];
+                var isSelected = selected.indexOf(id) !== -1;
+                if (isSelected) { return null; }
+                if (period > 0 && lineups[period - 1].length !== 5) { return "Completa primero el " + periodLabel(period - 1) + "."; }
+
+                var count = priorCount(id, period);
+                if (period === 1) {
+                  var newRequired = requiredNewPlayers(period, rosterSize, maxAge);
+                  var repeatCapacity = 5 - newRequired;
+                  if (lineups[0].indexOf(id) !== -1) {
+                    var repeatsChosen = selected.filter(function (selectedId) { return lineups[0].indexOf(selectedId) !== -1; }).length;
+                    if (repeatsChosen >= repeatCapacity) {
+                      return repeatCapacity ? "Ya se usaron los " + repeatCapacity + " cupos de repetición permitidos." : "Jugó el 1.er período y este 2.º exige 5 jugadores nuevos.";
+                    }
+                  }
+                  if (selected.length >= 5) { return "El quinteto ya tiene 5 jugadores."; }
+                  return null;
+                }
+
+                if (maxAge > 13) { return null; }
+                if (period === 2) {
+                  var p3New = rosterSize === 12 ? 2 : rosterSize === 11 ? 1 : 0;
+                  if (rosterSize <= 10 && count !== 1) { return count >= 2 ? "Ya cumplió 2 períodos y no puede entrar en el 3.º según esta guía." : "Aún no ha jugado; este cupo debe completar un 2.º período."; }
+                  if (rosterSize >= 11) {
+                    var newChosen = selected.filter(function (selectedId) { return priorCount(selectedId, period) === 0; }).length;
+                    var oldChosen = selected.length - newChosen;
+                    if (count === 0 && newChosen >= p3New) { return "Ya se completaron los " + p3New + " cupos de jugadores nuevos."; }
+                    if (count > 0 && oldChosen >= 5 - p3New) { return "Los cupos para jugadores que ya participaron están completos."; }
+                  }
+                }
+
+                if (period === 3) {
+                  if (lineups[0].indexOf(id) !== -1 && lineups[1].indexOf(id) !== -1 && lineups[2].indexOf(id) !== -1) {
+                    return "No puede jugar los primeros 4 períodos corridos (Regla 4.3).";
+                  }
+                  if (rosterSize >= 10 && count !== 1) { return count > 1 ? "Ya cumplió 2 períodos; este quinteto prioriza quienes llevan 1." : "Todavía no ha participado y la guía pide completar segundos períodos."; }
+                  if (rosterSize === 9 || rosterSize === 8) {
+                    var noviceTarget = rosterSize === 9 ? 3 : 1;
+                    var noviceChosen = selected.filter(function (selectedId) { return priorCount(selectedId, period) === 1; }).length;
+                    var experiencedChosen = selected.length - noviceChosen;
+                    if (count === 1 && noviceChosen >= noviceTarget) { return "Ya se completaron los " + noviceTarget + " cupos de jugadores con 1 período."; }
+                    if (count >= 2 && experiencedChosen >= 5 - noviceTarget) { return "Ya se completaron los cupos de jugadores que llevan 2 períodos."; }
+                  }
+                }
+
+                if (period === 4) {
+                  if (count >= 4) { return "Jugaría un 5.º período, lo cual está prohibido por la Regla 4.3."; }
+                  if (rosterSize === 10 && lineups[3].indexOf(id) !== -1) { return "Jugó el 4.º período y la guía de 10 jugadores exige un quinteto distinto en el 5.º."; }
+                  var targetOne = rosterSize === 12 ? 4 : rosterSize === 11 ? Math.min(3, potential.filter(function (p) { return priorCount(playerId(p), period) === 1; }).length) : 0;
+                  if (targetOne) {
+                    var oneChosen = selected.filter(function (selectedId) { return priorCount(selectedId, period) === 1; }).length;
+                    var multiChosen = selected.length - oneChosen;
+                    if (count === 1 && oneChosen >= targetOne) { return "Ya se completaron los cupos para quienes llegan con 1 período."; }
+                    if (count >= 2 && multiChosen >= 5 - targetOne) { return "El cupo para jugadores que llegan con 2 o más períodos está completo."; }
+                  }
+                  if (rosterSize === 8) {
+                    var twoChosen = selected.filter(function (selectedId) { return priorCount(selectedId, period) === 2; }).length;
+                    var thirdChosen = selected.length - twoChosen;
+                    if (count === 2 && twoChosen >= 4) { return "Ya están los 4 jugadores que llevaban 2 períodos."; }
+                    if (count >= 3 && thirdChosen >= 1) { return "Ya está ocupado el único cupo para quien llega con 3 períodos."; }
+                  }
+                }
+                if (selected.length >= 5) { return "El quinteto ya tiene 5 jugadores."; }
+                return null;
+              }
+
+              function validateParticipation(period, players, potential, maxAge) {
+                var ids = lineups[period];
+                var selected = players.filter(function (player) { return ids.indexOf(playerId(player)) !== -1; });
+                if (ids.length !== 5) { return { valid: false, message: "Selecciona exactamente 5 jugadores: llevas " + ids.length + "/5." }; }
+                if (selected.some(function (player) { return player.blockers.length; })) {
+                  return { valid: false, message: "El quinteto incluye un jugador marcado como no apto. Quítalo o corrige sus datos." };
+                }
+                if (period > 0 && lineups[period - 1].length !== 5) {
+                  return { valid: false, message: "Completa primero el " + periodLabel(period - 1) + "." };
+                }
+                var rosterSize = Math.min(potential.length, 12);
+                if (period === 1) {
+                  var needed = requiredNewPlayers(period, rosterSize, maxAge);
+                  var fresh = ids.filter(function (id) { return lineups[0].indexOf(id) === -1; }).length;
+                  if (fresh < needed) { return { valid: false, message: "Faltan " + (needed - fresh) + " jugador" + (needed - fresh === 1 ? " nuevo" : "es nuevos") + " para cumplir este 2.º período." }; }
+                }
+                if (maxAge <= 13 && period === 3) {
+                  var fourStraight = ids.some(function (id) { return lineups[0].indexOf(id) !== -1 && lineups[1].indexOf(id) !== -1 && lineups[2].indexOf(id) !== -1; });
+                  if (fourStraight) { return { valid: false, message: "Al menos un jugador quedaría en los primeros 4 períodos corridos, prohibido por la Regla 4.3." }; }
+                }
+                if (maxAge <= 13 && period === 4) {
+                  var fivePeriods = ids.some(function (id) { return priorCount(id, period) >= 4; });
+                  if (fivePeriods) { return { valid: false, message: "Al menos un jugador completaría 5 períodos, prohibido por la Regla 4.3." }; }
+                  var allPeriods = [0,1,2,3,4];
+                  var underplayed = potential.filter(function (player) {
+                    var id = playerId(player);
+                    return allPeriods.filter(function (p) { return lineups[p].indexOf(id) !== -1; }).length < 2;
+                  });
+                  if (underplayed.length) { return { valid: false, message: "Aún no completan 2 períodos: " + underplayed.map(function (p) { return p.name; }).join(", ") + "." }; }
+                }
+                var reviews = selected.filter(function (player) { return player.reviews.length; }).length;
+                return { valid: true, message: "Quinteto válido para el " + periodLabel(period) + (reviews ? ", con " + reviews + " jugador" + (reviews === 1 ? "" : "es") + " por confirmar." : ".") };
+              }
+
+              function suggestedParticipation(potential, maxAge) {
+                if (potential.length < 8) { return []; }
+                var scheduled = potential.slice(0, maxAge <= 13 ? 12 : 13);
+                return maxAge <= 13 ? buildYouthPlan(scheduled) : buildOlderPlan(scheduled, maxAge);
+              }
+
+              function renderParticipation(players, potential, maxAge) {
+                currentPlayers = players;
+                currentPotential = potential;
+                currentMaxAge = maxAge;
+                var periodCount = maxAge <= 13 ? 5 : 4;
+                if (activePeriod >= periodCount) { activePeriod = periodCount - 1; }
+                all(lab, "[data-part-period]").forEach(function (button, index) {
+                  var enabled = index < periodCount;
+                  button.disabled = !enabled;
+                  button.classList.toggle("is-active", index === activePeriod);
+                  button.setAttribute("aria-pressed", index === activePeriod ? "true" : "false");
+                });
+                one(lab, "[data-part-rule]").textContent = periodRuleText(activePeriod, Math.min(potential.length, 12), maxAge);
+                one(lab, "[data-part-count]").textContent = lineups[activePeriod].length + "/5";
+
+                var grid = one(lab, "[data-part-player-grid]");
+                grid.innerHTML = "";
+                if (!players.length) {
+                  var blank = document.createElement("div");
+                  blank.className = "pbo-empty";
+                  blank.textContent = "Añade jugadores arriba para comenzar el plan de participación.";
+                  grid.appendChild(blank);
+                }
+                players.forEach(function (player) {
+                  var id = playerId(player);
+                  var selected = lineups[activePeriod].indexOf(id) !== -1;
+                  var participationBlock = player.blockers.length ? player.blockers[0] : roleCapacityReached(player, activePeriod, potential, maxAge);
+                  var button = document.createElement("button");
+                  button.type = "button";
+                  button.className = "pbo-part-player" + (selected ? " is-selected" : "");
+                  button.setAttribute("data-part-player-id", id);
+                  button.setAttribute("aria-pressed", selected ? "true" : "false");
+                  button.disabled = Boolean(participationBlock && !selected);
+                  button.title = participationBlock || (player.reviews.length ? player.reviews.join(" · ") : "Puede entrar en este período");
+
+                  var mark = document.createElement("span");
+                  mark.className = "pbo-part-checkmark";
+                  mark.textContent = "✓";
+                  var copy = document.createElement("span");
+                  copy.className = "pbo-part-player-copy";
+                  var name = document.createElement("strong");
+                  name.textContent = player.name;
+                  var history = document.createElement("span");
+                  var played = [];
+                  for (var p = 0; p < activePeriod; p += 1) { if (lineups[p].indexOf(id) !== -1) { played.push("P" + (p + 1)); } }
+                  history.textContent = participationBlock || (played.length ? "Ya jugó: " + played.join(", ") : "Aún no ha jugado");
+                  copy.appendChild(name);
+                  copy.appendChild(history);
+                  var state = document.createElement("span");
+                  state.className = "pbo-part-player-state";
+                  state.textContent = selected ? "En quinteto" : participationBlock ? "No puede" : player.reviews.length ? "Revisar" : "Puede entrar";
+                  button.appendChild(mark);
+                  button.appendChild(copy);
+                  button.appendChild(state);
+                  grid.appendChild(button);
+                });
+
+                var validation = validateParticipation(activePeriod, players, potential, maxAge);
+                var validationNode = one(lab, "[data-part-validation]");
+                validationNode.classList.remove("is-good", "is-bad");
+                validationNode.classList.add(validation.valid ? "is-good" : "is-bad");
+                validationNode.textContent = validation.message;
+
+                var timeline = one(lab, "[data-part-timeline]");
+                timeline.innerHTML = "";
+                for (var period = 0; period < periodCount; period += 1) {
+                  var item = document.createElement("div");
+                  item.className = "pbo-part-timeline-item";
+                  var periodTitle = document.createElement("strong");
+                  periodTitle.textContent = periodLabel(period);
+                  item.appendChild(periodTitle);
+                  if (!lineups[period].length) {
+                    var empty = document.createElement("span");
+                    empty.textContent = "Sin definir";
+                    item.appendChild(empty);
+                  } else {
+                    lineups[period].forEach(function (id) {
+                      var found = players.filter(function (player) { return playerId(player) === id; })[0];
+                      var label = document.createElement("span");
+                      label.textContent = found ? found.name : "Jugador eliminado";
+                      item.appendChild(label);
+                    });
+                  }
+                  timeline.appendChild(item);
+                }
+                one(lab, "[data-part-next]").textContent = activePeriod === periodCount - 1 ? "Revisar resultado" : "Siguiente período";
+              }
+
+              function renderEqualization(ownCount, maxAge) {
+                one(lab, "[data-rule-own-count]").textContent = String(ownCount);
+                var raw = opponent.value;
+                var result = one(lab, "[data-rule-equal-result]");
+                opponent.disabled = maxAge > 13;
+                if (maxAge > 13) {
+                  one(lab, "[data-rule-difference]").textContent = "0";
+                  result.textContent = "Sin puntos de equiparación: solo aplican hasta la categoría 13U.";
+                  return;
+                }
+                if (raw === "") {
+                  one(lab, "[data-rule-difference]").textContent = "0";
+                  result.textContent = "Añade la cantidad hábil del rival para calcular los 2 puntos por jugador de diferencia.";
+                  return;
+                }
+                var rival = Math.min(13, numberValue(opponent));
+                var difference = Math.abs(ownCount - rival);
+                one(lab, "[data-rule-difference]").textContent = String(difference);
+                if (!difference) {
+                  result.textContent = "Misma cantidad de jugadores hábiles: no corresponde equiparación.";
+                } else if (ownCount > rival) {
+                  result.textContent = "Este equipo tendría " + (difference * 2) + " puntos de equiparación (" + difference + " jugador" + (difference === 1 ? "" : "es") + " de diferencia).";
+                } else {
+                  result.textContent = "El rival tendría " + (difference * 2) + " puntos de equiparación (" + difference + " jugador" + (difference === 1 ? "" : "es") + " de diferencia).";
+                }
+              }
+
+              function renderStatus(players, ready, review, blocked, potential) {
+                var box = one(lab, "[data-rule-status]");
+                var badge = one(lab, "[data-rule-status-badge]");
+                var title = one(lab, "[data-rule-status-title]");
+                var copy = one(lab, "[data-rule-status-copy]");
+                box.classList.remove("is-ready", "is-review", "is-blocked");
+                if (!players.length) {
+                  badge.textContent = "Sin evaluar";
+                  title.textContent = "Añade o completa jugadores";
+                  copy.textContent = "Se necesitan al menos 8 jugadores hábiles para comenzar el partido.";
+                } else if (potential.length < 8) {
+                  box.classList.add("is-blocked");
+                  badge.textContent = "No apto";
+                  title.textContent = "El equipo no llega al mínimo de 8";
+                  copy.textContent = "Hay " + potential.length + " jugadores potencialmente hábiles. Faltan " + (8 - potential.length) + " para poder comenzar.";
+                } else if (ready.length >= 8 && players.length >= 10 && players.length <= 13) {
+                  box.classList.add("is-ready");
+                  badge.textContent = "Listo";
+                  title.textContent = "El mínimo de cancha está confirmado";
+                  copy.textContent = ready.length + " jugadores no presentan impedimentos con la información suministrada. Revisa las alertas individuales antes del juego.";
+                } else {
+                  box.classList.add("is-review");
+                  badge.textContent = "Revisar";
+                  title.textContent = "Puede jugar si se confirman las alertas";
+                  copy.textContent = ready.length + " hábiles confirmados y " + review.length + " por confirmar; " + blocked.length + " no pueden jugar con los datos actuales.";
+                }
+              }
+
+              function evaluate() {
+                var maxAge = parseInt(category.value, 10) || 18;
+                var isPost = phase.value === "post";
+                var players = [];
+                all(roster, "[data-rule-player]").forEach(function (node, index) {
+                  var player = readPlayer(node, index, maxAge, isPost);
+                  if (player) {
+                    setPlayerState(player);
+                    players.push(player);
+                  } else {
+                    emptyPlayerState(node);
+                  }
+                });
+
+                var ready = players.filter(function (p) { return !p.blockers.length && !p.reviews.length; });
+                var review = players.filter(function (p) { return !p.blockers.length && p.reviews.length; });
+                var blocked = players.filter(function (p) { return p.blockers.length; });
+                var potential = players.filter(function (p) { return !p.blockers.length; });
+
+                metric("roster", players.length);
+                metric("ready", ready.length);
+                metric("review", review.length);
+                metric("blocked", blocked.length);
+                renderStatus(players, ready, review, blocked, potential);
+                renderParticipation(players, potential, maxAge);
+                renderPlan(potential, maxAge);
+                renderEqualization(potential.length, maxAge);
+
+                var findings = one(lab, "[data-rule-findings]");
+                findings.innerHTML = "";
+                if (!players.length) {
+                  findings.appendChild(finding("Completa al menos el nombre de un jugador para iniciar el diagnóstico.", "warn"));
+                  return;
+                }
+
+                if (players.length >= 10 && players.length <= 13) {
+                  findings.appendChild(finding("Roster dentro del rango de 10 a 13 jugadores activos (Regla 38).", "good"));
+                } else if (players.length < 10) {
+                  findings.appendChild(finding("El roster tiene " + players.length + ": la Regla 38 exige al menos 10 activos, salvo dispensa de la Liga.", "warn"));
+                } else {
+                  findings.appendChild(finding("El roster supera el máximo de 13 jugadores de la Regla 38.", "bad"));
+                }
+
+                if (potential.length >= 8) {
+                  findings.appendChild(finding(potential.length + " jugadores pueden contar para el mínimo de 8, aunque " + review.length + " aún requieren confirmación (Regla 3.1).", review.length ? "warn" : "good"));
+                } else {
+                  findings.appendChild(finding("Solo " + potential.length + " jugadores pueden contar para cancha; el partido se expone a confiscación y multa (Reglas 3.1–3.2).", "bad"));
+                }
+
+                if (blocked.length) {
+                  findings.appendChild(finding("No pueden jugar: " + blocked.map(function (p) { return p.name; }).join(", ") + ".", "bad"));
+                }
+                if (review.length) {
+                  findings.appendChild(finding("Requieren verificación: " + review.map(function (p) { return p.name; }).join(", ") + ".", "warn"));
+                }
+
+                if (isPost) {
+                  var qualified = players.filter(function (p) { return !p.blockers.length && p.postGames >= 2; }).length;
+                  var missing = Math.max(0, 12 - qualified);
+                  if (missing) {
+                    findings.appendChild(finding("Postemporada: " + qualified + " jugadores acreditan el mínimo. La Regla 38 exige 12 y prevé $" + (missing * 100) + " en penalidades por los " + missing + " faltantes, además de excluir al no cualificado.", "bad"));
+                  } else {
+                    findings.appendChild(finding("Postemporada: 12 o más jugadores acreditan al menos 2 juegos con período obligatorio.", "good"));
+                  }
+                }
+
+                if (maxAge >= 17) {
+                  findings.appendChild(finding("La Regla 4.11 define modalidad 5-1 para 17–18, pero la Regla 3.1 menciona 3 jugadores nuevos para todas las categorías. Se aplica la regla específica y se recomienda confirmar en mesa.", "warn"));
+                }
+                if (maxAge <= 13) {
+                  findings.appendChild(finding("La rotación usa la guía 4.2 y el límite de la Regla 4.3. La redacción de sustituciones excepcionales 4.12 contiene un límite distinto; cualquier excepción debe validarse con la mesa.", "warn"));
+                  if (potential.length > 12) {
+                    findings.appendChild(finding("La guía de participación detalla solamente 8 a 12 jugadores. La propuesta usa los primeros 12; el jugador adicional requiere manejo oficial.", "warn"));
+                  }
+                }
+              }
+
+              addButton.addEventListener("click", function () {
+                addPlayer("");
+                one(roster.lastElementChild, "[data-rule-name]").focus();
+                evaluate();
+              });
+
+              undoButton.addEventListener("click", function () {
+                if (removedPlayer) {
+                  roster.appendChild(removedPlayer);
+                  if (removedLineups) {
+                    removedLineups.forEach(function (hadPlayer, period) {
+                      if (hadPlayer) { lineups[period].push(removedPlayer.getAttribute("data-rule-player-id")); }
+                    });
+                  }
+                  removedPlayer = null;
+                  removedLineups = null;
+                  undoButton.hidden = true;
+                  renumber();
+                  evaluate();
+                }
+              });
+
+              roster.addEventListener("click", function (event) {
+                var remove = event.target.closest("[data-rule-remove]");
+                if (!remove) { return; }
+                removedPlayer = remove.closest("[data-rule-player]");
+                var removedId = removedPlayer.getAttribute("data-rule-player-id");
+                removedLineups = lineups.map(function (lineup) { return lineup.indexOf(removedId) !== -1; });
+                lineups = lineups.map(function (lineup) { return lineup.filter(function (id) { return id !== removedId; }); });
+                removedPlayer.remove();
+                undoButton.hidden = false;
+                renumber();
+                evaluate();
+              });
+
+              roster.addEventListener("input", evaluate);
+              roster.addEventListener("change", evaluate);
+              category.addEventListener("change", function () {
+                activePeriod = 0;
+                lineups = [[], [], [], [], []];
+                evaluate();
+              });
+              phase.addEventListener("change", evaluate);
+              opponent.addEventListener("input", evaluate);
+              runButton.addEventListener("click", evaluate);
+
+              all(lab, "[data-part-period]").forEach(function (button) {
+                button.addEventListener("click", function () {
+                  activePeriod = parseInt(button.getAttribute("data-part-period"), 10) || 0;
+                  renderParticipation(currentPlayers, currentPotential, currentMaxAge);
+                });
+              });
+
+              one(lab, "[data-part-player-grid]").addEventListener("click", function (event) {
+                var button = event.target.closest("[data-part-player-id]");
+                if (!button || button.disabled) { return; }
+                var id = button.getAttribute("data-part-player-id");
+                var index = lineups[activePeriod].indexOf(id);
+                if (index === -1) {
+                  if (lineups[activePeriod].length < 5) { lineups[activePeriod].push(id); }
+                } else {
+                  lineups[activePeriod].splice(index, 1);
+                }
+                renderParticipation(currentPlayers, currentPotential, currentMaxAge);
+              });
+
+              one(lab, "[data-part-clear]").addEventListener("click", function () {
+                lineups[activePeriod] = [];
+                renderParticipation(currentPlayers, currentPotential, currentMaxAge);
+              });
+
+              one(lab, "[data-part-suggest]").addEventListener("click", function () {
+                var plan = suggestedParticipation(currentPotential, currentMaxAge);
+                if (!plan.length) {
+                  one(lab, "[data-part-validation]").textContent = "Se necesitan al menos 8 jugadores potencialmente hábiles para sugerir una rotación.";
+                  return;
+                }
+                lineups = [[], [], [], [], []];
+                plan.forEach(function (period, index) {
+                  lineups[index] = period.map(playerId);
+                });
+                activePeriod = Math.min(1, plan.length - 1);
+                renderParticipation(currentPlayers, currentPotential, currentMaxAge);
+              });
+
+              one(lab, "[data-part-next]").addEventListener("click", function () {
+                var check = validateParticipation(activePeriod, currentPlayers, currentPotential, currentMaxAge);
+                if (!check.valid) {
+                  var validation = one(lab, "[data-part-validation]");
+                  validation.classList.remove("is-good");
+                  validation.classList.add("is-bad");
+                  validation.textContent = check.message;
+                  validation.focus();
+                  return;
+                }
+                var periodCount = currentMaxAge <= 13 ? 5 : 4;
+                if (activePeriod < periodCount - 1) { activePeriod += 1; }
+                renderParticipation(currentPlayers, currentPotential, currentMaxAge);
+              });
+
+              var sourceNames = all(lab, "[data-rule-source-player]").map(function (node) {
+                return node.getAttribute("data-name") || "";
+              }).filter(Boolean);
+              if (sourceNames.length) {
+                sourceNames.forEach(addPlayer);
+              } else {
+                for (var i = 0; i < 8; i += 1) { addPlayer(""); }
+              }
+              evaluate();
+            }
+
+            function bootRuleLabs() {
+              all(document, "[data-pbo-rule-lab]").forEach(initRuleLab);
+            }
+
+            if (document.readyState === "loading") {
+              document.addEventListener("DOMContentLoaded", bootRuleLabs);
+            } else {
+              bootRuleLabs();
             }
           }());
         ]]>
