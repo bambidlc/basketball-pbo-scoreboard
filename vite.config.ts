@@ -47,7 +47,7 @@ export default defineConfig(({ mode }) => {
           navigateFallback: "/index.html",
           // Navigations to /odoo (and the API calls themselves) must hit the network,
           // never the cached SPA shell.
-          navigateFallbackDenylist: [/^\/odoo/],
+          navigateFallbackDenylist: [/^\/odoo/, /^\/api\/public\//],
           runtimeCaching: [
             {
               urlPattern: ({ url }) => url.pathname.startsWith("/odoo"),

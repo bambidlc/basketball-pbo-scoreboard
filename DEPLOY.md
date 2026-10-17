@@ -63,6 +63,13 @@ Then add the environment variables below.
 
 ## Notes
 
+- Public championship follow-along is served at `/juegos`, with individual games
+  at `/juegos/<id>`. It runs outside Odoo and reads the existing finals and
+  semifinals through the supported API. `/api/public/games` and its per-game
+  endpoint expose only the spectator fields, with shared server caching and
+  15-second browser polling. No scoring controls or Odoo credentials are included
+  in this public view. Validate this projection with `npm run test:public`.
+
 - **Security:** the real key lives only in `ODOO_API_KEY` on the server. The
   browser bundle carries the harmless `managed-by-proxy` placeholder; the proxy
   overwrites the `Authorization` header with the real key on every `/odoo`

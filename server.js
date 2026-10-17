@@ -23,6 +23,7 @@ import { extname, join, normalize, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { gzip } from "node:zlib";
 import { promisify } from "node:util";
+import { createPublicGamesService } from "./server/publicGames.mjs";
 
 const compress = promisify(gzip);
 const assetCache = new Map();
@@ -35,6 +36,29 @@ const PROXY_PREFIX = process.env.ODOO_PROXY_PATH || "/odoo";
 const ODOO_URL = (process.env.ODOO_URL || process.env.VITE_ODOO_URL || "").replace(/\/+$/, "");
 const ODOO_API_KEY = process.env.ODOO_API_KEY || "";
 const ODOO_DB = process.env.ODOO_DB || process.env.VITE_ODOO_DB || "";
+
+const publicGames = createPublicGamesService({ call: async (model, method, body) => {
+  const response = await fetch(`${ODOO_URL}/json/2/${model}/${method}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `bearer ${ODOO_API_KEY || process.env.VITE_ODOO_API_KEY || ""}`, "X-Odoo-Database": ODOO_DB },
+    body: JSON.stringify(body), signal: AbortSignal.timeout(12000),
+  });
+  if (!response.ok) throw new Error(`Public game data unavailable (${response.status})`);
+  return response.json();
+} });
+
+async function servePublicGames(req, res, path) {
+  const headers = { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" };
+  if (req.method !== "GET") { send(res, 405, JSON.stringify({ error: "Método no permitido" }), { ...headers, Allow: "GET" }); return; }
+  try {
+    const id = path.match(/^\/api\/public\/games\/([1-9]\d*)$/)?.[1];
+    if (path !== "/api/public/games" && !id) { send(res, 404, JSON.stringify({ error: "Partido no disponible" }), headers); return; }
+    const data = id ? await publicGames.detail(Number(id)) : await publicGames.list();
+    send(res, data ? 200 : 404, JSON.stringify(data || { error: "Partido no disponible" }), headers);
+  } catch {
+    send(res, 503, JSON.stringify({ error: "No se pudo actualizar la información. Reintenta en unos segundos." }), headers);
+  }
+}
 
 const MIME_TYPES = {
   ".html": "text/html; charset=utf-8",
@@ -171,6 +195,10 @@ function proxyOdoo(req, res) {
 
 const server = createServer((req, res) => {
   const url = req.url || "/";
+  if (url.split("?")[0].startsWith("/api/public/games")) {
+    void servePublicGames(req, res, url.split("?")[0]);
+    return;
+  }
   if (url === PROXY_PREFIX || url.startsWith(`${PROXY_PREFIX}/`)) {
     proxyOdoo(req, res);
     return;
