@@ -1,11 +1,11 @@
 import { createRoot } from "react-dom/client";
+import App from "./App";
 import "./styles.css";
 import { deviceStorage } from "./api/deviceStorage";
 
 const root = createRoot(document.getElementById("root")!);
 async function start() {
   try {
-    const { default: App } = await import("./App");
     await deviceStorage.initialize();
     root.render(<App />);
   } catch {
@@ -17,11 +17,7 @@ async function start() {
   }
 }
 // Two tabs with independent in-memory queues must not overwrite the same backup.
-if (/^\/juegos(?:\/|$)/.test(window.location.pathname)) {
-  document.title = "Finales en vivo · PBO 2026";
-  document.documentElement.lang = "es";
-  void import("./PublicGames").then(({ default: PublicGames }) => root.render(<PublicGames />));
-} else if (navigator.locks) {
+if (navigator.locks) {
   void navigator.locks.request("pbo-scorer", { ifAvailable: true }, async lock => {
     if (!lock) {
       root.render(<main className="min-h-dvh bg-neutral-950 p-6 text-neutral-100">
