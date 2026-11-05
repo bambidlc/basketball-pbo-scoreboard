@@ -79,6 +79,13 @@ export const CLUB = {
         ["blocked", "Bloqueado"],
       ],
     }),
+    f("x_review", "Revisión ACB", "selection", {
+      portal: "r",
+      selection: [
+        ["new", "Solicitud nueva"],
+        ["verified", "Verificado por la ACB"],
+      ],
+    }),
     f("x_login_hash", "Código de acceso (hash)", "char"),
     f("x_login_expiry", "Código de acceso vence", "datetime"),
     f("x_login_attempts", "Intentos de acceso", "integer"),

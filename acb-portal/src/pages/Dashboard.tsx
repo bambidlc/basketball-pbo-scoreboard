@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { AlertTriangle, ArrowRight, Plus, UserRound, Users } from "lucide-react";
+import { AlertTriangle, ArrowRight, BadgeCheck, CircleAlert, CircleDot, Plus, ShieldCheck, UserRound, Users } from "lucide-react";
 import { api } from "../api";
 import { Footer } from "../components/Brand";
 import { Alert, Modal, Progress, Seg, StateBadge, TextField, toast } from "../components/ui";
@@ -149,7 +149,8 @@ export function Dashboard() {
   const paid = teams.reduce((sum, t) => sum + (t.amountPaid || 0), 0);
   const players = teams.reduce((sum, t) => sum + (t.playerCount || 0), 0);
   const sent = teams.filter((t) => t.state === "submitted" || t.state === "approved").length;
-  const clubIssues = [...clubValidation.errors, ...clubValidation.warnings];
+  const missing = clubValidation.errors;
+  const recommended = clubValidation.warnings;
 
   return (
     <>
@@ -167,6 +168,10 @@ export function Dashboard() {
               <p>
                 {club.municipality} · {club.email}
               </p>
+              <span className={`welcome__review${club.review === "verified" ? " is-verified" : ""}`}>
+                {club.review === "verified" ? <BadgeCheck /> : <ShieldCheck />}
+                {club.review === "verified" ? "Club verificado por la ACB" : "En revisión de la ACB · puede seguir trabajando"}
+              </span>
             </div>
             {next && (
               <div className="countdown">
@@ -204,18 +209,29 @@ export function Dashboard() {
             </div>
           </div>
 
-          {clubIssues.length > 0 && (
-            <div className="club-card">
+          {(missing.length > 0 || recommended.length > 0) && (
+            <div className={`club-card${missing.length ? " club-card--warn" : ""}`}>
               <div>
-                <div className="h3">Complete el perfil del club</div>
-                <ul>
-                  {clubIssues.slice(0, 4).map((i) => (
-                    <li key={i.field}>{i.message}</li>
+                <div className="h3">
+                  {missing.length + recommended.length === 1
+                    ? "Falta 1 dato en el perfil del club"
+                    : `Faltan ${missing.length + recommended.length} datos en el perfil del club`}
+                </div>
+                <ul className="club-card__list">
+                  {missing.map((i) => (
+                    <li key={i.field}>
+                      <CircleAlert /> {i.message}
+                    </li>
+                  ))}
+                  {recommended.map((i) => (
+                    <li key={i.field} className="is-optional">
+                      <CircleDot /> {i.message}
+                    </li>
                   ))}
                 </ul>
               </div>
-              <Link to="/portal/club" className="btn btn--blue">
-                Ir al perfil
+              <Link to="/portal/club" className={`btn ${missing.length ? "btn--primary" : "btn--blue"}`}>
+                Completar perfil
               </Link>
             </div>
           )}

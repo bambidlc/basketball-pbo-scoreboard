@@ -7,6 +7,7 @@ import {
   MailCheck,
   MapPin,
   Printer,
+  Search,
   ShieldCheck,
   Shirt,
   Users,
@@ -30,15 +31,15 @@ import { Footer, Hero, Ticker, TopBar } from "../components/Brand";
 import { Link } from "../router";
 
 const LEFT = [
-  { label: "Registrar mi club", to: "/registro", orange: true },
-  { label: "Entrar al portal", to: "/entrar" },
+  { label: "Buscar mi club", to: "/mi-club", orange: true },
   { label: "Cómo funciona", to: "#como" },
   { label: "Requisitos", to: "#requisitos" },
   { label: "Costos", to: "#costos" },
   { label: "Fechas clave", to: "#fechas" },
+  { label: "Calendario 2027", to: "#calendario" },
 ];
 const RIGHT = [
-  { label: "Calendario 2027", to: "#calendario" },
+  { label: "Clubes inscritos", to: "/mi-club" },
   { label: "Elegibilidad", to: "#elegibilidad" },
   { label: "Uniformes", to: "#uniformes" },
   { label: "Canchas y acomodos", to: "#canchas" },
@@ -81,15 +82,13 @@ export function Landing() {
           <div className="intro__cta">
             <div className="h3">Inscriba su club en línea</div>
             <p>
-              Registre la información del club, reciba su acceso por email y complete cada equipo: personal técnico, uniformes, jugadores y autorizaciones. El
-              portal genera la Hoja de Uniformes, la Lista Oficial, el Carnet y el Roster listos para imprimir.
+              Busque su club para ver el estado de su inscripción y entre con un código para completar cada equipo: personal técnico, uniformes, jugadores y
+              autorizaciones. El portal genera la Hoja de Uniformes, la Lista Oficial, el Carnet y el Roster listos para imprimir.
             </p>
-            <Link to="/registro" className="btn btn--primary btn--lg btn--block">
-              Registrar mi club
+            <Link to="/mi-club" className="btn btn--primary btn--lg btn--block">
+              <Search /> Buscar mi club
             </Link>
-            <Link to="/entrar" className="btn btn--ghost btn--lg btn--block">
-              Ya tengo acceso · Entrar
-            </Link>
+            <p className="intro__note">¿No aparece? Ahí mismo puede solicitar su inscripción.</p>
           </div>
         </div>
       </section>
@@ -103,12 +102,12 @@ export function Landing() {
           <div className="steps">
             <div className="step">
               <Building2 />
-              <div className="h3">Registre su club</div>
-              <p>Datos del club, presidente, contacto, cancha sede y póliza de seguro.</p>
+              <div className="h3">Busque su club</div>
+              <p>Vea si ya está en el portal y qué le falta. Si no aparece, solicite su inscripción con los datos del club.</p>
             </div>
             <div className="step">
               <MailCheck />
-              <div className="h3">Reciba su acceso</div>
+              <div className="h3">Entre con un código</div>
               <p>Le enviamos un código de 6 dígitos al email del club. Sin contraseñas.</p>
             </div>
             <div className="step">
@@ -398,11 +397,8 @@ export function Landing() {
             </a>
           </p>
           <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap", marginTop: 24 }}>
-            <Link to="/registro" className="btn btn--primary btn--lg">
-              Registrar mi club
-            </Link>
-            <Link to="/entrar" className="btn btn--ghost btn--lg">
-              Entrar al portal
+            <Link to="/mi-club" className="btn btn--primary btn--lg">
+              <Search /> Buscar o inscribir mi club
             </Link>
           </div>
         </div>

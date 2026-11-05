@@ -4,7 +4,12 @@ Two pieces that share one brand layer (`shared/brand.css`, `shared/hero.js`) and
 set of tournament rules (`shared/tournament.js`, `shared/validation.js`):
 
 1. **Registration portal** (this folder, deployed as its own Render web service).
-   Clubs register, get a one-time code by email, and complete every team: staff with
+   Everything starts at **`/mi-club`**: a club searches the clubs already in the portal and
+   sees its status (email confirmed, missing profile fields, teams sent/approved, ACB
+   review). If it is there, it gets a one-time code at the club's email and goes on to
+   complete what is missing; if not, it requests the club in the same page (club,
+   board, court, insurance and access email). Old `/registro` and `/entrar` links
+   redirect there. Inside the portal the club completes every team: staff with
    federation cards, uniform colors, up to 13 players with sizes, school, grade,
    guardian e-signature, birth certificate and photo. It validates eligibility and the
    2-team coach rule, computes fees, and prints the Hoja de Uniformes, Lista Oficial,
@@ -50,7 +55,7 @@ Environment variables (set them in the Render dashboard):
 | `ODOO_API_KEY` | API key of the Odoo user the portal acts as |
 | `SESSION_SECRET` | long random string (recommended) |
 | `PUBLIC_URL` | the portal's public URL, used in emails |
-| `ACB_NOTIFY_EMAIL` | optional: gets a copy of every team submission |
+| `ACB_NOTIFY_EMAIL` | optional: gets every new club request and a copy of every team submission |
 | `MAIL_FROM` | optional, default `ACB Inscripciones <info@pbopr.com>` |
 
 Never set `DEV_LOGIN_CODES` in production. Emails (login codes, submission receipts) are
@@ -76,6 +81,12 @@ Odoo, move those files somewhere permanent and set `ACB_ARCHIVE_URL` accordingly
 archive links will break.
 
 ## Admin workflow in Odoo
+
+**ACB Inscripciones → Clubes** shows every club with a *Revisión ACB* badge. Clubs requested
+from the portal arrive as **Solicitud nueva** (filter *Solicitudes nuevas*; `ACB_NOTIFY_EMAIL`
+also gets an email for each request). Check the data and set it to **Verificado por la ACB**;
+the club sees the change on `/mi-club` and in its portal. To hide a club from the public list
+and block its access, set its *Estado* to **Bloqueado**.
 
 **ACB Inscripciones → Equipos** lists every team with its state and completion.
 Set a submitted team to **Requiere cambios** and write the reason in *Comentarios de ACB al club*:

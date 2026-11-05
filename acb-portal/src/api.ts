@@ -27,7 +27,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     const { error, ...extra } = payload as { error?: string };
     if (response.status === 401 && !path.startsWith("/api/login")) {
       const back = window.location.pathname;
-      navigate(`/entrar${back.startsWith("/portal") ? `?next=${encodeURIComponent(back)}` : ""}`, { replace: true });
+      navigate(`/mi-club${back.startsWith("/portal") ? `?next=${encodeURIComponent(back)}` : ""}`, { replace: true });
     }
     throw new ApiError(response.status, error || "Ocurrió un error. Intente de nuevo.", extra);
   }

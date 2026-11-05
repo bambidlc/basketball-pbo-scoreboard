@@ -39,6 +39,7 @@ type TextProps = {
   inputMode?: "text" | "tel" | "email" | "numeric" | "url";
   autoComplete?: string;
   list?: string;
+  autoFocus?: boolean;
 };
 
 export function TextField({ label, value, onChange, required, hint, error, type = "text", className, ...rest }: TextProps) {

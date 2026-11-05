@@ -37,7 +37,21 @@ export type Club = {
   logoName: string;
   termsAccepted: boolean;
   state: string;
+  review: "new" | "verified" | "";
   lastLogin: string;
+};
+
+/** One row of the public club directory behind the "Mi club" search. */
+export type DirectoryClub = {
+  id: number;
+  name: string;
+  acronym: string;
+  municipality: string;
+  state: "pending" | "active";
+  review: "new" | "verified";
+  emailHint: string;
+  profile: { missing: number; recommended: number; items: string[] };
+  teams: { total: number; draft: number; changes: number; submitted: number; approved: number };
 };
 
 export type TeamSummary = {

@@ -219,7 +219,7 @@ function sectionCourtRules(portal, tone = "") {
   return band(
     `${head("Fecha límite: 30 de diciembre de 2026", "Canchas <em>y acomodos</em>", "Cada club indica las fechas en que su cancha está disponible para los carnavales y los dirigentes con dos equipos solicitan su acomodo.")}
     <div class="acbw-grid acbw-grid--2">
-      <div class="acbw-card"><div class="acbw-card__icon acbw-card__icon--orange">${icon("calendar")}</div><div class="acbw-h3">Disponibilidad de cancha</div><p>Marque en el portal las fechas de la temporada en que su cancha está disponible (todo el día, solo AM o solo PM). También puede enviarlas a bobbyramirez48@yahoo.com antes del 30 de diciembre.</p><div class="acbw-btns" style="margin-top:16px"><a class="acbw-btn acbw-btn--orange acbw-btn--sm" href="${esc(portal)}/entrar">Marcar fechas en el portal</a></div></div>
+      <div class="acbw-card"><div class="acbw-card__icon acbw-card__icon--orange">${icon("calendar")}</div><div class="acbw-h3">Disponibilidad de cancha</div><p>Marque en el portal las fechas de la temporada en que su cancha está disponible (todo el día, solo AM o solo PM). También puede enviarlas a bobbyramirez48@yahoo.com antes del 30 de diciembre.</p><div class="acbw-btns" style="margin-top:16px"><a class="acbw-btn acbw-btn--orange acbw-btn--sm" href="${esc(portal)}/mi-club">Marcar fechas en el portal</a></div></div>
       <div class="acbw-card"><div class="acbw-card__icon">${icon("users")}</div><div class="acbw-h3">Dirigentes con 2 equipos</div><ul class="acbw-list"><li>Máximo 2 equipos por dirigente.</li><li>Nunca dos equipos en la misma categoría.</li><li>Acomodo AM (hasta el mediodía) o PM (después del mediodía); no se aceptan horas específicas.</li><li>No se aceptan nuevos acomodos luego de iniciado el torneo.</li></ul></div>
     </div>`,
     tone,
@@ -251,7 +251,7 @@ function sectionPortalSteps(portal, tone = "white") {
     ["Revise, imprima y envíe", "El portal valida la elegibilidad, calcula los costos y genera la Hoja de Uniformes, la Lista Oficial, el Carnet y el Roster."],
   ];
   return band(
-    `${head("Portal de Inscripción ACB", "Inscriba su club <em>en línea</em>", "Cada club entra con su email y completa todos sus equipos en un solo lugar. Los documentos oficiales salen listos para imprimir.", `<div class="acbw-btns"><a class="acbw-btn acbw-btn--orange" href="${esc(portal)}/registro">Registrar mi club</a><a class="acbw-btn acbw-btn--ghost" href="${esc(portal)}/entrar">Entrar al portal</a></div>`)}
+    `${head("Portal de Inscripción ACB", "Inscriba su club <em>en línea</em>", "Busque su club, vea el estado de su inscripción y complete todos sus equipos en un solo lugar. Si su club no aparece, solicítelo ahí mismo. Los documentos oficiales salen listos para imprimir.", `<div class="acbw-btns"><a class="acbw-btn acbw-btn--orange" href="${esc(portal)}/mi-club">Buscar o inscribir mi club</a></div>`)}
     <div class="acbw-steps">${steps.map(([t, d]) => `<div class="acbw-step"><div class="acbw-h3">${t}</div><p>${d}</p></div>`).join("")}</div>`,
     tone,
     "portal",
@@ -259,7 +259,7 @@ function sectionPortalSteps(portal, tone = "white") {
 }
 
 function cta(portal, title = "Inscriba su club <em>hoy</em>", text = 'Dudas sobre la inscripción: Prof. Roberto "Bobby" Ramírez · 787-632-4848 · bobbyramirez48@yahoo.com') {
-  return `<section class="acbw-cta"><div class="acbw-wrap"><p class="acbw-eyebrow" style="justify-content:center">¿Listo para el Torneo #30?</p><h2 class="acbw-h2">${title}</h2><p>${esc(text)}</p><div class="acbw-btns"><a class="acbw-btn acbw-btn--orange" href="${esc(portal)}/registro">Registrar mi club</a><a class="acbw-btn acbw-btn--light" href="${esc(portal)}/entrar">Entrar al portal</a></div></div></section>`;
+  return `<section class="acbw-cta"><div class="acbw-wrap"><p class="acbw-eyebrow" style="justify-content:center">¿Listo para el Torneo #30?</p><h2 class="acbw-h2">${title}</h2><p>${esc(text)}</p><div class="acbw-btns"><a class="acbw-btn acbw-btn--orange" href="${esc(portal)}/mi-club">Buscar o inscribir mi club</a></div></div></section>`;
 }
 
 function archiveList(archive, items) {
@@ -330,7 +330,7 @@ export function buildPages(ctx) {
     body: [
       band(
         `<div class="acbw-intro"><div><p class="acbw-eyebrow">Asociación de Clubes de Baloncesto de Puerto Rico</p><h1 class="acbw-big">Torneo <em>#30</em></h1><div class="acbw-start"><b>INICIO</b><span>Sábado 6 de febrero de 2027</span></div><div class="acbw-chips"><span class="acbw-chip">ACB Regular</span><span class="acbw-chip acbw-chip--orange">ACB Alternativo</span></div></div>
-        <div class="acbw-panel"><div class="acbw-h3">Inscripción 2027 en línea</div><p>Registre su club, complete cada equipo (personal técnico, uniformes, jugadores y autorizaciones) y el portal genera la Hoja de Uniformes, la Lista Oficial, el Carnet y el Roster listos para imprimir.</p><div class="acbw-btns" style="margin:18px 0 10px"><a class="acbw-btn acbw-btn--orange" href="${esc(portal)}/registro">Registrar mi club</a><a class="acbw-btn acbw-btn--light" href="${esc(portal)}/entrar">Entrar al portal</a></div><div class="acbw-meta">${icon("calendar")} Inscripción presencial: sábados 12 y 19 de diciembre · 10 AM – 3 PM</div><div class="acbw-meta">${icon("pin")} Club de Baloncesto Fraigcomar</div></div></div>`,
+        <div class="acbw-panel"><div class="acbw-h3">Inscripción 2027 en línea</div><p>Busque o inscriba su club, complete cada equipo (personal técnico, uniformes, jugadores y autorizaciones) y el portal genera la Hoja de Uniformes, la Lista Oficial, el Carnet y el Roster listos para imprimir.</p><div class="acbw-btns" style="margin:18px 0 10px"><a class="acbw-btn acbw-btn--orange" href="${esc(portal)}/mi-club">Buscar o inscribir mi club</a></div><div class="acbw-meta">${icon("calendar")} Inscripción presencial: sábados 12 y 19 de diciembre · 10 AM – 3 PM</div><div class="acbw-meta">${icon("pin")} Club de Baloncesto Fraigcomar</div></div></div>`,
         "dark",
       ),
       band(
@@ -581,7 +581,7 @@ export function buildPages(ctx) {
     title_html: pageTitle("Documentos", "Documentos <em>oficiales</em>", "Formularios 2027 para descargar. Si inscribe su club en el portal, estos documentos se generan automáticamente con la información de cada equipo."),
     body: [
       band(
-        `<div class="acbw-grid acbw-grid--2"><div>${head("Temporada 2027", "Formularios <em>2027</em>")}<ul class="acbw-docs">${forms.map(([key, t, s]) => docLink({ href: assets.docs[key], title: t, sub: s, orange: key === "info" })).join("")}</ul></div><div class="acbw-card" style="align-self:start"><div class="acbw-card__icon acbw-card__icon--orange">${icon("check")}</div><div class="acbw-h3">Mejor aún: hágalo en línea</div><p>En el Portal de Inscripción complete cada equipo una sola vez y el portal genera la Hoja de Uniformes, la Lista Oficial, el Carnet y el Roster (3 copias) listos para imprimir y firmar.</p><div class="acbw-btns" style="margin-top:16px"><a class="acbw-btn acbw-btn--orange acbw-btn--sm" href="${esc(portal)}/registro">Registrar mi club</a><a class="acbw-btn acbw-btn--ghost acbw-btn--sm" href="${esc(portal)}/entrar">Entrar al portal</a></div></div></div>`,
+        `<div class="acbw-grid acbw-grid--2"><div>${head("Temporada 2027", "Formularios <em>2027</em>")}<ul class="acbw-docs">${forms.map(([key, t, s]) => docLink({ href: assets.docs[key], title: t, sub: s, orange: key === "info" })).join("")}</ul></div><div class="acbw-card" style="align-self:start"><div class="acbw-card__icon acbw-card__icon--orange">${icon("check")}</div><div class="acbw-h3">Mejor aún: hágalo en línea</div><p>En el Portal de Inscripción complete cada equipo una sola vez y el portal genera la Hoja de Uniformes, la Lista Oficial, el Carnet y el Roster (3 copias) listos para imprimir y firmar.</p><div class="acbw-btns" style="margin-top:16px"><a class="acbw-btn acbw-btn--orange acbw-btn--sm" href="${esc(portal)}/mi-club">Buscar o inscribir mi club</a></div></div></div>`,
       ),
       sectionRequiredDocs("white"),
       band(

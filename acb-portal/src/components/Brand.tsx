@@ -1,5 +1,5 @@
 import { useMemo, type ReactNode } from "react";
-import { LogOut, Mail, MapPin, Phone } from "lucide-react";
+import { LogOut, Mail, MapPin, Phone, Search } from "lucide-react";
 import { heroBackgroundHtml, heroCenterHtml } from "../../shared/hero.js";
 import { Link, navigate, useLocation } from "../router";
 import { api } from "../api";
@@ -48,7 +48,7 @@ export function TopBar({ clubName, children }: { clubName?: string; children?: R
   const { path } = useLocation();
   const logout = async () => {
     await api.post("/api/logout").catch(() => undefined);
-    navigate("/entrar");
+    navigate("/mi-club");
   };
   return (
     <header className="topbar">
@@ -81,11 +81,13 @@ export function TopBar({ clubName, children }: { clubName?: string; children?: R
             </>
           ) : (
             <>
-              <Link to="/registro" className="topbar__link" aria-current={path === "/registro" ? "page" : undefined}>
-                Registrar club
-              </Link>
-              <Link to="/entrar" className="btn btn--primary btn--sm">
-                Entrar
+              {path !== "/" && (
+                <Link to="/" className="topbar__link">
+                  Información
+                </Link>
+              )}
+              <Link to="/mi-club" className="btn btn--primary btn--sm" aria-current={path === "/mi-club" ? "page" : undefined}>
+                <Search /> Mi club
               </Link>
             </>
           )}

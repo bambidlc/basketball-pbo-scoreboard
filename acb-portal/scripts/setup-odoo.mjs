@@ -160,6 +160,7 @@ await ensureView("x_acb_club.list.acb", "x_acb_club", "list", `
   <field name="x_contact_phone" widget="phone"/>
   <field name="x_email" widget="email"/>
   <field name="x_last_login" optional="hide"/>
+  <field name="x_review" widget="badge" decoration-success="x_review == 'verified'" decoration-warning="x_review == 'new'"/>
   <field name="x_state" widget="badge" decoration-success="x_state == 'active'" decoration-danger="x_state == 'blocked'" decoration-muted="x_state == 'pending'"/>
 </list>`);
 
@@ -178,6 +179,7 @@ await ensureView("x_acb_club.form.acb", "x_acb_club", "form", `
     </div>
     <group>
       <group string="Club">
+        <field name="x_review" widget="radio" options="{'horizontal': true}"/>
         <field name="x_email" widget="email"/>
         <field name="x_phone" widget="phone"/>
         <field name="x_municipality"/>
@@ -272,6 +274,9 @@ await ensureView("x_acb_club.search.acb", "x_acb_club", "search", `
   <field name="x_email"/>
   <filter name="active_clubs" string="Activos" domain="[('x_state', '=', 'active')]"/>
   <filter name="pending" string="Email sin verificar" domain="[('x_state', '=', 'pending')]"/>
+  <separator/>
+  <filter name="review_new" string="Solicitudes nuevas" domain="[('x_review', '=', 'new')]"/>
+  <filter name="review_verified" string="Verificados por la ACB" domain="[('x_review', '=', 'verified')]"/>
   <filter name="by_town" string="Municipio" context="{'group_by': 'x_municipality'}"/>
 </search>`);
 

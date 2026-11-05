@@ -11,7 +11,7 @@
 //   ODOO_URL, ODOO_API_KEY, ODOO_DB     Odoo connection (required)
 //   SESSION_SECRET                      optional; derived from ODOO_API_KEY when unset
 //   MAIL_FROM                           default "ACB Inscripciones <info@pbopr.com>"
-//   ACB_NOTIFY_EMAIL                    optional; gets a copy of every team submission
+//   ACB_NOTIFY_EMAIL                    optional; gets new club requests and a copy of every team submission
 //   PUBLIC_URL                          optional; absolute URL used in emails
 //   DEV_LOGIN_CODES=1                   local development only: print codes, send no email
 //   PORT                                default 10000
@@ -88,6 +88,22 @@ function codeHash(clubId, code) {
 function clientIp(req) {
   const forwarded = String(req.headers["x-forwarded-for"] || "").split(",")[0].trim();
   return forwarded || req.socket.remoteAddress || "unknown";
+}
+
+/** "jabes@gmail.com" -> "ja•••@gmail.com": enough to recognize, not to harvest. */
+function maskEmail(email) {
+  const [local = "", domain = ""] = String(email || "").split("@");
+  if (!domain) return "";
+  return `${local.slice(0, local.length > 3 ? 2 : 1)}•••@${domain}`;
+}
+
+/** Club names compared without accents, case, spaces or punctuation. */
+function normName(value) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "");
 }
 
 function isHttps(req) {
@@ -302,7 +318,7 @@ async function sendLoginCode(req, club) {
     x_login_expiry: odooDateTime(new Date(Date.now() + CODE_MINUTES * 60_000)),
     x_login_attempts: 0,
   });
-  const link = `${publicUrl(req)}/entrar?email=${encodeURIComponent(club.x_email)}`;
+  const link = `${publicUrl(req)}/mi-club?email=${encodeURIComponent(club.x_email)}`;
   const spaced = code.split("").join(" ");
   await sendMail({
     to: club.x_email,
@@ -409,6 +425,68 @@ function uniformSummary(team, players) {
   return lines.join("\n");
 }
 
+// ------------------------------------------------------- club directory
+// Public list behind the "Mi club" search: name, town and progress counts
+// only. Contact data never leaves the server and the access email is masked.
+const DIRECTORY_TTL_MS = 15_000;
+let directoryCache = { at: 0, clubs: null };
+const invalidateDirectory = () => {
+  directoryCache = { at: 0, clubs: null };
+};
+
+async function buildDirectory() {
+  const fields = Array.from(new Set([...CLUB_READ.map((f) => f.name), "x_court_dates"]));
+  const rows = await odoo.searchRead(CLUB.model, [["x_state", "!=", "blocked"]], fields, { order: "x_name asc" });
+  const ids = rows.map((r) => r.id);
+  const teams = ids.length ? await odoo.searchRead(TEAM.model, [["x_club_id", "in", ids]], ["x_club_id", "x_state"]) : [];
+  const counts = new Map();
+  for (const team of teams) {
+    const clubId = Array.isArray(team.x_club_id) ? team.x_club_id[0] : team.x_club_id;
+    const c = counts.get(clubId) || { total: 0, draft: 0, changes: 0, submitted: 0, approved: 0 };
+    c.total += 1;
+    if (team.x_state in c) c[team.x_state] += 1;
+    counts.set(clubId, c);
+  }
+  return rows.map((row) => {
+    const club = fromOdoo(CLUB_READ, row);
+    const { errors, warnings } = validateClub(club);
+    return {
+      id: club.id,
+      name: club.name,
+      acronym: club.acronym || "",
+      municipality: club.municipality || "",
+      state: club.state,
+      review: club.review || "new",
+      emailHint: maskEmail(club.email),
+      // Only what is missing (never the values), so a club can see what to complete.
+      profile: { missing: errors.length, recommended: warnings.length, items: [...errors, ...warnings].map((i) => i.message) },
+      teams: counts.get(club.id) || { total: 0, draft: 0, changes: 0, submitted: 0, approved: 0 },
+    };
+  });
+}
+
+async function handleClubDirectory(req) {
+  rateLimit(`directory:${clientIp(req)}`, 120, 600_000);
+  if (!directoryCache.clubs || Date.now() - directoryCache.at > DIRECTORY_TTL_MS) {
+    directoryCache = { at: Date.now(), clubs: await buildDirectory() };
+  }
+  return { clubs: directoryCache.clubs };
+}
+
+async function handleClubCode(req, clubId) {
+  const id = Number(clubId);
+  rateLimit(`login:${clientIp(req)}`, 8, 600_000);
+  rateLimit(`login-club:${id}`, 4, 600_000);
+  const [club] =
+    Number.isInteger(id) && id > 0
+      ? await odoo.searchRead(CLUB.model, [["id", "=", id], ["x_state", "!=", "blocked"]], ["id", "x_state", "x_email", "x_name"], { limit: 1 })
+      : [];
+  if (!club || !club.x_email) throw new HttpError(404, "No encontramos ese club. Búsquelo de nuevo en la lista.");
+  rateLimit(`login-email:${club.x_email}`, 4, 600_000);
+  await sendLoginCode(req, club);
+  return { ok: true, emailHint: maskEmail(club.x_email) };
+}
+
 // ------------------------------------------------------------- handlers
 async function handleRegister(req, body) {
   rateLimit(`register:${clientIp(req)}`, 6, 3600_000);
@@ -423,21 +501,44 @@ async function handleRegister(req, body) {
   const values = toOdoo(CLUB, data);
   values.x_court_dates_text = courtDatesText(values.x_court_dates);
   const [existing] = await odoo.searchRead(CLUB.model, [["x_email", "=", email]], ["id", "x_state", "x_email", "x_name"], { limit: 1 });
+  const key = normName(values.x_name);
+  const others = await odoo.searchRead(CLUB.model, [["x_state", "!=", "blocked"], ["x_email", "!=", email]], ["id", "x_name"]);
+  const sameName = others.find((row) => normName(row.x_name) === key);
+  if (sameName) {
+    throw new HttpError(409, `«${sameName.x_name}» ya está registrado en el portal. Búsquelo en la lista y entre con el código que enviamos al email del club.`, {
+      clubId: sameName.id,
+    });
+  }
   let club = existing;
   if (!existing) {
     const id = await odoo.create(CLUB.model, {
       ...values,
       x_email: email,
       x_state: "pending",
+      x_review: "new",
       x_terms_accepted: true,
       x_terms_accepted_on: odooDateTime(now()),
       x_session_version: 0,
     });
     club = { id, x_email: email, x_name: values.x_name, x_state: "pending" };
+    if (NOTIFY_EMAIL) {
+      const row = (label, value) => (value ? `<tr><td style="padding:4px 12px 4px 0;color:#5b6483">${label}</td><td style="padding:4px 0"><b>${escapeHtml(value)}</b></td></tr>` : "");
+      sendMail({
+        to: NOTIFY_EMAIL,
+        subject: `[ACB 2027] Nueva solicitud de club: ${values.x_name}`,
+        html: emailLayout(
+          "Nueva solicitud de club",
+          `<table style="font-size:14px;border-collapse:collapse">${row("Club", values.x_name)}${row("Municipio", values.x_municipality)}${row("Presidente", values.x_president_name)}${row("Contacto", values.x_contact_name)}${row("Teléfono", values.x_contact_phone || values.x_phone)}${row("Email de acceso", email)}</table>
+           <p style="font-size:13px;color:#5b6483;margin-top:16px">Revísela en Odoo → ACB Inscripciones → Clubes (filtro «Solicitudes nuevas») y márquela como «Verificado por la ACB».</p>`,
+          req,
+        ),
+      }).catch((error) => console.warn("[mail] ACB notice:", error.message));
+    }
   } else if (existing.x_state === "pending") {
     await odoo.write(CLUB.model, [existing.id], { ...values, x_terms_accepted: true, x_terms_accepted_on: odooDateTime(now()) });
     club = { ...existing, x_name: values.x_name || existing.x_name };
   }
+  invalidateDirectory();
   if (club.x_state !== "blocked") await sendLoginCode(req, club);
   return { ok: true, next: "verify", email };
 }
@@ -455,13 +556,15 @@ async function handleLoginRequest(req, body) {
 
 async function handleLoginVerify(req, body, res) {
   rateLimit(`verify:${clientIp(req)}`, 15, 600_000);
-  const email = clean(body.email, 120).toLowerCase();
+  const clubId = Number(body.clubId);
+  const byId = Number.isInteger(clubId) && clubId > 0;
+  const email = byId ? "" : clean(body.email, 120).toLowerCase();
   const code = String(body.code || "").replace(/\D/g, "");
   const invalid = new HttpError(400, "Código inválido o vencido. Solicite uno nuevo.");
-  if (!isEmail(email) || code.length !== 6) throw invalid;
+  if ((!byId && !isEmail(email)) || code.length !== 6) throw invalid;
   const [club] = await odoo.searchRead(
     CLUB.model,
-    [["x_email", "=", email]],
+    byId ? [["id", "=", clubId]] : [["x_email", "=", email]],
     ["id", "x_state", "x_login_hash", "x_login_expiry", "x_login_attempts", "x_session_version", "x_name"],
     { limit: 1 },
   );
@@ -480,6 +583,7 @@ async function handleLoginVerify(req, body, res) {
     x_state: "active",
   });
   sessionCache.delete(club.id);
+  invalidateDirectory();
   res.setHeader("Set-Cookie", issueSession(req, club));
   return { ok: true, clubName: club.x_name };
 }
@@ -496,6 +600,7 @@ async function handleUpdateClub(req, body) {
   if ("x_name" in values && !values.x_name) throw new HttpError(422, "El nombre del club es requerido.");
   if ("x_court_dates" in values) values.x_court_dates_text = courtDatesText(values.x_court_dates);
   if (Object.keys(values).length) await odoo.write(CLUB.model, [clubId], values);
+  invalidateDirectory();
   const club = await loadClub(clubId);
   return { club, clubValidation: validateClub(club) };
 }
@@ -864,6 +969,8 @@ function sendJson(res, status, payload) {
 
 const routes = [
   ["GET", /^\/api\/health$/, async () => ({ ok: true, programs: PROGRAMS.length })],
+  ["GET", /^\/api\/clubs$/, (req) => handleClubDirectory(req)],
+  ["POST", /^\/api\/clubs\/(\d+)\/code$/, (req, _b, _r, m) => handleClubCode(req, m[1])],
   ["POST", /^\/api\/register$/, (req, body) => handleRegister(req, body)],
   ["POST", /^\/api\/login\/request$/, (req, body) => handleLoginRequest(req, body)],
   ["POST", /^\/api\/login\/verify$/, (req, body, res) => handleLoginVerify(req, body, res)],
