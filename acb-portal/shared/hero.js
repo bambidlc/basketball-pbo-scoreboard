@@ -70,7 +70,7 @@ export function heroCenterHtml({ years = 30, season = 2027, logoSrc = "/acb-logo
 /** Full hero as one HTML string (for the Odoo website). */
 export function heroHtml({ left = [], right = [], compact = false, logoSrc, tag, years, season } = {}) {
   const pill = (item) =>
-    `<li style="--shift:${item.shift || 0}"><a class="acb-pill${item.orange ? " acb-pill--orange" : ""}${item.active ? " is-active" : ""}" href="${item.href}"${item.active ? ' aria-current="page"' : ""}>${item.label}</a></li>`;
+    `<li><a class="acb-pill${item.orange ? " acb-pill--orange" : ""}${item.active ? " is-active" : ""}" href="${item.href}"${item.active ? ' aria-current="page"' : ""}>${item.label}</a></li>`;
   return `<section class="acb-hero${compact ? " acb-hero--compact" : ""}" aria-label="ACB Torneo #30">
   <div class="acb-hero__bg">${heroBackgroundHtml()}</div>
   <div class="acb-hero__inner">
@@ -86,5 +86,3 @@ export function tickerHtml(messages) {
   return `<div class="acb-ticker" role="marquee" aria-label="Avisos"><div class="acb-ticker__track">${items}${items}</div></div>`;
 }
 
-/** Stagger used by the original banner (px toward the ball). */
-export const PILL_SHIFT = [36, 4, -22, -34, -6, 30];

@@ -3,7 +3,7 @@
 // from the same tournament data the registration portal uses, so dates,
 // fees and rules never drift between the website and the portal.
 
-import { heroHtml, tickerHtml, PILL_SHIFT } from "../shared/hero.js";
+import { heroHtml, tickerHtml } from "../shared/hero.js";
 import {
   ADULT_SIZES,
   CALENDAR,
@@ -295,7 +295,7 @@ function pageTitle(crumb, title, lead) {
 }
 
 function hero({ active, logo, compact }) {
-  const mark = (pills) => pills.map((p, i) => ({ ...p, shift: PILL_SHIFT[i], active: p.href === active }));
+  const mark = (pills) => pills.map((p) => ({ ...p, active: p.href === active }));
   return heroHtml({ left: mark(LEFT_PILLS), right: mark(RIGHT_PILLS), compact, logoSrc: logo, tag: "Torneo #30 · Temporada 2027" });
 }
 

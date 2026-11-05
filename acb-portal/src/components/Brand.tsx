@@ -1,6 +1,6 @@
 import { useMemo, type ReactNode } from "react";
 import { LogOut, Mail, MapPin, Phone } from "lucide-react";
-import { heroBackgroundHtml, heroCenterHtml, PILL_SHIFT } from "../../shared/hero.js";
+import { heroBackgroundHtml, heroCenterHtml } from "../../shared/hero.js";
 import { Link, navigate, useLocation } from "../router";
 import { api } from "../api";
 
@@ -9,8 +9,8 @@ export type PillItem = { label: string; to: string; orange?: boolean };
 export function Hero({ left, right, tag, compact }: { left: PillItem[]; right: PillItem[]; tag?: string; compact?: boolean }) {
   const bg = useMemo(() => ({ __html: heroBackgroundHtml() }), []);
   const center = useMemo(() => ({ __html: heroCenterHtml({ logoSrc: "/acb-logo.png", tag }) }), [tag]);
-  const pill = (item: PillItem, index: number) => (
-    <li key={item.label} style={{ ["--shift" as string]: PILL_SHIFT[index] ?? 0 }}>
+  const pill = (item: PillItem) => (
+    <li key={item.label}>
       <Link to={item.to} className={`acb-pill${item.orange ? " acb-pill--orange" : ""}`}>
         {item.label}
       </Link>
