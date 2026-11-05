@@ -1,0 +1,32 @@
+{
+  "name": "acb-portal",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Portal de Inscripción ACB 2027 — clubes, equipos y jugadores (Odoo).",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "dev:api": "DEV_LOGIN_CODES=1 PORT=8787 node server.mjs",
+    "build": "tsc -b && vite build",
+    "start": "node server.mjs",
+    "setup:odoo": "node scripts/setup-odoo.mjs",
+    "website:odoo": "node odoo-website/build-site.mjs",
+    "test": "node --test \"tests/**/*.test.mjs\""
+  },
+  "dependencies": {
+    "lucide-react": "1.11.0",
+    "react": "19.2.5",
+    "react-dom": "19.2.5"
+  },
+  "devDependencies": {
+    "@types/node": "25.6.0",
+    "@types/react": "19.2.14",
+    "@types/react-dom": "19.2.3",
+    "@vitejs/plugin-react": "6.0.1",
+    "typescript": "6.0.3",
+    "vite": "8.0.10"
+  }
+}
