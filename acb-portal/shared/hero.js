@@ -59,10 +59,7 @@ export function heroCenterHtml({ years = 30, season = 2027, logoSrc = "/acb-logo
       ${layered(years, "acb-hero__years-num")}
       ${layered("años", "acb-hero__years-word")}
     </div>
-    <div class="acb-hero__season">
-      ${layered("Torneo", "acb-hero__season-word")}
-      ${layered(season, "acb-hero__season-num")}
-    </div>`;
+    <div class="acb-hero__season">${layered(`Torneo ${season}`, "acb-hero__season-num")}</div>`;
 }
 
 /** Full hero as one HTML string (for the Odoo website). */
