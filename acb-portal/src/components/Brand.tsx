@@ -1,13 +1,12 @@
 import { useMemo, type ReactNode } from "react";
 import { LogOut, Mail, MapPin, Phone, Search } from "lucide-react";
-import { heroBackgroundHtml, heroCenterHtml } from "../../shared/hero.js";
+import { heroCenterHtml } from "../../shared/hero.js";
 import { Link, navigate, useLocation } from "../router";
 import { api } from "../api";
 
 export type PillItem = { label: string; to: string; orange?: boolean };
 
 export function Hero({ left, right, compact }: { left: PillItem[]; right: PillItem[]; compact?: boolean }) {
-  const bg = useMemo(() => ({ __html: heroBackgroundHtml() }), []);
   const center = useMemo(() => ({ __html: heroCenterHtml({ logoSrc: "/acb-logo.png" }) }), []);
   const pill = (item: PillItem) => (
     <li key={item.label}>
@@ -18,7 +17,6 @@ export function Hero({ left, right, compact }: { left: PillItem[]; right: PillIt
   );
   return (
     <section className={`acb-hero${compact ? " acb-hero--compact" : ""}`} aria-label="ACB Torneo #30">
-      <div className="acb-hero__bg" dangerouslySetInnerHTML={bg} />
       <div className="acb-hero__inner">
         <ul className="acb-hero__pills acb-hero__pills--left">{left.map(pill)}</ul>
         <div className="acb-hero__center" dangerouslySetInnerHTML={center} />

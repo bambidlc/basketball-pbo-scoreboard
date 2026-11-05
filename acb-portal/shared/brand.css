@@ -1,5 +1,5 @@
 /* ACB brand layer — shared by the registration portal and the Odoo website.
-   Recreates the classic acbpr.com banner (arena, glossy blue buttons, ACB ball,
+   Recreates the classic acbpr.com banner (glossy blue buttons, ACB ball,
    "30 años" line and season numerals) as crisp, responsive HTML/CSS. */
 
 .acb {
@@ -34,120 +34,13 @@
   isolation: isolate;
   overflow: hidden;
   color: #fff;
-  background: #02050f;
+  /* plain neutral background; one variable so it is easy to change */
+  background: var(--acb-hero-bg, #eceef2);
   min-height: clamp(380px, 40vw, 560px);
   display: flex;
   align-items: stretch;
 }
 .acb-hero--compact { min-height: clamp(260px, 24vw, 340px); }
-
-.acb-hero__bg { position: absolute; inset: 0; z-index: -1; pointer-events: none; }
-.acb-hero__bg > * { position: absolute; }
-
-/* deep arena atmosphere */
-.acb-hero__sky {
-  inset: 0;
-  background:
-    radial-gradient(60% 55% at 50% 38%, rgba(47, 107, 255, 0.28), transparent 70%),
-    radial-gradient(40% 40% at 12% 20%, rgba(91, 155, 255, 0.18), transparent 70%),
-    radial-gradient(40% 40% at 88% 20%, rgba(91, 155, 255, 0.18), transparent 70%),
-    linear-gradient(180deg, #050a1d 0%, #0a1233 45%, #070b1c 70%, #04060f 100%);
-}
-/* stadium lights: a row of bright bokeh points */
-.acb-hero__lights {
-  left: -5%;
-  right: -5%;
-  top: 2%;
-  height: 34%;
-  background:
-    radial-gradient(circle at 6% 30%, rgba(255, 255, 255, 0.95) 0 2px, rgba(170, 200, 255, 0.35) 3px, transparent 14px),
-    radial-gradient(circle at 15% 12%, rgba(255, 255, 255, 0.9) 0 2px, rgba(170, 200, 255, 0.3) 3px, transparent 12px),
-    radial-gradient(circle at 24% 40%, rgba(255, 255, 255, 0.9) 0 1.5px, rgba(170, 200, 255, 0.3) 3px, transparent 11px),
-    radial-gradient(circle at 33% 18%, rgba(255, 255, 255, 0.95) 0 2px, rgba(170, 200, 255, 0.35) 3px, transparent 14px),
-    radial-gradient(circle at 41% 52%, rgba(255, 255, 255, 0.8) 0 1.5px, transparent 10px),
-    radial-gradient(circle at 59% 48%, rgba(255, 255, 255, 0.8) 0 1.5px, transparent 10px),
-    radial-gradient(circle at 67% 16%, rgba(255, 255, 255, 0.95) 0 2px, rgba(170, 200, 255, 0.35) 3px, transparent 14px),
-    radial-gradient(circle at 76% 38%, rgba(255, 255, 255, 0.9) 0 1.5px, rgba(170, 200, 255, 0.3) 3px, transparent 11px),
-    radial-gradient(circle at 85% 10%, rgba(255, 255, 255, 0.9) 0 2px, rgba(170, 200, 255, 0.3) 3px, transparent 12px),
-    radial-gradient(circle at 94% 30%, rgba(255, 255, 255, 0.95) 0 2px, rgba(170, 200, 255, 0.35) 3px, transparent 14px),
-    radial-gradient(60% 80% at 50% 0%, rgba(140, 180, 255, 0.18), transparent 70%);
-  animation: acb-twinkle 6s ease-in-out infinite alternate;
-}
-/* angled LED sponsor boards */
-.acb-hero__board {
-  top: 13%;
-  height: 7%;
-  width: 46%;
-  display: flex;
-  align-items: center;
-  overflow: hidden;
-  white-space: nowrap;
-  font: 800 clamp(9px, 1vw, 13px) / 1 var(--acb-font-display);
-  letter-spacing: 0.32em;
-  text-transform: uppercase;
-  color: rgba(190, 210, 255, 0.55);
-  background: linear-gradient(180deg, rgba(40, 60, 140, 0.55), rgba(15, 25, 70, 0.7));
-  border-top: 1px solid rgba(140, 170, 255, 0.35);
-  border-bottom: 1px solid rgba(0, 0, 0, 0.6);
-  box-shadow: 0 0 30px rgba(60, 100, 255, 0.25);
-}
-.acb-hero__board--left { left: -4%; transform: perspective(500px) rotateY(18deg) rotateZ(-3deg); transform-origin: left center; }
-.acb-hero__board--right { right: -4%; transform: perspective(500px) rotateY(-18deg) rotateZ(3deg); transform-origin: right center; justify-content: flex-end; }
-.acb-hero__board--low { top: 56%; height: 6%; opacity: 0.75; }
-.acb-hero__board--low.acb-hero__board--left { transform: perspective(500px) rotateY(14deg) rotateZ(2deg); }
-.acb-hero__board--low.acb-hero__board--right { transform: perspective(500px) rotateY(-14deg) rotateZ(-2deg); }
-.acb-hero__board span { padding: 0 1.5em; }
-
-/* crowd / stands */
-.acb-hero__stands {
-  left: 0;
-  right: 0;
-  top: 22%;
-  height: 42%;
-  background:
-    radial-gradient(circle, rgba(170, 180, 210, 0.22) 1px, transparent 1.6px) 0 0 / 7px 6px,
-    radial-gradient(circle, rgba(120, 130, 170, 0.18) 1px, transparent 1.6px) 3px 3px / 9px 7px,
-    linear-gradient(180deg, transparent, rgba(5, 8, 20, 0.85) 85%);
-  -webkit-mask-image: linear-gradient(180deg, transparent 0%, #000 30%, #000 70%, transparent 100%);
-  mask-image: linear-gradient(180deg, transparent 0%, #000 30%, #000 70%, transparent 100%);
-  filter: blur(0.4px);
-}
-
-/* hardwood floor in perspective */
-.acb-hero__floor {
-  left: -25%;
-  right: -25%;
-  bottom: -2%;
-  height: 46%;
-  transform: perspective(520px) rotateX(58deg);
-  transform-origin: 50% 100%;
-  background:
-    linear-gradient(180deg, rgba(255, 240, 220, 0.0) 0%, rgba(255, 236, 210, 0.28) 30%, rgba(255, 236, 210, 0) 60%),
-    repeating-linear-gradient(90deg, rgba(60, 22, 4, 0.28) 0 2px, transparent 2px 38px),
-    repeating-linear-gradient(90deg, rgba(255, 210, 160, 0.08) 0 14px, transparent 14px 31px),
-    linear-gradient(180deg, #7a3b12 0%, #c47332 30%, #dd8c46 55%, #b85f22 100%);
-  box-shadow: inset 0 40px 60px rgba(4, 6, 15, 0.85);
-}
-.acb-hero__floor svg { position: absolute; inset: 0; width: 100%; height: 100%; }
-.acb-hero__floor-shine {
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 40%;
-  background: radial-gradient(45% 70% at 50% 100%, rgba(255, 210, 160, 0.35), transparent 70%);
-  mix-blend-mode: screen;
-}
-.acb-hero__vignette {
-  inset: 0;
-  background: radial-gradient(120% 90% at 50% 45%, transparent 55%, rgba(0, 0, 0, 0.65) 100%);
-}
-.acb-hero__hoop {
-  top: 6%;
-  right: 2.5%;
-  width: clamp(80px, 11vw, 150px);
-  opacity: 0.92;
-  filter: drop-shadow(0 8px 18px rgba(0, 0, 0, 0.6));
-}
 
 /* content
    Desktop follows the classic banner: six equal, straight bars per side whose
@@ -318,7 +211,7 @@
   display: block;
   width: var(--ball);
   height: auto;
-  filter: drop-shadow(0 18px 30px rgba(0, 0, 0, 0.55)) drop-shadow(0 0 40px rgba(242, 106, 27, 0.35));
+  filter: drop-shadow(0 16px 26px rgba(11, 22, 64, 0.3)) drop-shadow(0 0 34px rgba(242, 106, 27, 0.22));
   animation: acb-float 7s ease-in-out infinite;
 }
 /* "Torneo 2027": one line in the season lettering. It keeps the 2027 size and
@@ -342,7 +235,7 @@
 .acb-hero__season-num .l-back {
   color: #13235e;
   -webkit-text-stroke: clamp(7px, 0.1em, 12px) #13235e;
-  filter: drop-shadow(0 8px 0 #070d2b) drop-shadow(0 14px 22px rgba(0, 0, 0, 0.6));
+  filter: drop-shadow(0 8px 0 #070d2b) drop-shadow(0 12px 18px rgba(11, 22, 64, 0.22));
 }
 .acb-hero__season-num .l-mid { color: #2a3f8f; -webkit-text-stroke: clamp(3px, 0.04em, 5px) #2a3f8f; transform: translateY(3px); }
 .acb-hero__season-num .l-front {
@@ -377,10 +270,9 @@
 /* ------------------------------------------------------------- keyframes */
 @keyframes acb-marquee { from { transform: translateX(0); } to { transform: translateX(-50%); } }
 @keyframes acb-float { 0%, 100% { transform: translateY(0) rotate(0deg); } 50% { transform: translateY(-8px) rotate(-1.5deg); } }
-@keyframes acb-twinkle { from { opacity: 0.75; } to { opacity: 1; } }
 
 @media (prefers-reduced-motion: reduce) {
-  .acb-hero__logo, .acb-hero__lights, .acb-ticker__track { animation: none; }
+  .acb-hero__logo, .acb-ticker__track { animation: none; }
 }
 
 /* ---------------------------------------------------------------- mobile */
@@ -410,8 +302,6 @@
     text-align: center;
     white-space: normal;
   }
-  .acb-hero__hoop { display: none; }
   .acb-hero__logo { width: min(64vw, 280px); }
   .acb-hero__years { margin-top: -22px; font-size: 54px; }
-  .acb-hero__floor { height: 30%; }
 }
