@@ -296,7 +296,7 @@ function pageTitle(crumb, title, lead) {
 
 function hero({ active, logo, compact }) {
   const mark = (pills) => pills.map((p) => ({ ...p, active: p.href === active }));
-  return heroHtml({ left: mark(LEFT_PILLS), right: mark(RIGHT_PILLS), compact, logoSrc: logo, tag: "Torneo #30 · Temporada 2027" });
+  return heroHtml({ left: mark(LEFT_PILLS), right: mark(RIGHT_PILLS), compact, logoSrc: logo });
 }
 
 // ------------------------------------------------------------------ pages

@@ -6,9 +6,9 @@ import { api } from "../api";
 
 export type PillItem = { label: string; to: string; orange?: boolean };
 
-export function Hero({ left, right, tag, compact }: { left: PillItem[]; right: PillItem[]; tag?: string; compact?: boolean }) {
+export function Hero({ left, right, compact }: { left: PillItem[]; right: PillItem[]; compact?: boolean }) {
   const bg = useMemo(() => ({ __html: heroBackgroundHtml() }), []);
-  const center = useMemo(() => ({ __html: heroCenterHtml({ logoSrc: "/acb-logo.png", tag }) }), [tag]);
+  const center = useMemo(() => ({ __html: heroCenterHtml({ logoSrc: "/acb-logo.png" }) }), []);
   const pill = (item: PillItem) => (
     <li key={item.label}>
       <Link to={item.to} className={`acb-pill${item.orange ? " acb-pill--orange" : ""}`}>

@@ -1,6 +1,6 @@
 /* ACB brand layer — shared by the registration portal and the Odoo website.
    Recreates the classic acbpr.com banner (arena, glossy blue buttons, ACB ball,
-   "años" badge and season numerals) as crisp, responsive HTML/CSS. */
+   "30 años" line and season numerals) as crisp, responsive HTML/CSS. */
 
 .acb {
   --acb-ink: #0b1640;
@@ -167,22 +167,20 @@
   width: 100%;
   max-width: 1280px;
   margin: 0 auto;
-  padding: clamp(18px, 3vw, 34px) clamp(14px, 3vw, 32px) clamp(28px, 4vw, 44px);
+  padding: clamp(26px, 4vw, 52px) clamp(14px, 3vw, 32px) clamp(28px, 4vw, 44px);
   display: grid;
   grid-template-columns: minmax(0, 1fr) var(--ball) minmax(0, 1fr);
   grid-template-areas:
-    ". years ."
     "left ball right"
-    ". season ."
-    ". tag .";
+    ". years ."
+    ". season .";
   align-items: center;
   align-content: center;
 }
 .acb-hero__center { display: contents; }
 .acb-hero__years,
 .acb-hero__logo,
-.acb-hero__season,
-.acb-hero__tag {
+.acb-hero__season {
   position: relative;
   justify-self: center;
   text-align: center;
@@ -191,7 +189,6 @@
 .acb-hero__years { grid-area: years; }
 .acb-hero__logo { grid-area: ball; z-index: 2; /* in front of the bars */ }
 .acb-hero__season { grid-area: season; }
-.acb-hero__tag { grid-area: tag; }
 
 .acb-hero__pills {
   display: flex;
@@ -288,39 +285,35 @@
   text-shadow: 0 2px 0 rgba(90, 30, 0, 0.6);
 }
 .acb-pill--orange::after { background: #fff; box-shadow: 0 0 10px #fff; }
+/* "30 años" on one line, tucked under the ball, above the season */
 .acb-hero__years {
-  position: relative;
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  margin-bottom: clamp(-26px, -2vw, -14px);
+  align-items: baseline;
+  justify-content: center;
+  gap: calc(var(--u, 16px) * 0.55);
+  margin-top: calc(var(--u, 16px) * -2.8);
   z-index: 3;
-}
-.acb-hero__years svg { width: clamp(90px, 9vw, 130px); height: auto; overflow: visible; margin-bottom: -6px; }
-.acb-hero__years-num {
-  position: relative;
-  display: inline-block;
-  font: 800 italic clamp(48px, 5.6vw, 82px) / 0.9 var(--acb-font-round);
-  letter-spacing: -0.02em;
+  font: 800 italic calc(var(--u, 16px) * 5.4) / 0.9 var(--acb-font-round);
+  letter-spacing: -0.01em;
   transform: skewX(-6deg);
-  color: transparent;
 }
-.acb-hero__years-num span { position: relative; display: block; }
-.acb-hero__years-num .l-back,
-.acb-hero__years-num .l-mid,
-.acb-hero__years-num .l-front { grid-area: 1 / 1; }
-.acb-hero__years-num .stack { display: grid; }
-.acb-hero__years-num .l-back { z-index: 1; }
-.acb-hero__years-num .l-mid { z-index: 2; }
-.acb-hero__years-num .l-front { z-index: 3; }
-.acb-hero__years-num .l-back { -webkit-text-stroke: 14px #0b1a55; color: #0b1a55; filter: drop-shadow(0 6px 0 #050b2a); }
-.acb-hero__years-num .l-mid { -webkit-text-stroke: 7px #ffffff; color: #ffffff; }
+.acb-hero__years-num,
+.acb-hero__years-word { display: grid; }
+.acb-hero__years-word { font-size: 0.6em; letter-spacing: 0.01em; }
+.acb-hero__years .l-back,
+.acb-hero__years .l-mid,
+.acb-hero__years .l-front { grid-area: 1 / 1; position: relative; }
+.acb-hero__years .l-back { z-index: 1; color: #0b1a55; -webkit-text-stroke: 0.17em #0b1a55; filter: drop-shadow(0 5px 0 #050b2a); }
+.acb-hero__years .l-mid { z-index: 2; color: #ffffff; -webkit-text-stroke: 0.085em #ffffff; }
+.acb-hero__years .l-front { z-index: 3; }
 .acb-hero__years-num .l-front {
   background: linear-gradient(180deg, #4f8dff 0%, #1d4ed8 48%, #0d2f9a 100%);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
 }
+.acb-hero__years-word .l-mid { color: #0b1a55; -webkit-text-stroke: 0.1em #0b1a55; }
+.acb-hero__years-word .l-front { color: #ffffff; }
 .acb-hero__logo {
   display: block;
   width: var(--ball);
@@ -330,7 +323,7 @@
 }
 .acb-hero__season {
   display: grid;
-  margin-top: clamp(-34px, -2.6vw, -16px);
+  margin-top: calc(var(--u, 16px) * -0.5);
   font: 400 clamp(60px, 8.6vw, 128px) / 0.86 var(--acb-font-block);
   letter-spacing: 0.02em;
   z-index: 3;
@@ -350,13 +343,6 @@
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
-}
-.acb-hero__tag {
-  margin-top: 10px;
-  font: 700 clamp(11px, 1vw, 13px) / 1.2 var(--acb-font-display);
-  letter-spacing: 0.34em;
-  text-transform: uppercase;
-  color: rgba(220, 230, 255, 0.85);
 }
 
 /* ---------------------------------------------------------------- ticker */
@@ -419,5 +405,6 @@
   }
   .acb-hero__hoop { display: none; }
   .acb-hero__logo { width: min(64vw, 280px); }
+  .acb-hero__years { margin-top: -22px; font-size: 54px; }
   .acb-hero__floor { height: 30%; }
 }

@@ -49,33 +49,28 @@ export function heroBackgroundHtml() {
     <div class="acb-hero__vignette"></div>`;
 }
 
-export function heroCenterHtml({ years = 30, season = 2027, logoSrc = "/acb-logo.png", tag = "" } = {}) {
+export function heroCenterHtml({ years = 30, season = 2027, logoSrc = "/acb-logo.png" } = {}) {
+  // Three stacked copies make the outlined, shadowed lettering; screen readers get one.
   const layered = (text, cls) =>
-    `<span class="${cls}"><span class="l-back">${text}</span><span class="l-mid">${text}</span><span class="l-front">${text}</span></span>`;
+    `<span class="${cls}"><span class="l-back" aria-hidden="true">${text}</span><span class="l-mid" aria-hidden="true">${text}</span><span class="l-front">${text}</span></span>`;
   return `
-    <div class="acb-hero__years">
-      <svg viewBox="0 0 140 52" aria-hidden="true">
-        <path id="acbArc" d="M14 50 Q70 4 126 50" fill="none"/>
-        <text font-family="'Baloo 2', 'Arial Rounded MT Bold', sans-serif" font-weight="800" font-size="30" fill="#fff" stroke="#0b1a55" stroke-width="5" paint-order="stroke" letter-spacing="1">
-          <textPath href="#acbArc" startOffset="50%" text-anchor="middle">años</textPath>
-        </text>
-      </svg>
-      <span class="acb-hero__years-num">${layered(years, "stack")}</span>
-    </div>
     <img class="acb-hero__logo" src="${logoSrc}" alt="ACB — Asociación de Clubes de Baloncesto de Puerto Rico" width="627" height="533"/>
-    ${layered(season, "acb-hero__season")}
-    ${tag ? `<div class="acb-hero__tag">${tag}</div>` : ""}`;
+    <div class="acb-hero__years">
+      ${layered(years, "acb-hero__years-num")}
+      ${layered("años", "acb-hero__years-word")}
+    </div>
+    ${layered(season, "acb-hero__season")}`;
 }
 
 /** Full hero as one HTML string (for the Odoo website). */
-export function heroHtml({ left = [], right = [], compact = false, logoSrc, tag, years, season } = {}) {
+export function heroHtml({ left = [], right = [], compact = false, logoSrc, years, season } = {}) {
   const pill = (item) =>
     `<li><a class="acb-pill${item.orange ? " acb-pill--orange" : ""}${item.active ? " is-active" : ""}" href="${item.href}"${item.active ? ' aria-current="page"' : ""}>${item.label}</a></li>`;
   return `<section class="acb-hero${compact ? " acb-hero--compact" : ""}" aria-label="ACB Torneo #30">
   <div class="acb-hero__bg">${heroBackgroundHtml()}</div>
   <div class="acb-hero__inner">
     <ul class="acb-hero__pills acb-hero__pills--left">${left.map(pill).join("")}</ul>
-    <div class="acb-hero__center">${heroCenterHtml({ logoSrc, tag, years, season })}</div>
+    <div class="acb-hero__center">${heroCenterHtml({ logoSrc, years, season })}</div>
     <ul class="acb-hero__pills acb-hero__pills--right">${right.map(pill).join("")}</ul>
   </div>
 </section>`;

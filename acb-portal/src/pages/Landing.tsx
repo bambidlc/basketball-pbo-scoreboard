@@ -53,7 +53,7 @@ export function Landing() {
   return (
     <>
       <TopBar />
-      <Hero left={LEFT} right={RIGHT} tag="Portal de Inscripción · Torneo #30" />
+      <Hero left={LEFT} right={RIGHT} />
       <Ticker
         messages={[
           "Inscripción de equipos: sábados 12 y 19 de diciembre de 2026 · Club de Baloncesto Fraigcomar",
