@@ -71,12 +71,12 @@ export const LEFT_PILLS = [
   { label: "Canchas", href: "/canchas" },
 ];
 export const RIGHT_PILLS = [
-  { label: "Campeones", href: "/campeones" },
-  { label: "Resoluciones", href: "/resoluciones" },
   { label: "Directiva", href: "/directiva" },
+  { label: "Campeones", href: "/campeones" },
   { label: "Documentos", href: "/documentos" },
   { label: "Reglamento", href: "/reglamento" },
   { label: "Fotos", href: "/fotos" },
+  { label: "Resoluciones", href: "/resoluciones" },
 ];
 const TOP_NAV = [
   { label: "Inicio", href: "/" },
