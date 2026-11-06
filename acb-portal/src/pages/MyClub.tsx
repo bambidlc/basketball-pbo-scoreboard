@@ -24,6 +24,7 @@ import { api } from "../api";
 import { Footer, TopBar } from "../components/Brand";
 import { Alert, EmailField } from "../components/ui";
 import { VerifyCode } from "../components/VerifyCode";
+import { clearPortalCache } from "../portal";
 import { ClubRequestForm } from "../clubRequest";
 import { highlightParts, hueFor, initials, matchesClub, pendingSteps } from "../clubSearch";
 import { navigate, useLocation } from "../router";
@@ -36,6 +37,7 @@ let directoryCache: { at: number; clubs: DirectoryClub[]; loginCode: boolean } |
 
 /** Opens the club portal after a successful sign-in (keeps a /portal… `next`). */
 function enterPortal() {
+  clearPortalCache();
   const next = new URLSearchParams(window.location.search).get("next");
   navigate(next && next.startsWith("/portal") ? next : "/portal", { replace: true });
 }
@@ -66,6 +68,48 @@ function useDirectory() {
 }
 
 // ------------------------------------------------------------ pieces
+/** Email sign-in card used while the emailed codes are off (old /entrar?email= links land here). */
+function EnterWithEmail({ initialEmail, onBack }: { initialEmail: string; onBack: () => void }) {
+  const [email, setEmail] = useState(initialEmail);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const enter = async () => {
+    const value = email.trim().toLowerCase();
+    if (!isEmail(value)) return setError("Escriba el email de acceso del club.");
+    setBusy(true);
+    setError("");
+    try {
+      await api.post("/api/login/request", { email: value });
+      enterPortal();
+    } catch (e) {
+      setError((e as Error).message);
+      setBusy(false);
+    }
+  };
+  return (
+    <form
+      className="mc-access__form"
+      onSubmit={(e) => {
+        e.preventDefault();
+        void enter();
+      }}
+    >
+      <span className="mc-access__icon">
+        <Mail />
+      </span>
+      <h2 className="h2">Entre al portal</h2>
+      <p className="muted">Escriba el email de acceso de su club para entrar a crear y completar sus equipos.</p>
+      <EmailField label="Email de acceso del club" value={email} onChange={setEmail} error={error || undefined} autoFocus={!initialEmail} />
+      <button className="btn btn--primary btn--lg btn--block" disabled={busy}>
+        {busy ? "Entrando…" : "Entrar al portal"} {!busy && <ArrowRight />}
+      </button>
+      <button type="button" className="link-back" onClick={onBack}>
+        <ArrowLeft /> Buscar mi club
+      </button>
+    </form>
+  );
+}
+
 const STEPS = [
   { title: "Busque su club", text: "Vea si ya está y qué le falta. Si no aparece, solicítelo." },
   { title: "Entre al portal", text: "Con el email de acceso del club." },
@@ -590,7 +634,13 @@ export function MyClub() {
   }, [view, reload]);
 
   let content;
-  if (view === "verify") {
+  if (view === "verify" && !loginCode) {
+    content = (
+      <div className="mc-card mc-card--narrow">
+        <EnterWithEmail initialEmail={email} onBack={() => go()} />
+      </div>
+    );
+  } else if (view === "verify") {
     content = (
       <div className="mc-card mc-card--narrow">
         <VerifyCode

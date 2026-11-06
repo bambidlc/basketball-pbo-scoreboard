@@ -525,7 +525,11 @@ async function handleClubEnter(req, clubId, body, res) {
 // ------------------------------------------------------------- handlers
 async function handleRegister(req, body, res) {
   rateLimit(`register:${clientIp(req)}`, 6, 3600_000);
-  if (body.hp) return { ok: true, next: "verify" }; // honeypot
+  if (body.hp) {
+    // Spam trap filled: log it and say so, rather than faking success (that hid real requests).
+    console.warn(`[register] spam trap filled from ${clientIp(req)}; request not saved`);
+    throw new HttpError(400, "No pudimos enviar la solicitud. Recargue la página e intente de nuevo.");
+  }
   const email = clean(body.email, 120).toLowerCase();
   if (!isEmail(email)) throw new HttpError(422, "Escriba un email válido para el acceso del club.");
   if (!body.acceptTerms) throw new HttpError(422, "Debe aceptar los términos de la ACB para continuar.");

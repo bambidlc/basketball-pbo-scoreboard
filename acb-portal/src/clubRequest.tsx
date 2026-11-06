@@ -203,16 +203,11 @@ export function ClubRequestForm({
               <EmailField label="Email de acceso del club" required value={email} onChange={setEmail} />
               <EmailField label="Confirme el email" required value={email2} onChange={setEmail2} />
             </div>
-            <input
-              type="text"
-              tabIndex={-1}
-              autoComplete="off"
-              value={hp}
-              onChange={(e) => setHp(e.target.value)}
-              className="sr-only"
-              aria-hidden="true"
-              name="company_url"
-            />
+            {/* Spam trap. display:none keeps browser autofill (which filled the old visually-hidden
+                "company_url" field and silently dropped real requests) away from it. */}
+            <div hidden aria-hidden="true">
+              <input type="text" tabIndex={-1} autoComplete="off" value={hp} onChange={(e) => setHp(e.target.value)} name="acb_trap_field" />
+            </div>
             <div style={{ marginTop: 16 }}>
               <Check checked={terms} onChange={setTerms}>
                 Certifico que la información es correcta y que represento al club. Acepto que la ACB use estos datos para la inscripción y organización del
