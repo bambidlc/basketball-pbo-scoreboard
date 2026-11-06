@@ -485,6 +485,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .mc-todo ol { display: grid; gap: 4px; margin: 8px 0 0; padding-left: 20px; }
 .mc-todo--done { background: #ecfdf3; color: #05603a; }
 .mc-access { display: flex; flex-direction: column; gap: 12px; padding: 24px 26px; border-left: 1px solid var(--acb-line); background: var(--acb-paper); }
+.mc-access__form { display: flex; flex: 1; flex-direction: column; gap: 12px; }
 .mc-access__icon { display: grid; place-items: center; width: 48px; height: 48px; border-radius: 15px; background: var(--acb-navy-900); color: #fff; }
 .mc-access__icon svg { width: 24px; height: 24px; }
 .mc-access .h3 { margin: 0; }

@@ -32,14 +32,16 @@ function loadDraft(initialName: string): ClubDraft {
 export function ClubRequestForm({
   initialName,
   clubs,
+  loginCode,
   onCancel,
   onSubmitted,
   onShowClub,
 }: {
   initialName: string;
   clubs: DirectoryClub[];
+  loginCode: boolean;
   onCancel: () => void;
-  onSubmitted: (email: string) => void;
+  onSubmitted: (email: string, signedIn: boolean) => void;
   onShowClub: (id: number) => void;
 }) {
   const [club, setClub] = useState<ClubDraft>(() => loadDraft(initialName));
@@ -106,7 +108,7 @@ export function ClubRequestForm({
     if (!terms) return setError("Debe aceptar los términos para continuar.");
     setBusy(true);
     try {
-      const result = await api.post<{ email: string }>("/api/register", {
+      const result = await api.post<{ email: string; next?: string }>("/api/register", {
         club,
         email: email.trim().toLowerCase(),
         acceptTerms: terms,
@@ -117,7 +119,7 @@ export function ClubRequestForm({
       } catch {
         /* ignore */
       }
-      onSubmitted(result.email || email.trim().toLowerCase());
+      onSubmitted(result.email || email.trim().toLowerCase(), result.next === "portal");
     } catch (e) {
       const err = e as ApiError;
       if (err.status === 409 && typeof err.extra?.clubId === "number") {
@@ -146,7 +148,8 @@ export function ClubRequestForm({
         <div>
           <h2 className="h2">Solicitar inscripción del club</h2>
           <p className="muted">
-            Complete la información de su club. Al final confirmará su email con un código y entrará directo a crear sus equipos. La ACB revisará su solicitud.
+            Complete la información de su club. Al final {loginCode ? "confirmará su email con un código y " : ""}entrará directo a crear sus equipos. La ACB revisará su
+            solicitud.
           </p>
         </div>
       </div>
@@ -189,7 +192,11 @@ export function ClubRequestForm({
               </div>
               <div>
                 <div className="h3">Acceso al portal</div>
-                <p>Este email será el usuario del club. Cada vez que entre le enviaremos un código de un solo uso; no hay contraseñas.</p>
+                <p>
+                  {loginCode
+                    ? "Este email será el usuario del club. Cada vez que entre le enviaremos un código de un solo uso; no hay contraseñas."
+                    : "Este email será el usuario del club: con él entrará al portal cuando quiera. No hay contraseñas."}
+                </p>
               </div>
             </div>
             <div className="grid grid--2">
@@ -236,7 +243,7 @@ export function ClubRequestForm({
           <div className="similar" role="status">
             <div>
               <b>¿Su club ya está en el portal?</b>
-              <span className="small"> Si es uno de estos, no lo registre otra vez: vea su estado y entre con su código.</span>
+              <span className="small"> Si es uno de estos, no lo registre otra vez: vea su estado y entre desde allí.</span>
             </div>
             <div className="similar__list">
               {similar.map((c) => (
@@ -263,7 +270,7 @@ export function ClubRequestForm({
             </button>
           ) : (
             <button type="button" className="btn btn--primary btn--lg" disabled={busy} onClick={submit}>
-              {busy ? "Enviando…" : "Enviar solicitud y recibir código"} {!busy && <Send />}
+              {busy ? "Enviando…" : loginCode ? "Enviar solicitud y recibir código" : "Enviar solicitud y entrar"} {!busy && <Send />}
             </button>
           )}
         </div>

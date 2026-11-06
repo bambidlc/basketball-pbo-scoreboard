@@ -4,8 +4,9 @@
 //   * Exposes a narrow JSON API under /api that reads/writes ONLY the x_acb_*
 //     models in Odoo, always scoped to the signed-in club. There is no generic
 //     Odoo proxy: the Odoo API key never reaches the browser.
-//   * Passwordless sign-in: a 6-digit code is emailed (through Odoo) to the
-//     club's registered email; a signed, HttpOnly session cookie follows.
+//   * Passwordless sign-in with the club's access email. With
+//     LOGIN_CODE_REQUIRED=1 a 6-digit code is also emailed (through Odoo) and
+//     must be typed; a signed, HttpOnly session cookie follows.
 //
 // Environment:
 //   ODOO_URL, ODOO_API_KEY, ODOO_DB     Odoo connection (required)
@@ -13,6 +14,8 @@
 //   MAIL_FROM                           default "ACB Inscripciones <info@pbopr.com>"
 //   ACB_NOTIFY_EMAIL                    optional; gets new club requests and a copy of every team submission
 //   PUBLIC_URL                          optional; absolute URL used in emails
+//   LOGIN_CODE_REQUIRED=1               require the emailed 6-digit code to sign in. Off for now (the codes were
+//                                       not arriving): the club's access email alone opens its portal.
 //   DEV_LOGIN_CODES=1                   local development only: print codes, send no email
 //   PORT                                default 10000
 
@@ -45,6 +48,7 @@ const env = { ...(await readDotEnv(join(ROOT, ".env"))), ...process.env };
 
 const PORT = Number(env.PORT) || 10000;
 const DEV_CODES = env.DEV_LOGIN_CODES === "1";
+const REQUIRE_CODE = env.LOGIN_CODE_REQUIRED === "1";
 const MAIL_FROM = env.MAIL_FROM || "ACB Inscripciones <info@pbopr.com>";
 const NOTIFY_EMAIL = (env.ACB_NOTIFY_EMAIL || "").trim();
 const SECRET = env.SESSION_SECRET || createHmac("sha256", String(env.ODOO_API_KEY || "")).update("acb-portal-session-v1").digest("hex");
@@ -470,7 +474,7 @@ async function handleClubDirectory(req) {
   if (!directoryCache.clubs || Date.now() - directoryCache.at > DIRECTORY_TTL_MS) {
     directoryCache = { at: Date.now(), clubs: await buildDirectory() };
   }
-  return { clubs: directoryCache.clubs };
+  return { clubs: directoryCache.clubs, loginCode: REQUIRE_CODE };
 }
 
 async function handleClubCode(req, clubId) {
@@ -487,8 +491,39 @@ async function handleClubCode(req, clubId) {
   return { ok: true, emailHint: maskEmail(club.x_email) };
 }
 
+/** Opens the club's portal without an emailed code (while LOGIN_CODE_REQUIRED is off). */
+async function signInDirect(req, res, club) {
+  await odoo.write(CLUB.model, [club.id], {
+    x_last_login: odooDateTime(now()),
+    ...(club.x_state === "pending" ? { x_state: "active" } : {}),
+  });
+  sessionCache.delete(club.id);
+  invalidateDirectory();
+  res.setHeader("Set-Cookie", issueSession(req, club));
+  return { ok: true, next: "portal", clubName: club.x_name };
+}
+
+/** Club page → "Entrar": the visitor types the club's access email. */
+async function handleClubEnter(req, clubId, body, res) {
+  if (REQUIRE_CODE) throw new HttpError(403, "Entre con el código que enviamos al email del club.");
+  const id = Number(clubId);
+  rateLimit(`login:${clientIp(req)}`, 10, 600_000);
+  rateLimit(`login-club:${id}`, 6, 600_000);
+  const email = clean(body.email, 120).toLowerCase();
+  const [club] =
+    Number.isInteger(id) && id > 0
+      ? await odoo.searchRead(CLUB.model, [["id", "=", id], ["x_state", "!=", "blocked"]], ["id", "x_state", "x_email", "x_name", "x_session_version"], { limit: 1 })
+      : [];
+  if (!club || !club.x_email) throw new HttpError(404, "No encontramos ese club. Búsquelo de nuevo en la lista.");
+  if (!isEmail(email)) throw new HttpError(422, "Escriba el email de acceso del club.");
+  if (email !== String(club.x_email).trim().toLowerCase()) {
+    throw new HttpError(403, `Ese no es el email de acceso del club (${maskEmail(club.x_email)}). Revíselo o llame a la ACB.`);
+  }
+  return signInDirect(req, res, club);
+}
+
 // ------------------------------------------------------------- handlers
-async function handleRegister(req, body) {
+async function handleRegister(req, body, res) {
   rateLimit(`register:${clientIp(req)}`, 6, 3600_000);
   if (body.hp) return { ok: true, next: "verify" }; // honeypot
   const email = clean(body.email, 120).toLowerCase();
@@ -500,12 +535,12 @@ async function handleRegister(req, body) {
 
   const values = toOdoo(CLUB, data);
   values.x_court_dates_text = courtDatesText(values.x_court_dates);
-  const [existing] = await odoo.searchRead(CLUB.model, [["x_email", "=", email]], ["id", "x_state", "x_email", "x_name"], { limit: 1 });
+  const [existing] = await odoo.searchRead(CLUB.model, [["x_email", "=", email]], ["id", "x_state", "x_email", "x_name", "x_session_version"], { limit: 1 });
   const key = normName(values.x_name);
   const others = await odoo.searchRead(CLUB.model, [["x_state", "!=", "blocked"], ["x_email", "!=", email]], ["id", "x_name"]);
   const sameName = others.find((row) => normName(row.x_name) === key);
   if (sameName) {
-    throw new HttpError(409, `«${sameName.x_name}» ya está registrado en el portal. Búsquelo en la lista y entre con el código que enviamos al email del club.`, {
+    throw new HttpError(409, `«${sameName.x_name}» ya está registrado en el portal. Búsquelo en la lista y entre desde allí.`, {
       clubId: sameName.id,
     });
   }
@@ -539,16 +574,24 @@ async function handleRegister(req, body) {
     club = { ...existing, x_name: values.x_name || existing.x_name };
   }
   invalidateDirectory();
-  if (club.x_state !== "blocked") await sendLoginCode(req, club);
+  if (club.x_state === "blocked") return { ok: true, next: "verify", email };
+  if (!REQUIRE_CODE) return { ...(await signInDirect(req, res, club)), email };
+  await sendLoginCode(req, club);
   return { ok: true, next: "verify", email };
 }
 
-async function handleLoginRequest(req, body) {
+async function handleLoginRequest(req, body, res) {
   const email = clean(body.email, 120).toLowerCase();
   rateLimit(`login:${clientIp(req)}`, 8, 600_000);
   rateLimit(`login-email:${email}`, 4, 600_000);
   if (!isEmail(email)) throw new HttpError(422, "Escriba un email válido.");
-  const [club] = await odoo.searchRead(CLUB.model, [["x_email", "=", email]], ["id", "x_state", "x_email", "x_name"], { limit: 1 });
+  const [club] = await odoo.searchRead(CLUB.model, [["x_email", "=", email]], ["id", "x_state", "x_email", "x_name", "x_session_version"], { limit: 1 });
+  if (!REQUIRE_CODE) {
+    if (!club || club.x_state === "blocked") {
+      throw new HttpError(404, "No encontramos un club con ese email. Búsquelo en la lista o solicite su inscripción.");
+    }
+    return signInDirect(req, res, club);
+  }
   if (club && club.x_state !== "blocked") await sendLoginCode(req, club);
   // Same answer whether or not the email exists.
   return { ok: true };
@@ -971,8 +1014,9 @@ const routes = [
   ["GET", /^\/api\/health$/, async () => ({ ok: true, programs: PROGRAMS.length })],
   ["GET", /^\/api\/clubs$/, (req) => handleClubDirectory(req)],
   ["POST", /^\/api\/clubs\/(\d+)\/code$/, (req, _b, _r, m) => handleClubCode(req, m[1])],
-  ["POST", /^\/api\/register$/, (req, body) => handleRegister(req, body)],
-  ["POST", /^\/api\/login\/request$/, (req, body) => handleLoginRequest(req, body)],
+  ["POST", /^\/api\/clubs\/(\d+)\/enter$/, (req, body, res, m) => handleClubEnter(req, m[1], body, res)],
+  ["POST", /^\/api\/register$/, (req, body, res) => handleRegister(req, body, res)],
+  ["POST", /^\/api\/login\/request$/, (req, body, res) => handleLoginRequest(req, body, res)],
   ["POST", /^\/api\/login\/verify$/, (req, body, res) => handleLoginVerify(req, body, res)],
   ["POST", /^\/api\/logout$/, async (req, _body, res) => {
     res.setHeader("Set-Cookie", sessionCookie(req, "", 0));

@@ -79,8 +79,8 @@ export function Landing() {
             </div>
             <div className="step">
               <MailCheck />
-              <div className="h3">Entre con un código</div>
-              <p>Le enviamos un código de 6 dígitos al email del club. Sin contraseñas.</p>
+              <div className="h3">Entre con su email</div>
+              <p>Use el email de acceso del club. Sin contraseñas.</p>
             </div>
             <div className="step">
               <Users />

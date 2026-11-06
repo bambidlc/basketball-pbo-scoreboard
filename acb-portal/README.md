@@ -6,8 +6,8 @@ set of tournament rules (`shared/tournament.js`, `shared/validation.js`):
 1. **Registration portal** (this folder, deployed as its own Render web service).
    Everything starts at **`/mi-club`**: a club searches the clubs already in the portal and
    sees its status (email confirmed, missing profile fields, teams sent/approved, ACB
-   review). If it is there, it gets a one-time code at the club's email and goes on to
-   complete what is missing; if not, it requests the club in the same page (club,
+   review). If it is there, it enters with the club's access email (plus a one-time
+   emailed code when `LOGIN_CODE_REQUIRED=1`) and goes on to complete what is missing; if not, it requests the club in the same page (club,
    board, court, insurance and access email). Old `/registro` and `/entrar` links
    redirect there. Inside the portal the club completes every team: staff with
    federation cards, uniform colors, up to 13 players with sizes, school, grade,
@@ -57,6 +57,7 @@ Environment variables (set them in the Render dashboard):
 | `PUBLIC_URL` | the portal's public URL, used in emails |
 | `ACB_NOTIFY_EMAIL` | optional: gets every new club request and a copy of every team submission |
 | `MAIL_FROM` | optional, default `ACB Inscripciones <info@pbopr.com>` |
+| `LOGIN_CODE_REQUIRED` | `1` to require the emailed 6-digit code at sign-in. Unset for now (the codes were not arriving): the club's access email alone opens its portal |
 
 Never set `DEV_LOGIN_CODES` in production. Emails (login codes, submission receipts) are
 sent through Odoo's outgoing mail server.

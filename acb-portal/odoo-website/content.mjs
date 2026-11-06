@@ -248,7 +248,7 @@ function sectionRequiredDocs(tone = "white") {
 
 function sectionPortalSteps(portal, tone = "white") {
   const steps = [
-    ["Registre su club", "Datos del club, directiva, cancha sede y póliza de seguro. Recibirá un código de acceso por email."],
+    ["Registre su club", "Datos del club, directiva, cancha sede y póliza de seguro. Luego entra al portal con el email del club."],
     ["Cree sus equipos", "Categoría, rama, programa y personal técnico con copia de las tarjetas federativas."],
     ["Uniformes y jugadores", "Colores del uniforme y hasta 13 jugadores con tallas, escuela, grado y autorización firmada del encargado."],
     ["Revise, imprima y envíe", "El portal valida la elegibilidad, calcula los costos y genera la Hoja de Uniformes, la Lista Oficial, el Carnet y el Roster."],

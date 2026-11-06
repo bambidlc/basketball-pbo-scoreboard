@@ -32,19 +32,27 @@ import { isEmail } from "../../shared/validation.js";
 import type { DirectoryClub } from "../types";
 
 // ---------------------------------------------------------------- data
-let directoryCache: { at: number; clubs: DirectoryClub[] } | null = null;
+let directoryCache: { at: number; clubs: DirectoryClub[]; loginCode: boolean } | null = null;
+
+/** Opens the club portal after a successful sign-in (keeps a /portal… `next`). */
+function enterPortal() {
+  const next = new URLSearchParams(window.location.search).get("next");
+  navigate(next && next.startsWith("/portal") ? next : "/portal", { replace: true });
+}
 
 function useDirectory() {
   const [clubs, setClubs] = useState<DirectoryClub[] | null>(directoryCache?.clubs ?? null);
+  const [loginCode, setLoginCode] = useState(directoryCache?.loginCode ?? false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const load = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
-      const result = await api.get<{ clubs: DirectoryClub[] }>("/api/clubs");
-      directoryCache = { at: Date.now(), clubs: result.clubs };
+      const result = await api.get<{ clubs: DirectoryClub[]; loginCode?: boolean }>("/api/clubs");
+      directoryCache = { at: Date.now(), clubs: result.clubs, loginCode: Boolean(result.loginCode) };
       setClubs(result.clubs);
+      setLoginCode(Boolean(result.loginCode));
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -54,13 +62,13 @@ function useDirectory() {
   useEffect(() => {
     if (!directoryCache || Date.now() - directoryCache.at > 15_000) void load();
   }, [load]);
-  return { clubs, loading, error, reload: load };
+  return { clubs, loginCode, loading, error, reload: load };
 }
 
 // ------------------------------------------------------------ pieces
 const STEPS = [
   { title: "Busque su club", text: "Vea si ya está y qué le falta. Si no aparece, solicítelo." },
-  { title: "Confirme su acceso", text: "Código de 6 dígitos al email del club." },
+  { title: "Entre al portal", text: "Con el email de acceso del club." },
   { title: "Complete lo que falte", text: "Perfil, equipos y jugadores. Luego envíe a la ACB." },
 ];
 
@@ -186,6 +194,7 @@ function SearchView({
   openClub,
   startRequest,
   goEmail,
+  loginCode,
 }: {
   clubs: DirectoryClub[] | null;
   loading: boolean;
@@ -196,6 +205,7 @@ function SearchView({
   openClub: (id: number) => void;
   startRequest: () => void;
   goEmail: (email: string) => void;
+  loginCode: boolean;
 }) {
   const results = useMemo(() => (clubs || []).filter((c) => matchesClub(c, query)), [clubs, query]);
   const total = clubs?.length || 0;
@@ -211,8 +221,9 @@ function SearchView({
     setEmailBusy(true);
     setEmailError("");
     try {
-      await api.post("/api/login/request", { email: value });
-      goEmail(value);
+      const result = await api.post<{ next?: string }>("/api/login/request", { email: value });
+      if (result.next === "portal") enterPortal();
+      else goEmail(value);
     } catch (e) {
       setEmailError((e as Error).message);
       setEmailBusy(false);
@@ -310,7 +321,7 @@ function SearchView({
           >
             <EmailField label="Email de acceso del club" value={email} onChange={setEmail} error={emailError || undefined} autoFocus />
             <button className="btn btn--blue" disabled={emailBusy}>
-              {emailBusy ? "Enviando…" : "Enviarme el código"}
+              {loginCode ? (emailBusy ? "Enviando…" : "Enviarme el código") : emailBusy ? "Entrando…" : "Entrar"}
             </button>
           </form>
         )}
@@ -319,15 +330,17 @@ function SearchView({
   );
 }
 
-function ClubView({ club, loading, onBack }: { club: DirectoryClub | undefined; loading: boolean; onBack: () => void }) {
+function ClubView({ club, loading, loginCode, onBack }: { club: DirectoryClub | undefined; loading: boolean; loginCode: boolean; onBack: () => void }) {
   const [sent, setSent] = useState<string>("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
+  const [email, setEmail] = useState("");
   const clubId = club?.id;
 
   useEffect(() => {
     setSent("");
     setError("");
+    setEmail("");
   }, [clubId]);
 
   if (!club) {
@@ -358,6 +371,21 @@ function ClubView({ club, loading, onBack }: { club: DirectoryClub | undefined; 
     } catch (e) {
       setError((e as Error).message);
     } finally {
+      setSending(false);
+    }
+  };
+
+  // While codes are off, the club's access email alone opens its portal.
+  const enter = async () => {
+    const value = email.trim().toLowerCase();
+    if (!isEmail(value)) return setError("Escriba el email de acceso del club.");
+    setSending(true);
+    setError("");
+    try {
+      await api.post(`/api/clubs/${club.id}/enter`, { email: value });
+      enterPortal();
+    } catch (e) {
+      setError((e as Error).message);
       setSending(false);
     }
   };
@@ -422,7 +450,30 @@ function ClubView({ club, loading, onBack }: { club: DirectoryClub | undefined; 
           </section>
 
           <section className="mc-access" aria-label="Entrar al portal del club">
-            {!sent ? (
+            {!loginCode ? (
+              <form
+                className="mc-access__form"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  void enter();
+                }}
+              >
+                <span className="mc-access__icon">
+                  <Mail />
+                </span>
+                <div className="h3">¿Es su club?</div>
+                <p>
+                  Entre para completar lo que falta. Escriba el email de acceso del club: <b>{club.emailHint}</b>
+                </p>
+                <EmailField label="Email de acceso del club" value={email} onChange={setEmail} error={error || undefined} />
+                <button className="btn btn--primary btn--lg btn--block" disabled={sending}>
+                  {sending ? "Entrando…" : "Entrar al portal"} {!sending && <ArrowRight />}
+                </button>
+                <p className="small mc-access__help">
+                  ¿No recuerda el email o ya no lo usa? Llame a la ACB (Prof. Bobby Ramírez) al <a href="tel:+17876324848">787-632-4848</a>.
+                </p>
+              </form>
+            ) : !sent ? (
               <>
                 <span className="mc-access__icon">
                   <Mail />
@@ -508,7 +559,7 @@ export function MyClub() {
   const email = (params.get("email") || "").trim().toLowerCase();
   const justRequested = params.get("nuevo") === "1";
   const next = params.get("next") || "";
-  const { clubs, loading, error, reload } = useDirectory();
+  const { clubs, loginCode, loading, error, reload } = useDirectory();
   const [query, setQuery] = useState("");
 
   const go = (values: Record<string, string> = {}) => {
@@ -562,12 +613,13 @@ export function MyClub() {
         initialName={params.get("nombre") || query}
         clubs={clubs || []}
         onCancel={() => go()}
-        onSubmitted={(value) => go({ email: value, nuevo: "1" })}
+        loginCode={loginCode}
+        onSubmitted={(value, signedIn) => (signedIn ? enterPortal() : go({ email: value, nuevo: "1" }))}
         onShowClub={(id) => go({ club: String(id) })}
       />
     );
   } else if (view === "club") {
-    content = <ClubView club={selected} loading={!clubs || loading} onBack={() => go()} />;
+    content = <ClubView club={selected} loading={!clubs || loading} loginCode={loginCode} onBack={() => go()} />;
   } else {
     content = (
       <SearchView
@@ -580,6 +632,7 @@ export function MyClub() {
         openClub={(id) => go({ club: String(id) })}
         startRequest={() => go({ solicitar: "1", nombre: query.trim() })}
         goEmail={(value) => go({ email: value })}
+        loginCode={loginCode}
       />
     );
   }
@@ -594,7 +647,7 @@ export function MyClub() {
             Su club, <em>en un solo lugar</em>
           </h1>
           <p className="mc-head__lead">
-            Busque su club para ver el estado de su inscripción. Si ya está, entre con un código y complete lo que falte. Si no aparece, solicite su inscripción
+            Busque su club para ver el estado de su inscripción. Si ya está, entre con el email del club y complete lo que falte. Si no aparece, solicite su inscripción
             aquí mismo.
           </p>
           <ol className="mc-steps" aria-label="Pasos">
