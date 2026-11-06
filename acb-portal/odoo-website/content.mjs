@@ -76,8 +76,8 @@ export const LEFT_PILLS = [
 export const RIGHT_PILLS = [
   { label: "Directiva", href: "/directiva" },
   { label: "Documentos", href: "/documentos" },
-  { label: "Campeones", href: "/campeones" },
   { label: "Reglamento", href: "/reglamento" },
+  { label: "Campeones", href: "/campeones" },
   { label: "Fotos", href: "/fotos" },
   { label: "Resoluciones", href: "/resoluciones" },
 ];
