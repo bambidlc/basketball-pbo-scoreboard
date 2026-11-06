@@ -59,6 +59,8 @@ const log = (...args) => console.log("[acb-site]", ...args);
 const courts = JSON.parse(await readFile(path.join(here, "data/canchas.json"), "utf8"));
 const resoluciones = JSON.parse(await readFile(path.join(here, "data/resoluciones.json"), "utf8"));
 const css = `${await readFile(path.join(root, "shared/brand.css"), "utf8")}\n${await readFile(path.join(here, "site.css"), "utf8")}`;
+/** The hero's arena photo (public/hero-arena.jpg) at the URL each site serves it from. */
+const heroImageCss = (url) => `.acb-site { --acb-hero-img: url("${url}"); }`;
 
 if (PREVIEW) {
   await preview();
@@ -92,6 +94,7 @@ async function preview() {
 <link rel="preconnect" href="https://fonts.googleapis.com"/><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin=""/>
 <link rel="stylesheet" href="${FONTS_URL}"/>
 <link rel="stylesheet" href="/shared/brand.css"/><link rel="stylesheet" href="/odoo-website/site.css"/>
+<style>${heroImageCss("/hero-arena.jpg")}</style>
 </head><body><div id="wrapwrap"><main><div class="acb acb-site">${html}</div></main></div></body></html>`;
     await writeFile(path.join(out, `${page.slug}.html`), doc);
     await writeFile(path.join(out, `${page.slug}.arch.xml`), archFor(page, "acb_site.preview", "/preview.css"));
@@ -139,7 +142,8 @@ async function publish() {
   const logo = await upsertAttachment("logo", "acb-logo.png", await readFile(path.join(root, "public/acb-logo.png")));
   const logoSmall = await upsertAttachment("logo256", "acb-logo-256.png", await readFile(path.join(root, "public/acb-logo-256.png")));
   const flyer = await upsertAttachment("flyer", "flyer-torneo30-2027.jpg", await readFile(path.join(here, "assets/flyer-torneo30-2027.jpg")));
-  const sheet = await upsertAttachment("css", "acb-site.css", Buffer.from(css));
+  const heroImg = await upsertAttachment("hero", "hero-arena.jpg", await readFile(path.join(root, "public/hero-arena.jpg")));
+  const sheet = await upsertAttachment("css", "acb-site.css", Buffer.from(`${css}\n${heroImageCss(`/web/image/${heroImg.id}/hero-arena.jpg?unique=${heroImg.unique}`)}\n`));
   const docs = {};
   for (const d of DOCS) {
     const file = path.join(DOCS_DIR, d.file);

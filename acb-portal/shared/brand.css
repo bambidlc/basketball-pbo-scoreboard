@@ -34,12 +34,15 @@
   isolation: isolate;
   overflow: hidden;
   color: #fff;
-  /* plain ACB blue, no arena scene; one variable so it is easy to change */
-  background: var(
-    --acb-hero-bg,
-    radial-gradient(60% 55% at 50% 38%, rgba(47, 107, 255, 0.28), transparent 70%),
-    linear-gradient(180deg, #050a1d 0%, #0a1233 45%, #070b1c 70%, #04060f 100%)
-  );
+  /* Arena photo (crowd + court floor). Each site sets --acb-hero-img to the
+     image's absolute URL; the shades keep the logo, lettering and pills legible
+     and the blue gradient shows while the photo loads. */
+  background:
+    radial-gradient(42% 52% at 50% 40%, rgba(4, 8, 24, 0.5), transparent 72%),
+    linear-gradient(180deg, rgba(4, 8, 24, 0.5) 0%, rgba(4, 8, 24, 0.08) 34%, rgba(4, 8, 24, 0.12) 64%, rgba(4, 8, 24, 0.5) 100%),
+    var(--acb-hero-img, none) center bottom / cover no-repeat,
+    linear-gradient(180deg, #050a1d 0%, #0a1233 45%, #070b1c 70%, #04060f 100%);
+  background-color: #050a1d;
   min-height: clamp(380px, 40vw, 560px);
   display: flex;
   align-items: stretch;
