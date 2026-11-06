@@ -41,12 +41,10 @@ import {
   COACH_SHORTS_FEE,
   DEPOSIT_PER_TEAM,
   EXTRA_UNIFORM_FEE,
-  GENDERS,
   GUARDIAN_RELATIONS,
   KID_SIZES,
   MAX_PLAYERS,
   MUNICIPALITIES,
-  PROGRAMS,
   RULES,
   SCHEDULE_PREFS,
   SCHOOL_GRADES,
@@ -480,23 +478,11 @@ export function TeamEditor({ id }: { id: number }) {
           <Megaphone />
         </div>
         <div>
-          <div className="h3">Programa y categoría</div>
+          <div className="h3">Categoría</div>
           <p>La categoría define el costo y la elegibilidad de los jugadores.</p>
         </div>
       </div>
       <div style={{ display: "grid", gap: 18 }}>
-        <div>
-          <div className="field__label" style={{ marginBottom: 8 }}>
-            Programa
-          </div>
-          <Seg value={team.program} options={PROGRAMS.map((p) => ({ value: p.value, label: p.label }))} onChange={(v) => setT("program", v)} disabled={locked} />
-        </div>
-        <div>
-          <div className="field__label" style={{ marginBottom: 8 }}>
-            Rama
-          </div>
-          <Seg value={team.gender} options={GENDERS.map((g) => ({ value: g.value, label: g.label }))} onChange={(v) => setT("gender", v)} disabled={locked} />
-        </div>
         <div>
           <div className="field__label" style={{ marginBottom: 8 }}>
             Categoría (edad)

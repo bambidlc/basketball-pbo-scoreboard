@@ -656,16 +656,16 @@ async function handleCreateTeam(req, body) {
   const clubId = await requireClub(req);
   const count = await odoo.searchCount(TEAM.model, [["x_club_id", "=", clubId]]);
   if (count >= MAX_TEAMS_PER_CLUB) throw new HttpError(422, "Su club alcanzó el máximo de equipos permitidos en el portal.");
+  // Clubs pick only the category: every team starts as ACB Regular, masculino.
+  // The ACB changes the program (Alternativo) or the rama in Odoo when needed.
   const values = toOdoo(TEAM, {
-    program: body.program,
+    program: "regular",
     category: body.category,
-    gender: body.gender,
+    gender: "M",
     division: body.division,
     teamName: body.teamName,
   });
-  if (!values.x_program || !values.x_category || !values.x_gender) {
-    throw new HttpError(422, "Seleccione programa, categoría y rama.");
-  }
+  if (!values.x_category) throw new HttpError(422, "Seleccione la categoría.");
   const club = await loadClub(clubId);
   const team = { program: values.x_program, category: values.x_category, gender: values.x_gender, division: values.x_division };
   const costs = teamCosts(team, 0, 0);
@@ -704,6 +704,9 @@ async function handleSaveTeam(req, teamId, body) {
   if (incoming && incoming.length > MAX_PLAYERS) throw new HttpError(422, `Máximo ${MAX_PLAYERS} jugadores por equipo.`);
 
   const values = toOdoo(TEAM, body.team || {});
+  // Program and rama are the ACB's call (set in Odoo), never the club's.
+  delete values.x_program;
+  delete values.x_gender;
   const merged = {
     program: values.x_program ?? team.program,
     category: values.x_category ?? team.category,

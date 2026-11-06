@@ -8,9 +8,7 @@ import { Link, navigate } from "../router";
 import {
   CATEGORIES,
   DEPOSIT_PER_TEAM,
-  GENDERS,
   KEY_DATES,
-  PROGRAMS,
   categoryBirthYear,
   feeForCategory,
   formatDateLong,
@@ -24,8 +22,6 @@ function daysUntil(iso: string) {
 }
 
 export function NewTeamModal({ onClose }: { onClose: () => void }) {
-  const [program, setProgram] = useState("regular");
-  const [gender, setGender] = useState("M");
   const [category, setCategory] = useState<number | null>(null);
   const [division, setDivision] = useState("");
   const [teamName, setTeamName] = useState("");
@@ -35,7 +31,8 @@ export function NewTeamModal({ onClose }: { onClose: () => void }) {
     if (!category) return toast("Seleccione la categoría", "error");
     setBusy(true);
     try {
-      const { id } = await api.post<{ id: number }>("/api/teams", { program, gender, category, division, teamName });
+      // Programa (Regular/Alternativo) and rama are set by the ACB, not by the club.
+      const { id } = await api.post<{ id: number }>("/api/teams", { category, division, teamName });
       navigate(`/portal/equipo/${id}`);
     } catch (e) {
       toast((e as Error).message, "error");
@@ -59,18 +56,6 @@ export function NewTeamModal({ onClose }: { onClose: () => void }) {
       }
     >
       <div style={{ display: "grid", gap: 18 }}>
-        <div>
-          <div className="field__label" style={{ marginBottom: 8 }}>
-            Programa
-          </div>
-          <Seg value={program} options={PROGRAMS.map((p) => ({ value: p.value, label: p.label }))} onChange={setProgram} />
-        </div>
-        <div>
-          <div className="field__label" style={{ marginBottom: 8 }}>
-            Rama
-          </div>
-          <Seg value={gender} options={GENDERS.map((g) => ({ value: g.value, label: g.label }))} onChange={setGender} />
-        </div>
         <div>
           <div className="field__label" style={{ marginBottom: 8 }}>
             Categoría (edad)
@@ -256,7 +241,7 @@ export function Dashboard() {
               <Plus />
               Agregar equipo
               <span className="small muted" style={{ textTransform: "none", letterSpacing: 0, fontFamily: "var(--acb-font-body)", fontWeight: 500 }}>
-                ACB Regular o Alternativo · 6 a 19 años
+                Categorías de 6 a 19 años
               </span>
             </button>
           </div>
