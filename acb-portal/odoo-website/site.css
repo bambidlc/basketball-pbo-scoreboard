@@ -323,7 +323,66 @@
 .acbw-step p { margin: 0; color: var(--acb-muted); font-size: 15px; }
 
 /* court directory */
+#directorio { scroll-margin-top: var(--acbw-top-h, 68px); }
+.acbw-finder {
+  position: sticky;
+  top: calc(var(--acbw-top-h, 68px) + 10px);
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 0 0 18px;
+  padding: 8px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.94);
+  backdrop-filter: saturate(1.3) blur(8px);
+  box-shadow: 0 14px 32px rgba(11, 22, 64, 0.12), 0 0 0 1px var(--acb-line);
+}
+.acbw-finder__field { position: relative; flex: 1; display: flex; align-items: center; min-width: 0; margin: 0; }
+.acbw-finder__field > .acbw-ico { position: absolute; left: 17px; width: 22px; height: 22px; color: var(--acb-orange-500); pointer-events: none; }
+.acbw-finder__field input {
+  width: 100%;
+  height: 56px;
+  padding: 0 54px 0 50px;
+  border: 2px solid transparent;
+  border-radius: 14px;
+  background: var(--acb-paper);
+  font: 600 17px/1 var(--acb-font-body);
+  color: var(--acb-navy-900);
+  outline: none;
+  -webkit-appearance: none;
+  appearance: none;
+  transition: border-color 0.15s, background-color 0.15s, box-shadow 0.15s;
+}
+.acbw-finder__field input::placeholder { color: #7a84a3; font-weight: 500; opacity: 1; }
+.acbw-finder__field input:focus { border-color: var(--acb-blue-600); background: #fff; box-shadow: 0 0 0 4px rgba(47, 107, 255, 0.16); }
+.acbw-finder__field input::-webkit-search-cancel-button { -webkit-appearance: none; display: none; }
+.acbw-finder__clear {
+  position: absolute;
+  right: 10px;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--acb-navy-900);
+  color: #fff;
+  cursor: pointer;
+}
+.acbw-finder__clear:hover { background: var(--acb-blue-600); }
+.acbw-finder__clear .acbw-ico { width: 18px; height: 18px; }
+.acbw-finder__count { flex: none; margin: 0; padding: 0 14px 0 4px; font: 700 13px/1 var(--acb-font-display); letter-spacing: 0.12em; text-transform: uppercase; color: var(--acb-muted); white-space: nowrap; }
+.acbw-finder__count b { margin-right: 5px; font: 400 22px/1 var(--acb-font-block); letter-spacing: 0; color: var(--acb-navy-900); }
+.acbw-finder.is-filtering .acbw-finder__count b { color: var(--acb-orange-500); }
+.acbw-finder [hidden], .acbw-courts [hidden], .acbw-finder__empty[hidden] { display: none !important; }
+.acbw-finder__empty { display: flex; align-items: center; gap: 14px; padding: 22px; border-radius: 18px; border: 1px dashed var(--acb-line); background: #f7f8fc; color: var(--acb-muted); }
+.acbw-finder__empty > .acbw-ico { flex: none; width: 28px; height: 28px; color: var(--acb-orange-500); }
+.acbw-finder__empty b { display: block; margin-bottom: 2px; font-size: 16px; color: var(--acb-navy-900); }
 .acbw-courts { columns: 2; column-gap: 12px; }
+.acbw-courts.is-filtering { columns: auto; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 12px; align-items: start; }
+.acbw-finder__note { margin: 14px 0 0; font-size: 14px; color: var(--acb-muted); }
 .acbw-court { break-inside: avoid; margin-bottom: 10px; border-radius: 16px; background: #fff; border: 1px solid var(--acb-line); overflow: hidden; }
 .acbw-court summary {
   display: flex;
@@ -410,6 +469,11 @@
   .acbw-wrap { padding: 0 16px; }
   .acbw-intro, .acbw-flyer, .acbw-grid--2, .acbw-grid--3, .acbw-grid--4, .acbw-steps, .acbw-cal { grid-template-columns: 1fr; }
   .acbw-courts { columns: 1; }
+  .acbw-courts.is-filtering { grid-template-columns: 1fr; }
+  .acbw-finder { flex-direction: column; align-items: stretch; gap: 6px; padding: 6px; border-radius: 18px; }
+  .acbw-finder__field input { height: 52px; }
+  .acbw-finder__count { padding: 2px 10px 6px; font-size: 12px; }
+  .acbw-finder__count b { font-size: 18px; }
   .acbw-fees { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .acbw-cats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .acbw-includes { grid-template-columns: 1fr; }

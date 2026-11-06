@@ -55,6 +55,8 @@ const ICONS = {
   dollar: '<path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>',
   facebook: '<path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/>',
   info: '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/>',
+  search: '<circle cx="11" cy="11" r="7.5"/><path d="m21 21-4.6-4.6"/>',
+  x: '<path d="M18 6 6 18M6 6l12 12"/>',
   ball: '<circle cx="12" cy="12" r="10"/><path d="M4.93 4.93c4.08 2.38 8.25 6.67 9.83 14.6M19.07 4.93c-4.08 2.38-8.25 6.67-9.83 14.6M2 12h20M12 2v20"/>',
   bracket: '<path d="M3 4h5v6h5M3 20h5v-6M13 10v4h8M13 14H8"/>',
 };
@@ -69,7 +71,7 @@ export const LEFT_PILLS = [
   { label: "Cuartos de final", href: "/cuartos-de-final" },
   { label: "Todos VS Todos", href: "/todos-vs-todos" },
   { label: "Secciones y Divisiones", href: "/secciones-y-divisiones" },
-  { label: "Canchas", href: "/canchas" },
+  { label: "Canchas", href: "/canchas#directorio" },
 ];
 export const RIGHT_PILLS = [
   { label: "Directiva", href: "/directiva" },
@@ -83,7 +85,7 @@ const TOP_NAV = [
   { label: "Inicio", href: "/" },
   { label: "Inscripción 2027", href: "/inscripcion" },
   { label: "Calendario", href: "/itinerarios" },
-  { label: "Canchas", href: "/canchas" },
+  { label: "Canchas", href: "/canchas#directorio" },
   { label: "Documentos", href: "/documentos" },
   { label: "Contacto", href: "/contacto" },
 ];
@@ -275,7 +277,7 @@ function personCard(p, { dark = false } = {}) {
 
 // ------------------------------------------------------------------ chrome
 export function topbar({ active, portal, logo }) {
-  const nav = TOP_NAV.map((n) => `<a href="${n.href}"${n.href === active ? ' aria-current="page"' : ""}>${esc(n.label)}</a>`).join("");
+  const nav = TOP_NAV.map((n) => `<a href="${n.href}"${n.href.split("#")[0] === active ? ' aria-current="page"' : ""}>${esc(n.label)}</a>`).join("");
   return `<div class="acbw-top"><div class="acbw-top__inner"><a class="acbw-brand" href="/"><img src="${esc(logo)}" alt="ACB" width="46" height="39"/><span><b>ACB Puerto Rico</b><small>Torneo #30 · 2027</small></span></a><a class="acbw-btn acbw-btn--orange acbw-btn--sm acbw-top__cta" href="${esc(portal)}">Portal</a><nav class="acbw-nav" aria-label="Principal">${nav}<a class="acbw-btn acbw-btn--orange acbw-btn--sm" href="${esc(portal)}">Portal de clubes</a></nav></div></div>`;
 }
 
@@ -285,7 +287,7 @@ export function footer({ portal, logo }) {
     .join("");
   return `<footer class="acbw-footer"><div class="acbw-wrap"><div class="acbw-footer__grid">
     <div><div class="acbw-footer__brand"><img src="${esc(logo)}" alt="ACB" width="52" height="44"/><b>Asociación de Clubes de Baloncesto de Puerto Rico, Inc.</b></div><p>Torneo #30 · Temporada 2027. Baloncesto juvenil de clubes en Puerto Rico, categorías 6 a 19 años.</p><a class="acbw-contact" style="color:#fff" href="${FACEBOOK_URL}" target="_blank" rel="noopener">${icon("facebook")} Facebook · Liga ACB PR</a></div>
-    <div><h4>Torneo</h4><ul><li><a href="/inscripcion">Inscripción 2027</a></li><li><a href="/itinerarios">Itinerarios y calendario</a></li><li><a href="/secciones-y-divisiones">Secciones y divisiones</a></li><li><a href="/canchas">Canchas</a></li><li><a href="/documentos">Documentos</a></li><li><a href="/reglamento">Reglamento</a></li><li><a href="${esc(portal)}">Portal de clubes</a></li></ul></div>
+    <div><h4>Torneo</h4><ul><li><a href="/inscripcion">Inscripción 2027</a></li><li><a href="/itinerarios">Itinerarios y calendario</a></li><li><a href="/secciones-y-divisiones">Secciones y divisiones</a></li><li><a href="/canchas#directorio">Canchas</a></li><li><a href="/documentos">Documentos</a></li><li><a href="/reglamento">Reglamento</a></li><li><a href="${esc(portal)}">Portal de clubes</a></li></ul></div>
     <div><h4>Directiva</h4><ul>${DIRECTIVA.map((p) => `<li><b style="color:#fff">${esc(p.name)}</b><br/>${esc(p.role)} · <a href="${telHref(p.phone)}">${esc(p.phone)}</a></li>`).join("")}</ul></div>
     <div><h4>Fechas clave</h4><ul>${dates}</ul></div>
   </div><div class="acbw-footer__bottom"><span>© 2027 Asociación de Clubes de Baloncesto de Puerto Rico, Inc.</span><span>acbpr.com</span></div></div></footer>`;
@@ -296,9 +298,54 @@ function pageTitle(crumb, title, lead) {
 }
 
 function hero({ active, logo, compact }) {
-  const mark = (pills) => pills.map((p) => ({ ...p, active: p.href === active }));
+  const mark = (pills) => pills.map((p) => ({ ...p, active: p.href.split("#")[0] === active }));
   return heroHtml({ left: mark(LEFT_PILLS), right: mark(RIGHT_PILLS), compact, logoSrc: logo });
 }
+
+// Live filter for the court directory (Canchas page). It sits inline in the QWeb
+// arch, so it must stay XML-safe: no "<", ">" or "&" anywhere (Odoo would escape them).
+const COURT_SEARCH_JS = String.raw`(function () {
+  var box = document.getElementById("acbw-finder");
+  var list = document.getElementById("acbw-courts");
+  if (!box || !list) return;
+  var input = box.querySelector("input");
+  var clear = box.querySelector(".acbw-finder__clear");
+  var count = box.querySelector(".acbw-finder__count b");
+  var empty = document.getElementById("acbw-courts-empty");
+  var top = document.querySelector(".acbw-top");
+  function norm(s) { return String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase(); }
+  var rows = Array.prototype.map.call(list.children, function (el) {
+    var name = el.querySelector("summary");
+    return { el: el, letter: el.classList.contains("acbw-letter"), text: norm(el.textContent), name: norm(name ? name.textContent : "") };
+  });
+  var total = list.querySelectorAll(".acbw-court").length;
+  function topHeight() { if (top) document.documentElement.style.setProperty("--acbw-top-h", top.offsetHeight + "px"); }
+  function run() {
+    var words = norm(input.value).split(/\s+/).filter(Boolean);
+    var filtering = words.length !== 0, shown = 0, only = null;
+    rows.forEach(function (r) {
+      if (r.letter) { r.el.hidden = filtering; return; }
+      var ok = words.every(function (w) { return r.text.indexOf(w) !== -1; });
+      var byName = words.every(function (w) { return r.name.indexOf(w) !== -1; });
+      r.el.hidden = !ok;
+      r.el.style.order = byName ? "0" : "1";
+      if (ok) { shown += 1; only = r.el; }
+    });
+    if (shown === 1) only.open = true;
+    count.textContent = filtering ? shown + " de " + total : String(total);
+    clear.hidden = !input.value;
+    empty.hidden = shown !== 0;
+    box.classList.toggle("is-filtering", filtering);
+    list.classList.toggle("is-filtering", filtering);
+  }
+  input.addEventListener("input", run);
+  input.addEventListener("keydown", function (e) { if (e.key === "Escape") { input.value = ""; run(); } });
+  clear.addEventListener("click", function () { input.value = ""; run(); input.focus(); });
+  topHeight();
+  window.addEventListener("resize", topHeight);
+  if (input.value) run();
+})();`;
+if (/[<>&]/.test(COURT_SEARCH_JS)) throw new Error("COURT_SEARCH_JS must not contain <, > or &");
 
 // ------------------------------------------------------------------ pages
 /**
@@ -315,7 +362,7 @@ export function buildPages(ctx) {
     ["/inscripcion", "Inscripción 2027", "Requisitos, costos, fechas y el portal en línea para clubes.", "check", true],
     ["/itinerarios", "Itinerarios y calendario", "Fechas de la serie regular, postemporada y finales por grupo.", "calendar"],
     ["/secciones-y-divisiones", "Secciones y divisiones", "Categorías de 6 a 19 años, ACB Regular y ACB Alternativo.", "grid"],
-    ["/canchas", "Canchas", "Directorio de canchas con direcciones y fecha límite de disponibilidad.", "pin"],
+    ["/canchas#directorio", "Canchas", "Directorio de canchas con direcciones y fecha límite de disponibilidad.", "pin"],
     ["/documentos", "Documentos", "Formularios 2027 y documentos oficiales para descargar.", "file"],
     ["/reglamento", "Reglamento", "Reglas de participación, Regla 3 y accesorios permitidos.", "book"],
     ["/resoluciones", "Resoluciones", "Resoluciones oficiales de la ACB por temporada.", "scale"],
@@ -500,8 +547,22 @@ export function buildPages(ctx) {
     hero: hero({ active: "/canchas", logo: assets.logo, compact: true }),
     title_html: pageTitle("Canchas", "<em>Canchas</em>", `Directorio de canchas de los clubes (${sorted.length}) con cómo llegar y personas de contacto, y la información de disponibilidad para la temporada 2027.`),
     body: [
+      // The directory comes first (the "Canchas" links land on #directorio) with a live search; the rules follow.
+      band(
+        `${head(`Directorio · ${sorted.length} canchas`, "Busque <em>su cancha</em>", "Escriba la cancha, el club o el pueblo y toque una cancha para ver cómo llegar y a quién llamar.")}
+        <div class="acbw-finder" id="acbw-finder" role="search">
+          <label class="acbw-finder__field">${icon("search")}<input type="search" placeholder="Buscar cancha, club o pueblo" aria-label="Buscar cancha por nombre, club, pueblo o contacto" autocomplete="off" spellcheck="false" enterkeyhint="search" aria-controls="acbw-courts"/><button type="button" class="acbw-finder__clear" aria-label="Borrar búsqueda" hidden="hidden">${icon("x")}</button></label>
+          <p class="acbw-finder__count" aria-live="polite"><b>${sorted.length}</b> canchas</p>
+        </div>
+        <div class="acbw-courts" id="acbw-courts">${courtHtml}</div>
+        <div class="acbw-finder__empty" id="acbw-courts-empty" hidden="hidden">${icon("search")}<div><b>No encontramos esa cancha.</b><span>Pruebe con el pueblo, el nombre del club o solo parte del nombre.</span></div></div>
+        <p class="acbw-finder__note">Información del directorio histórico de la ACB; confirme con el club anfitrión antes de su juego.</p>
+        <div style="margin-top:22px">${archiveList(archive, [{ href: "documentos/CANCHAS ACB 2017.pdf", title: "Documento para imprimir canchas", sub: "Localizaciones de canchas · acbpr.com" }])}</div>
+        <script>${COURT_SEARCH_JS}</script>`,
+        "white",
+        "directorio",
+      ),
       sectionCourtRules(portal, ""),
-      band(`${head("Directorio", "Cómo <em>llegar</em>", "Toque una cancha para ver las direcciones y el contacto. Información del directorio histórico de la ACB; confirme con el club anfitrión antes de su juego.")}<div class="acbw-courts">${courtHtml}</div><div style="margin-top:22px">${archiveList(archive, [{ href: "documentos/CANCHAS ACB 2017.pdf", title: "Documento para imprimir canchas", sub: "Localizaciones de canchas · acbpr.com" }])}</div>`, "white"),
     ].join(""),
   });
 
