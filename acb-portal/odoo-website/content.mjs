@@ -4,6 +4,7 @@
 // fees and rules never drift between the website and the portal.
 
 import { heroHtml, tickerHtml } from "../shared/hero.js";
+import { flyerHtml } from "../shared/flyer.js";
 import {
   ADULT_SIZES,
   CALENDAR,
@@ -328,11 +329,7 @@ export function buildPages(ctx) {
     description: "Asociación de Clubes de Baloncesto de Puerto Rico. Torneo #30, temporada 2027: inscripción, calendario, canchas, documentos y portal de clubes.",
     hero: hero({ active: "/", logo: assets.logo, compact: false }),
     body: [
-      band(
-        `<div class="acbw-intro"><div><p class="acbw-eyebrow">Asociación de Clubes de Baloncesto de Puerto Rico</p><h1 class="acbw-big">Torneo <em>#30</em></h1><div class="acbw-start"><b>INICIO</b><span>Sábado 6 de febrero de 2027</span></div><div class="acbw-chips"><span class="acbw-chip">ACB Regular</span><span class="acbw-chip acbw-chip--orange">ACB Alternativo</span></div></div>
-        <div class="acbw-panel"><div class="acbw-h3">Inscripción 2027 en línea</div><p>Busque o inscriba su club, complete cada equipo (personal técnico, uniformes, jugadores y autorizaciones) y el portal genera la Hoja de Uniformes, la Lista Oficial, el Carnet y el Roster listos para imprimir.</p><div class="acbw-btns" style="margin:18px 0 10px"><a class="acbw-btn acbw-btn--orange" href="${esc(portal)}/mi-club">Buscar o inscribir mi club</a></div><div class="acbw-meta">${icon("calendar")} Inscripción presencial: sábados 12 y 19 de diciembre · 10 AM – 3 PM</div><div class="acbw-meta">${icon("pin")} Club de Baloncesto Fraigcomar</div></div></div>`,
-        "dark",
-      ),
+      flyerHtml({ logoSrc: esc(assets.logo), ctaHref: `${esc(portal)}/mi-club` }),
       band(
         `${head("Temporada 2027", "Todo el <em>torneo</em>")}<div class="acbw-grid acbw-grid--4">${quick
           .map(

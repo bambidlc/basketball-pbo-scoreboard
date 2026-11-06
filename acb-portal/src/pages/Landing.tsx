@@ -27,7 +27,7 @@ import {
   formatDateShort,
   money,
 } from "../../shared/tournament.js";
-import { Footer, Hero, Ticker, TopBar } from "../components/Brand";
+import { Flyer, Footer, Hero, Ticker, TopBar } from "../components/Brand";
 import { Link } from "../router";
 
 const LEFT = [
@@ -63,35 +63,7 @@ export function Landing() {
         ]}
       />
 
-      <section className="band band--dark">
-        <div className="wrap intro">
-          <div>
-            <p className="eyebrow">Inscripción de equipos</p>
-            <h1 className="display" style={{ fontSize: "clamp(54px, 9vw, 120px)" }}>
-              Torneo <em>#30</em>
-            </h1>
-            <div className="intro__start">
-              <b>INICIO</b>
-              <span>Sábado 6 de febrero de 2027</span>
-            </div>
-            <div className="chips">
-              <span className="chip-skew chip-skew--blue">ACB Regular</span>
-              <span className="chip-skew chip-skew--orange">ACB Alternativo</span>
-            </div>
-          </div>
-          <div className="intro__cta">
-            <div className="h3">Inscriba su club en línea</div>
-            <p>
-              Busque su club para ver el estado de su inscripción y entre con un código para completar cada equipo: personal técnico, uniformes, jugadores y
-              autorizaciones. El portal genera la Hoja de Uniformes, la Lista Oficial, el Carnet y el Roster listos para imprimir.
-            </p>
-            <Link to="/mi-club" className="btn btn--primary btn--lg btn--block">
-              <Search /> Buscar mi club
-            </Link>
-            <p className="intro__note">¿No aparece? Ahí mismo puede solicitar su inscripción.</p>
-          </div>
-        </div>
-      </section>
+      <Flyer />
 
       <section className="band" id="como">
         <div className="wrap">

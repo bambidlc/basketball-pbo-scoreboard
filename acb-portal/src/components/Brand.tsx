@@ -1,6 +1,7 @@
-import { useMemo, type ReactNode } from "react";
+import { useMemo, type MouseEvent, type ReactNode } from "react";
 import { LogOut, Mail, MapPin, Phone, Search } from "lucide-react";
 import { heroCenterHtml } from "../../shared/hero.js";
+import { flyerHtml } from "../../shared/flyer.js";
 import { Link, navigate, useLocation } from "../router";
 import { api } from "../api";
 
@@ -40,6 +41,20 @@ export function Ticker({ messages }: { messages: string[] }) {
       </div>
     </div>
   );
+}
+
+/** The "Torneo #30" announcement sheet shown right after the hero (shared with the Odoo site). */
+export function Flyer() {
+  const html = useMemo(() => ({ __html: flyerHtml({ logoSrc: "/acb-logo.png", ctaHref: "/mi-club" }) }), []);
+  // Keep in-app links inside the single-page app.
+  const onClick = (e: MouseEvent<HTMLDivElement>) => {
+    const link = (e.target as HTMLElement).closest("a");
+    const href = link?.getAttribute("href") || "";
+    if (!link || !href.startsWith("/") || e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
+    e.preventDefault();
+    navigate(href);
+  };
+  return <div onClick={onClick} dangerouslySetInnerHTML={html} />;
 }
 
 export function TopBar({ clubName, children }: { clubName?: string; children?: ReactNode }) {
