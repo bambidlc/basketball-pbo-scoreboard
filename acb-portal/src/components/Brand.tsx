@@ -122,12 +122,7 @@ export function Footer() {
             </p>
           </div>
           <div>
-            <h5>Directiva</h5>
-            <p style={{ margin: "0 0 6px" }}>
-              <b style={{ color: "#fff" }}>Lic. Miguel Laborde Freyre</b> · Presidente
-              <br />
-              <Phone size={13} /> <a href="tel:+17874623842">787-462-3842</a>
-            </p>
+            <h5>Contactos</h5>
             <p style={{ margin: 0 }}>
               <b style={{ color: "#fff" }}>Prof. Roberto "Bobby" Ramírez</b> · Director Ejecutivo
               <br />

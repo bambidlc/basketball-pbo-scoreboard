@@ -74,7 +74,7 @@ export const LEFT_PILLS = [
   { label: "Canchas", href: "/canchas#directorio" },
 ];
 export const RIGHT_PILLS = [
-  { label: "Directiva", href: "/directiva" },
+  { label: "Contactos", href: "/directiva" },
   { label: "Documentos", href: "/documentos" },
   { label: "Reglamento", href: "/reglamento" },
   { label: "Campeones", href: "/campeones" },
@@ -98,8 +98,8 @@ const TICKER = [
   "Entrega de uniformes y documentos: sábado 23 de enero de 2027",
 ];
 
-export const DIRECTIVA = [
-  { role: "Presidente", name: "Lic. Miguel Laborde Freyre", phone: "787-462-3842", initials: "ML" },
+// ACB contacts (shown as "Contactos"; the page keeps its /directiva URL).
+export const CONTACTOS = [
   { role: "Director Ejecutivo", name: 'Prof. Roberto "Bobby" Ramírez', phone: "787-632-4848", email: "bobbyramirez48@yahoo.com", initials: "RR" },
   { role: "Administrador", name: "Julio Betancurt", phone: "787-370-4145", email: "julio89_@hotmail.com", initials: "JB" },
 ];
@@ -288,7 +288,7 @@ export function footer({ portal, logo }) {
   return `<footer class="acbw-footer"><div class="acbw-wrap"><div class="acbw-footer__grid">
     <div><div class="acbw-footer__brand"><img src="${esc(logo)}" alt="ACB" width="52" height="44"/><b>Asociación de Clubes de Baloncesto de Puerto Rico, Inc.</b></div><p>Torneo #30 · Temporada 2027. Baloncesto juvenil de clubes en Puerto Rico, categorías 6 a 19 años.</p><a class="acbw-contact" style="color:#fff" href="${FACEBOOK_URL}" target="_blank" rel="noopener">${icon("facebook")} Facebook · Liga ACB PR</a></div>
     <div><h4>Torneo</h4><ul><li><a href="/inscripcion">Inscripción 2027</a></li><li><a href="/itinerarios">Itinerarios y calendario</a></li><li><a href="/secciones-y-divisiones">Secciones y divisiones</a></li><li><a href="/canchas#directorio">Canchas</a></li><li><a href="/documentos">Documentos</a></li><li><a href="/reglamento">Reglamento</a></li><li><a href="${esc(portal)}">Portal de clubes</a></li></ul></div>
-    <div><h4>Directiva</h4><ul>${DIRECTIVA.map((p) => `<li><b style="color:#fff">${esc(p.name)}</b><br/>${esc(p.role)} · <a href="${telHref(p.phone)}">${esc(p.phone)}</a></li>`).join("")}</ul></div>
+    <div><h4>Contactos</h4><ul>${CONTACTOS.map((p) => `<li><b style="color:#fff">${esc(p.name)}</b><br/>${esc(p.role)} · <a href="${telHref(p.phone)}">${esc(p.phone)}</a></li>`).join("")}</ul></div>
     <div><h4>Fechas clave</h4><ul>${dates}</ul></div>
   </div><div class="acbw-footer__bottom"><span>© 2027 Asociación de Clubes de Baloncesto de Puerto Rico, Inc.</span><span>acbpr.com</span></div></div></footer>`;
 }
@@ -366,7 +366,7 @@ export function buildPages(ctx) {
     ["/documentos", "Documentos", "Formularios 2027 y documentos oficiales para descargar.", "file"],
     ["/reglamento", "Reglamento", "Reglas de participación, Regla 3 y accesorios permitidos.", "book"],
     ["/resoluciones", "Resoluciones", "Resoluciones oficiales de la ACB por temporada.", "scale"],
-    ["/directiva", "Directiva", "Presidente, Director Ejecutivo y Administrador.", "users"],
+    ["/directiva", "Contactos", "Director Ejecutivo y Administrador de la ACB.", "users"],
   ];
   add({
     slug: "home",
@@ -605,18 +605,18 @@ export function buildPages(ctx) {
     ),
   });
 
-  // ---------------------------------------------------------------- directiva
+  // ---------------------------------------------------------------- contactos (URL /directiva)
   add({
     slug: "directiva",
     url: "/directiva",
-    name: "Directiva",
-    title: "Directiva · ACB Puerto Rico",
-    description: "Directiva de la Asociación de Clubes de Baloncesto de Puerto Rico.",
+    name: "Contactos",
+    title: "Contactos · ACB Puerto Rico",
+    description: "Contactos de la Asociación de Clubes de Baloncesto de Puerto Rico: Director Ejecutivo y Administrador.",
     active: "/directiva",
     hero: hero({ active: "/directiva", logo: assets.logo, compact: true }),
-    title_html: pageTitle("Directiva", "<em>Directiva</em>", "Asociación de Clubes de Baloncesto de Puerto Rico, Inc."),
+    title_html: pageTitle("Contactos", "<em>Contactos</em>", "Asociación de Clubes de Baloncesto de Puerto Rico, Inc."),
     body: [
-      band(`<div class="acbw-grid acbw-grid--3">${DIRECTIVA.map((p) => personCard(p)).join("")}</div><div style="margin-top:22px">${notice("Inscripción, canchas y acomodos", 'Para dudas sobre la inscripción, la disponibilidad de canchas y los acomodos de dirigentes, comuníquese con el Prof. Roberto "Bobby" Ramírez.')}</div>`),
+      band(`<div class="acbw-grid acbw-grid--2">${CONTACTOS.map((p) => personCard(p)).join("")}</div><div style="margin-top:22px">${notice("Inscripción, canchas y acomodos", 'Para dudas sobre la inscripción, la disponibilidad de canchas y los acomodos de dirigentes, comuníquese con el Prof. Roberto "Bobby" Ramírez.')}</div>`),
     ].join(""),
   });
 
@@ -713,9 +713,9 @@ export function buildPages(ctx) {
     description: "Contacto de la Asociación de Clubes de Baloncesto de Puerto Rico.",
     active: "/contacto",
     hero: hero({ active: "", logo: assets.logo, compact: true }),
-    title_html: pageTitle("Contacto", "<em>Contacto</em>", "Comuníquese con la directiva de la ACB."),
+    title_html: pageTitle("Contacto", "<em>Contacto</em>", "Comuníquese con la ACB."),
     body: [
-      band(`<div class="acbw-grid acbw-grid--3">${DIRECTIVA.map((p) => personCard(p)).join("")}</div>`),
+      band(`<div class="acbw-grid acbw-grid--2">${CONTACTOS.map((p) => personCard(p)).join("")}</div>`),
       band(
         `<div class="acbw-grid acbw-grid--2"><div class="acbw-card"><div class="acbw-card__icon acbw-card__icon--orange">${icon("pin")}</div><div class="acbw-h3">Inscripción presencial</div><p>Sábados 12 y 19 de diciembre de 2026 · 10:00 AM – 3:00 PM<br/>Club de Baloncesto Fraigcomar</p></div><div class="acbw-card"><div class="acbw-card__icon">${icon("calendar")}</div><div class="acbw-h3">Entrega de uniformes y documentos</div><p>Sábado 23 de enero de 2027 · 1:00 – 4:00 PM<br/>Colegio Universitario de San Juan · Ave. José Oliver #180, San Juan</p></div></div>`,
         "white",
