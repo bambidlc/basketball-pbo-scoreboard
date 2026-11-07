@@ -77,7 +77,7 @@ if (EXPORT) {
 // ------------------------------------------------------------------ static copy
 /**
  * A self-contained copy of the site for any static host (the shareable link on
- * Render). Needs no Odoo credentials: the Word forms are linked to their public
+ * acbpr.pages.dev, `npm run website:share`). Needs no Odoo credentials: the Word forms are linked to their public
  * Odoo attachments, whose URLs publish() records in data/odoo-docs.json.
  */
 async function exportStatic() {
@@ -101,6 +101,10 @@ async function exportStatic() {
     resoluciones,
   });
   const attr = (s) => String(s).replace(/&/g, "&amp;").replace(/"/g, "&quot;");
+  // Static hosts redirect /canchas to /canchas/, and the redirect loses the
+  // jump to #directorio; link straight to the folder instead.
+  const pageUrls = new Set(pages.map((p) => p.url));
+  const folderLinks = (html) => html.replace(/href="(\/[a-z0-9-]+)(#[^"]*)?"/g, (m, url, hash = "") => (pageUrls.has(url) ? `href="${url}/${hash}"` : m));
   for (const page of pages) {
     const doc = `<!doctype html>
 <html lang="es"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/>
@@ -114,8 +118,8 @@ async function exportStatic() {
 <link rel="preconnect" href="https://fonts.googleapis.com"/><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin=""/>
 <link rel="stylesheet" href="${attr(FONTS_URL)}"/>
 <link rel="stylesheet" href="${asset("acb-site.css")}?v=${stamp}"/>
-</head><body><div id="wrapwrap"><main><div class="acb acb-site">${page.html}</div></main></div></body></html>`;
-    // /canchas is served from canchas/index.html.
+</head><body><div id="wrapwrap"><main><div class="acb acb-site">${folderLinks(page.html)}</div></main></div></body></html>`;
+    // /canchas/ is served from canchas/index.html.
     const file = page.url === "/" ? "index.html" : path.join(page.url.slice(1), "index.html");
     await mkdir(path.dirname(path.join(out, file)), { recursive: true });
     await writeFile(path.join(out, file), doc);

@@ -15,7 +15,8 @@
     "setup:odoo": "node scripts/setup-odoo.mjs",
     "website:odoo": "node odoo-website/build-site.mjs",
     "test": "node --test \"tests/**/*.test.mjs\"",
-    "website:export": "node odoo-website/build-site.mjs --export"
+    "website:export": "node odoo-website/build-site.mjs --export",
+    "website:share": "node odoo-website/build-site.mjs --export && npx -y wrangler@4.152.0 pages deploy dist-site --project-name acbpr --branch main --commit-dirty=true"
   },
   "dependencies": {
     "lucide-react": "1.11.0",
