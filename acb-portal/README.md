@@ -76,6 +76,23 @@ them. **Re-running it overwrites edits made to these pages in Odoo's website edi
 change the content in `odoo-website/content.mjs` (or `shared/tournament.js` for dates and
 fees) and re-run.
 
+### Shareable copy (until website #2 has a domain)
+
+Website #2 has no domain yet, so Odoo only shows it to signed-in users. A static copy of
+the same pages is the public link to share meanwhile:
+
+```bash
+npm run website:export                          # writes dist-site/ (no Odoo calls)
+node scripts/serve-static.mjs dist-site 5190    # look at it on http://localhost:5190
+```
+
+A Render static site builds it from branch `acb-portal` on every push (build command
+`cd acb-portal && node odoo-website/build-site.mjs --export`, publish path
+`acb-portal/dist-site`), so it follows `content.mjs`. The Word forms link to their public
+Odoo attachments, listed in `odoo-website/data/odoo-docs.json`; publishing to Odoo rewrites
+that file, so commit it after a publish that changed a form. The copy is marked `noindex`.
+Once website #2 has its own domain, delete the static site.
+
 The 2026 archive (PDFs on the current acbpr.com server) is linked through
 `ACB_ARCHIVE_URL` (default `https://www.acbpr.com`). Before pointing the acbpr.com domain at
 Odoo, move those files somewhere permanent and set `ACB_ARCHIVE_URL` accordingly, or the

@@ -14,7 +14,8 @@
     "start": "node server.mjs",
     "setup:odoo": "node scripts/setup-odoo.mjs",
     "website:odoo": "node odoo-website/build-site.mjs",
-    "test": "node --test \"tests/**/*.test.mjs\""
+    "test": "node --test \"tests/**/*.test.mjs\"",
+    "website:export": "node odoo-website/build-site.mjs --export"
   },
   "dependencies": {
     "lucide-react": "1.11.0",

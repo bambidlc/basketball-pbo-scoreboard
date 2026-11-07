@@ -2,6 +2,7 @@
 // Builds the ACB website on Odoo website #2 ("ACB").
 //
 //   node odoo-website/build-site.mjs --preview   # writes local HTML to .preview/site (no Odoo calls)
+//   node odoo-website/build-site.mjs --export    # static copy in dist-site for the shareable link (no Odoo calls)
 //   node odoo-website/build-site.mjs             # publishes to Odoo
 //
 // Environment (read from acb-portal/.env, then the process environment):
@@ -18,7 +19,7 @@
 // Re-running overwrites edits made to these pages in the Odoo website editor.
 
 import { createHash } from "node:crypto";
-import { copyFile, mkdir, readFile, writeFile, access } from "node:fs/promises";
+import { copyFile, mkdir, readFile, writeFile, access, rm } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { createOdoo, readDotEnv } from "../lib/odoo.mjs";
@@ -29,6 +30,9 @@ const root = path.resolve(here, "..");
 const env = { ...(await readDotEnv(path.join(root, ".env"))), ...process.env };
 
 const PREVIEW = process.argv.includes("--preview");
+const EXPORT = process.argv.includes("--export");
+/** Public URLs of the Word forms on Odoo, written on publish and used by --export. */
+const DOCS_JSON = path.join(here, "data/odoo-docs.json");
 const WEBSITE_ID = Number(env.ACB_WEBSITE_ID || 2);
 const PORTAL_URL = String(env.PORTAL_URL || "https://acb-portal.onrender.com").replace(/\/+$/, "");
 const ARCHIVE_URL = String(env.ACB_ARCHIVE_URL || "https://www.acbpr.com").replace(/\/+$/, "");
@@ -62,10 +66,61 @@ const css = `${await readFile(path.join(root, "shared/brand.css"), "utf8")}\n${a
 /** The hero's arena photo (public/hero-arena.jpg) at the URL each site serves it from. */
 const heroImageCss = (url) => `.acb-site { --acb-hero-img: url("${url}"); }`;
 
-if (PREVIEW) {
+if (EXPORT) {
+  await exportStatic();
+} else if (PREVIEW) {
   await preview();
 } else {
   await publish();
+}
+
+// ------------------------------------------------------------------ static copy
+/**
+ * A self-contained copy of the site for any static host (the shareable link on
+ * Render). Needs no Odoo credentials: the Word forms are linked to their public
+ * Odoo attachments, whose URLs publish() records in data/odoo-docs.json.
+ */
+async function exportStatic() {
+  const out = path.join(root, "dist-site");
+  await rm(out, { recursive: true, force: true });
+  await mkdir(path.join(out, "assets"), { recursive: true });
+  const asset = (name) => `/assets/${name}`;
+  await copyFile(path.join(root, "public/acb-logo.png"), path.join(out, "assets/acb-logo.png"));
+  await copyFile(path.join(root, "public/acb-logo-256.png"), path.join(out, "assets/acb-logo-256.png"));
+  await copyFile(path.join(root, "public/hero-arena.jpg"), path.join(out, "assets/hero-arena.jpg"));
+  await copyFile(path.join(here, "assets/flyer-torneo30-2027.jpg"), path.join(out, "assets/flyer.jpg"));
+  const stamp = sha1(Buffer.from(css)).slice(0, 10);
+  await writeFile(path.join(out, "assets/acb-site.css"), `${css}\n${heroImageCss(asset("hero-arena.jpg"))}\n`);
+
+  const docs = await readFile(DOCS_JSON, "utf8").then(JSON.parse, () => ({}));
+  const pages = buildPages({
+    portal: PORTAL_URL,
+    archive: ARCHIVE_URL,
+    assets: { logo: asset("acb-logo.png"), logoSmall: asset("acb-logo-256.png"), flyer: asset("flyer.jpg"), docs },
+    courts,
+    resoluciones,
+  });
+  const attr = (s) => String(s).replace(/&/g, "&amp;").replace(/"/g, "&quot;");
+  for (const page of pages) {
+    const doc = `<!doctype html>
+<html lang="es"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>${page.title}</title>
+<meta name="description" content="${attr(page.description || "")}"/>
+<meta name="robots" content="noindex"/>
+<meta name="theme-color" content="#0b1640"/>
+<link rel="icon" type="image/png" href="${asset("acb-logo-256.png")}"/>
+<!-- Odoo's frontend ships Bootstrap 5; load it so the copy has the same cascade. -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"/>
+<link rel="preconnect" href="https://fonts.googleapis.com"/><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin=""/>
+<link rel="stylesheet" href="${attr(FONTS_URL)}"/>
+<link rel="stylesheet" href="${asset("acb-site.css")}?v=${stamp}"/>
+</head><body><div id="wrapwrap"><main><div class="acb acb-site">${page.html}</div></main></div></body></html>`;
+    // /canchas is served from canchas/index.html.
+    const file = page.url === "/" ? "index.html" : path.join(page.url.slice(1), "index.html");
+    await mkdir(path.dirname(path.join(out, file)), { recursive: true });
+    await writeFile(path.join(out, file), doc);
+  }
+  log(`static copy: ${pages.length} pages in ${path.relative(root, out)} (${Object.keys(docs).length} forms linked to Odoo)`);
 }
 
 // ------------------------------------------------------------------ preview
@@ -155,6 +210,9 @@ async function publish() {
     docs[d.key] = `/web/content/${att.id}?download=true`;
   }
   log(`attachments ok (css #${sheet.id}, ${Object.keys(docs).length} forms)`);
+  const odooBase = String(env.ODOO_URL).replace(/\/+$/, "");
+  const publicDocs = Object.fromEntries(Object.entries(docs).map(([key, url]) => [key, `${odooBase}${url}`]));
+  await writeFile(DOCS_JSON, `${JSON.stringify(publicDocs, null, 2)}\n`);
 
   const pages = buildPages({
     portal: PORTAL_URL,
