@@ -92,7 +92,6 @@ const TOP_NAV = [
 
 const TICKER = [
   "Inscripción de equipos: sábados 12 y 19 de diciembre de 2026 · Club de Baloncesto Fraigcomar",
-  "Nuevo: inscriba su club y sus equipos en línea en el Portal de Inscripción ACB",
   "Inicio del Torneo #30: sábado 6 de febrero de 2027",
   "Fechas de cancha y acomodos de dirigentes: antes del 30 de diciembre",
   "Entrega de uniformes y documentos: sábado 23 de enero de 2027",
