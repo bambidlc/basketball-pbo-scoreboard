@@ -10,7 +10,6 @@
 //   ACB_WEBSITE_ID                    default 2
 //   PORTAL_URL                        public URL of the registration portal (no trailing slash)
 //   ACB_ARCHIVE_URL                   where the 2026 PDFs live, default https://www.acbpr.com
-//   ACB_DOCS_DIR                      folder with the 2027 Word forms (optional)
 //
 // Safe to re-run. It uploads the logo, flyer, stylesheet and forms as public
 // attachments, (re)writes one website-specific QWeb view per page, creates or
@@ -19,7 +18,8 @@
 // Re-running overwrites edits made to these pages in the Odoo website editor.
 
 import { createHash } from "node:crypto";
-import { copyFile, mkdir, readFile, writeFile, access, rm } from "node:fs/promises";
+import { copyFile, mkdir, readFile, writeFile, access, rm, cp } from "node:fs/promises";
+import { build } from "esbuild";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { createOdoo, readDotEnv } from "../lib/odoo.mjs";
@@ -31,27 +31,28 @@ const env = { ...(await readDotEnv(path.join(root, ".env"))), ...process.env };
 
 const PREVIEW = process.argv.includes("--preview");
 const EXPORT = process.argv.includes("--export");
-/** Public URLs of the Word forms on Odoo, written on publish and used by --export. */
+/** Public URLs of the editable PDF attachments on Odoo, written on publish. */
 const DOCS_JSON = path.join(here, "data/odoo-docs.json");
 const WEBSITE_ID = Number(env.ACB_WEBSITE_ID || 2);
 const PORTAL_URL = String(env.PORTAL_URL || "https://acb-portal.onrender.com").replace(/\/+$/, "");
 const ARCHIVE_URL = String(env.ACB_ARCHIVE_URL || "https://www.acbpr.com").replace(/\/+$/, "");
-const DOCS_DIR = env.ACB_DOCS_DIR || path.resolve(root, "../../Documents ");
+const DOCS_DIR = path.join(root, "output/pdf");
 
 const FONTS_URL =
   "https://fonts.googleapis.com/css2?family=Baloo+2:wght@700;800&family=Barlow+Condensed:ital,wght@0,600;0,700;0,800;1,700;1,800&family=Barlow:wght@400;500;600;700&family=Bungee&display=swap";
 
 const DOCS = [
-  { key: "info", file: "INFORMACION INSCRIPCION ACB 2027.docx", name: "Informacion Inscripcion ACB 2027.docx" },
-  { key: "uniformes", file: "HOJA DE UNIFORMES 2027.docx", name: "Hoja de Uniformes ACB 2027.docx" },
-  { key: "carnet", file: "3. CARNET Y LISTA DE JUGADORES  ACB 2026.doc", name: "Carnet y Lista de Jugadores ACB.doc" },
-  { key: "roster", file: "2. ROSTER DE JUEGO  2027.doc", name: "Roster de Juego ACB 2027.doc" },
-  { key: "disponibilidad", file: "DISPONIBILIDAD DE CANCHA Y DIRIGENTES CON 2 EQUIPOS 2027.docx", name: "Disponibilidad de Cancha y Dirigentes ACB 2027.docx" },
+  { key: "info", file: "informacion-2027.pdf", name: "Informacion Inscripcion ACB 2027.pdf" },
+  { key: "uniformes", file: "uniformes-2027.pdf", name: "Hoja de Uniformes ACB 2027.pdf" },
+  { key: "carnet", file: "carnet-2027.pdf", name: "Carnet y Lista de Jugadores ACB 2027.pdf" },
+  { key: "roster", file: "roster-2027.pdf", name: "Roster de Juego ACB 2027.pdf" },
+  { key: "disponibilidad", file: "disponibilidad-2027.pdf", name: "Disponibilidad de Cancha y Dirigentes ACB 2027.pdf" },
 ];
 const MIME = {
   ".png": "image/png",
   ".jpg": "image/jpeg",
   ".css": "text/css",
+  ".pdf": "application/pdf",
   ".doc": "application/msword",
   ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 };
@@ -77,8 +78,7 @@ if (EXPORT) {
 // ------------------------------------------------------------------ static copy
 /**
  * A self-contained copy of the site for any static host (the shareable link on
- * acbpr.pages.dev, `npm run website:share`). Needs no Odoo credentials: the Word forms are linked to their public
- * Odoo attachments, whose URLs publish() records in data/odoo-docs.json.
+ * acbpr.pages.dev, `npm run website:share`). Needs no Odoo credentials: the PDFs and editor are served locally.
  */
 async function exportStatic() {
   const out = path.join(root, "dist-site");
@@ -92,11 +92,19 @@ async function exportStatic() {
   const stamp = sha1(Buffer.from(css)).slice(0, 10);
   await writeFile(path.join(out, "assets/acb-site.css"), `${css}\n${heroImageCss(asset("hero-arena.jpg"))}\n`);
 
-  const docs = await readFile(DOCS_JSON, "utf8").then(JSON.parse, () => ({}));
+  // Serve forms locally: downloads and the editor remain available during Odoo maintenance.
+  const docs = Object.fromEntries(DOCS.map(d => [d.key, `/pdf/${d.file}`]));
+  await cp(DOCS_DIR, path.join(out, "pdf"), { recursive: true });
+  await mkdir(path.join(out, "formularios"), { recursive: true });
+  await copyFile(path.join(root, "forms/index.html"), path.join(out, "formularios/index.html"));
+  await copyFile(path.join(root, "forms/editor.css"), path.join(out, "formularios/editor.css"));
+  await copyFile(path.join(root, "forms/document-center.js"), path.join(out, "formularios/document-center.js"));
+  await build({ entryPoints: [path.join(root, "forms/editor.mjs")], bundle: true, minify: true, target: "es2020", outfile: path.join(out, "formularios/editor.js") });
+  await writeFile(path.join(out, "_headers"), "/pdf/*\n  Content-Type: application/pdf\n  X-Content-Type-Options: nosniff\n  Cache-Control: public, max-age=0, must-revalidate\n/formularios/*\n  Cache-Control: public, max-age=0, must-revalidate\n  Referrer-Policy: no-referrer\n  X-Content-Type-Options: nosniff\n");
   const pages = buildPages({
     portal: PORTAL_URL,
     archive: ARCHIVE_URL,
-    assets: { logo: asset("acb-logo.png"), logoSmall: asset("acb-logo-256.png"), flyer: asset("flyer.jpg"), docs },
+    assets: { logo: asset("acb-logo.png"), logoSmall: asset("acb-logo-256.png"), flyer: asset("flyer.jpg"), docs, editorBase: "" },
     courts,
     resoluciones,
   });
@@ -124,7 +132,7 @@ async function exportStatic() {
     await mkdir(path.dirname(path.join(out, file)), { recursive: true });
     await writeFile(path.join(out, file), doc);
   }
-  log(`static copy: ${pages.length} pages in ${path.relative(root, out)} (${Object.keys(docs).length} forms linked to Odoo)`);
+  log(`static copy: ${pages.length} pages, 8 fillable PDFs and local form editor in ${path.relative(root, out)}`);
 }
 
 // ------------------------------------------------------------------ preview
@@ -238,7 +246,7 @@ async function publish() {
     ...(pageFields.website_meta_description ? { website_meta_description: p.description } : {}),
   });
 
-  for (const page of pages) {
+  for (const page of pages.filter(p => !process.argv.includes("--documents-only") || p.url === "/documentos")) {
     const flags = { is_published: true, header_visible: false, footer_visible: false, website_indexed: true, ...seo(page) };
     if (page.url === "/") {
       // Website #2 already has its own copy of the homepage view; rewrite it in place.
@@ -260,7 +268,7 @@ async function publish() {
     log(`page ${page.url} (view #${viewId})`);
   }
 
-  await syncMenu(odoo, pages);
+  if (!process.argv.includes("--documents-only")) await syncMenu(odoo, pages);
 
   // Favicon for the browser tab.
   await odoo.write("website", [WEBSITE_ID], { favicon: (await readFile(path.join(root, "public/acb-logo-256.png"))).toString("base64") });

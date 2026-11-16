@@ -387,7 +387,7 @@ export function buildPages(ctx) {
       sectionFees(),
       assets.flyer
         ? band(
-            `<div class="acbw-flyer"><img src="${esc(assets.flyer)}" alt="Inscripción Torneo #30 ACB 2027" loading="lazy" width="738" height="926"/><div>${head("Información general", "Torneo #30 <em>ACB 2027</em>", "Inscripción ACB Regular y ACB Alternativo. Se mantienen los mismos costos del pasado torneo: incluye un balón y un mínimo de 8 juegos.")}<ul class="acbw-docs">${assets.docs.info ? docLink({ href: assets.docs.info, title: "Información de inscripción 2027", sub: "Documento oficial · Word", orange: true }) : ""}${docLink({ href: "/inscripcion", title: "Ver toda la información", sub: "Requisitos, costos, fechas, elegibilidad y uniformes", iconName: "info", external: false })}</ul></div></div>`,
+              `<div class="acbw-flyer"><img src="${esc(assets.flyer)}" alt="Inscripción Torneo #30 ACB 2027" loading="lazy" width="738" height="926"/><div>${head("Información general", "Torneo #30 <em>ACB 2027</em>", "Inscripción ACB Regular y ACB Alternativo. Se mantienen los mismos costos del pasado torneo: incluye un balón y un mínimo de 8 juegos.")}<ul class="acbw-docs">${assets.docs.info ? docLink({ href: assets.docs.info, title: "Información de inscripción 2027", sub: "PDF con hoja de uniformes editable", orange: true }) : ""}${docLink({ href: "/inscripcion", title: "Ver toda la información", sub: "Requisitos, costos, fechas, elegibilidad y uniformes", iconName: "info", external: false })}</ul></div></div>`,
           )
         : "",
       cta(portal),
@@ -619,13 +619,14 @@ export function buildPages(ctx) {
   });
 
   // ---------------------------------------------------------------- documentos
+  const editorBase = assets.editorBase ?? "https://acbpr.pages.dev";
   const forms = [
-    ["info", "Información de inscripción 2027", "Requisitos, costos y fechas · Word"],
-    ["uniformes", "Hoja de uniformes 2027", "Formulario para uniformes · Word"],
-    ["carnet", "Carnet y Lista de Jugadores", "Lista oficial y carnet · Word"],
-    ["roster", "Roster de juego 2027", "Tres copias para ponchar · Word"],
-    ["disponibilidad", "Disponibilidad de cancha y dirigentes con 2 equipos", "Entregar antes del 30 de diciembre · Word"],
-  ].filter(([key]) => assets.docs[key]);
+    ["uniformes", "Hoja de uniformes 2027", "Jugadores, tallas y resumen automático", "uniformes-2027"],
+    ["carnet", "Carnet y lista oficial de jugadores", "Datos, fotos, firmas y tarjetas federativas", "carnet-2027"],
+    ["roster", "Roster de juego 2027", "Complete digitalmente · tres copias para ponchar", "roster-2027"],
+    ["disponibilidad", "Disponibilidad de cancha y dirigentes", "Fechas y acomodos · enviar por email antes del 30 de diciembre", "disponibilidad-2027"],
+    ["info", "Información de inscripción 2027", "Información oficial y hoja de uniformes editable", "informacion-2027"],
+  ];
   add({
     slug: "documentos",
     url: "/documentos",
@@ -634,22 +635,19 @@ export function buildPages(ctx) {
     description: "Formularios oficiales 2027 de la ACB: hoja de uniformes, lista oficial, carnet, roster y disponibilidad de canchas.",
     active: "/documentos",
     hero: hero({ active: "/documentos", logo: assets.logo }),
-    title_html: pageTitle("Documentos", "Documentos <em>oficiales</em>", "Formularios 2027 para descargar. Complete el carnet con la información del equipo para subirlo al portal."),
+    title_html: pageTitle("Documentos digitales", "Completa. Guarda. <em>Descarga.</em>", "Llena los formularios aquí mismo o descarga un PDF con campos editables. Añade las fotos y firmas desde tu computadora o celular, sin imprimir para llenarlo."),
     body: [
       band(
-        `<div class="acbw-grid acbw-grid--2"><div>${head("Temporada 2027", "Formularios <em>2027</em>")}<ul class="acbw-docs">${forms.map(([key, t, s]) => docLink({ href: assets.docs[key], title: t, sub: s, orange: key === "info" })).join("")}</ul></div><div class="acbw-card" style="align-self:start"><div class="acbw-card__icon acbw-card__icon--orange">${icon("check")}</div><div class="acbw-h3">Carnet del equipo</div><p>El portal se utilizará únicamente para subir el carnet con la información del equipo.</p><div class="acbw-btns" style="margin-top:16px"><a class="acbw-btn acbw-btn--orange acbw-btn--sm" href="${esc(portal)}/mi-club">Subir carnet del equipo</a></div></div></div>`,
+        `${head("Temporada 2027", "Formularios <em>editables</em>", "La opción recomendada es completar en línea: revisa los campos que falten y conserva tus datos al descargar.")}<div class="acbw-form-list">${forms.map(([key,t,s,id])=>`<article class="acbw-form-row"><div><h3>${esc(t)}</h3><p>${esc(s)}</p></div><div class="acbw-btns"><a class="acbw-btn acbw-btn--orange acbw-btn--sm" href="${esc(editorBase)}/formularios/?doc=${id}" target="acb-form-editor">Completar en línea</a><a class="acbw-btn acbw-btn--sm" href="${esc(assets.docs[key] || `${editorBase}/pdf/${id}.pdf`)}" download="${id}.pdf">PDF editable ${icon("download")}</a></div></article>`).join("")}</div>`,
       ),
+      band(`${head("Sin salir de la página", "Completa tu <em>formulario</em>", "Puedes guardar un borrador PDF y abrirlo aquí para continuar. Los datos y fotos se procesan en tu dispositivo; no se envían automáticamente.")}<iframe class="acbw-form-editor" name="acb-form-editor" title="Editor de formularios digitales ACB" src="${esc(editorBase)}/formularios/?doc=uniformes-2027" loading="lazy" referrerpolicy="no-referrer"></iframe><script src="${esc(editorBase)}/formularios/document-center.js" defer="defer"></script><p class="acbw-editor-help"><a href="${esc(editorBase)}/formularios/" target="_blank" rel="noopener">Abrir el editor en pantalla completa ${icon("external")}</a></p>${notice("Cómo guardar tus cambios", "Usa Guardar borrador PDF o Revisar y descargar PDF dentro del editor. Si llenas el archivo descargado, guárdalo desde tu lector PDF y vuelve a abrirlo para comprobar los datos. Para fotos, usa el editor web o Adobe Acrobat de escritorio.")}<div style="margin-top:16px">${notice("Entrega de documentos", `Descargar no envía el documento a la ACB. Se mantienen los requisitos de entrega, los certificados originales y las tres copias del roster para el sello. El carnet completado se sube al <a href="${esc(portal)}/mi-club">portal del equipo</a>.`)}</div>`, "white", "editor"),
       sectionRequiredDocs("white"),
       band(
         `${head("Archivo", "Documentos <em>2026</em>")}${archiveList(archive, [
-          { href: "2027/info2027.pdf", title: "Información general 2027", sub: "PDF · acbpr.com" },
-          { href: "2026/uniformes.pdf", title: "Formulario uniforme 2026" },
-          { href: "2026/CARNET.pdf", title: "Carnet y lista de jugadores 2026" },
-          { href: "2026/ROSTER.pdf", title: "Hoja roster 2026" },
           { href: "2026/reglamento2026.pdf", title: "Reglamento ACB 2026" },
           { href: "2026/REGLAS.pdf", title: "Reglas de participación 2026" },
           { href: "2026/accesorios 2025.pdf", title: "Accesorios permitidos 2026" },
-        ])}`,
+        ])}<ul class="acbw-docs">${[['uniformes','Formulario uniforme 2026'],['carnet','Carnet y lista de jugadores 2026'],['roster','Hoja roster 2026']].map(([id,title])=>docLink({href:`${editorBase}/pdf/${id}-2026.pdf`,title,sub:'Archivo histórico · PDF editable',external:false})).join('')}</ul>`,
       ),
     ].join(""),
   });

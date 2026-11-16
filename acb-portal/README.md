@@ -69,8 +69,8 @@ PORTAL_URL=https://<portal-url> npm run website:odoo           # publish to webs
 node odoo-website/build-site.mjs --preview                     # local preview in .preview/site
 ```
 
-The script is idempotent: it uploads the logo, flyer, stylesheet and the 2027 Word forms
-(`ACB_DOCS_DIR`, default `../../Documents `) as public attachments, rewrites one QWeb view
+The script is idempotent: it uploads the logo, flyer, stylesheet and the editable PDFs
+from `output/pdf/` as public attachments, rewrites one QWeb view
 per page, hides Odoo's default header/footer on those pages and points website #2's menu at
 them. **Re-running it overwrites edits made to these pages in Odoo's website editor**, so
 change the content in `odoo-website/content.mjs` (or `shared/tournament.js` for dates and
@@ -91,9 +91,9 @@ npm run website:share                           # export + upload to acbpr.pages
 It does not update on its own: after changing `content.mjs` (and publishing to Odoo), run
 `npm run website:share` too. Wrangler must be logged in to that Cloudflare account
 (`npx wrangler login`). Internal links point at folders (`/canchas/`) because Pages
-redirects `/canchas` there. The Word forms link to their public Odoo attachments, listed in
-`odoo-website/data/odoo-docs.json`; publishing to Odoo rewrites that file, so commit it
-after a publish that changed a form. The copy is marked `noindex`. Once website #2 has its
+redirects `/canchas` there. The static export hosts the editable PDFs and form editor locally, so they remain
+available during Odoo maintenance. Odoo publishing also records its attachment URLs
+in `odoo-website/data/odoo-docs.json`. The copy is marked `noindex`. Once website #2 has its
 own domain, delete the Pages project.
 
 The 2026 archive (PDFs on the current acbpr.com server) is linked through
@@ -121,3 +121,35 @@ behind as orphaned attachments.
 
 `npm run setup:odoo` creates or updates the models, fields, access rights, admin views and
 menu. It is safe to re-run after changing `shared/schema.js`.
+
+## Digital forms (November 2026)
+
+The public document center is **https://acbpr.pages.dev/documentos/**. The embedded
+editor at `/formularios/` uses native AcroForms generated with ReportLab and
+filled with pdf-lib. Eight PDFs are served from `/pdf/`: five 2027 packets and
+three historical 2026 forms. Information/calendar source pages are retained in
+`forms/sources`; the uniform sheet inside the information packet is interactive.
+
+Text, photos and drawn signatures are processed entirely in the browser. There
+is no automatic submission or browser storage. Users explicitly download a draft
+PDF and reopen it to continue. Final export checks mandatory fields and every
+populated player row; it does not certify eligibility, submit the document, or
+replace ACB's original-certificate and roster-stamp requirements. Image buttons
+in downloaded PDFs target desktop Acrobat; the web editor handles images on
+mobile and browsers. Typed/drawn signatures are not certificate-based signatures.
+
+The current public site serves these files independently of Odoo. To regenerate:
+
+```bash
+python3 scripts/build-fillable-pdfs.py  # requires reportlab and pypdf
+node scripts/prepare-pdf-images.mjs
+npm test
+npm run website:share
+```
+
+`output/pdf/` and `forms/schema.json` are committed generated assets. The website
+export bundles the editor locally; no third-party runtime script is needed.
+To synchronize only the Documents page after inspecting its live Odoo view:
+`node odoo-website/build-site.mjs --documents-only`. That action also upserts the
+existing attachment records with the editable PDFs. Do not publish other Odoo
+pages without checking for edits made in its website editor.

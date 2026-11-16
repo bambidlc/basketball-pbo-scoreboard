@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Completar formularios · ACB Puerto Rico</title><link rel="icon" href="/assets/acb-logo-256.png"><link rel="stylesheet" href="./editor.css"></head>
+<body><main>
+<header><img src="/assets/acb-logo-256.png" width="44" height="44" alt="ACB"><div><p class="eyebrow">ACB PUERTO RICO</p><h1>Completa tus documentos</h1></div><a class="back" href="/documentos/" target="_top">Documentos ↗</a></header>
+<p class="intro">Escribe aquí, añade las fotos y descarga tu PDF editable. Puedes guardar un borrador y continuar después.</p>
+<div class="select-row"><label for="document">Formulario<select id="document"></select></label><a id="blank" class="button secondary" download>PDF editable en blanco ↓</a></div>
+<div class="notice"><b>Todo se prepara en este dispositivo.</b> Los datos y fotos no se envían al servidor. Guarda un borrador antes de salir. Descargar no equivale a entregar el documento a la ACB.</div>
+<p id="instructions"></p>
+<nav class="tools" aria-label="Herramientas"><button id="save" type="button">Guardar borrador PDF</button><label class="button secondary">Abrir mi PDF<input id="restore" type="file" accept="application/pdf" hidden></label><button id="clear" class="quiet" type="button">Limpiar formulario</button><span id="progress" role="status"></span></nav>
+<div id="status" role="status" aria-live="polite"></div><div id="errors" role="alert" hidden></div>
+<form id="form" novalidate autocomplete="off"></form>
+<footer><span>Los campos con * son obligatorios. Completa todas las filas que utilices.</span><button id="download" class="primary" type="button">Revisar y descargar PDF ↓</button></footer>
+<noscript>Activa JavaScript para completar el formulario aquí. También puedes descargar los PDFs editables desde Documentos y abrirlos en un lector PDF.</noscript>
+</main><script src="./editor.js" defer></script></body></html>

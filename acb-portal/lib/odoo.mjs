@@ -41,7 +41,8 @@ export function createOdoo({ url, apiKey, db, timeoutMs = 25000, maxRetries = 4 
         } catch {
           payload = undefined;
         }
-        if (response.ok) return payload;
+        if (response.ok && payload !== undefined) return payload;
+        if (response.ok && payload === undefined) throw new OdooError(`${model}.${method}: Odoo returned a non-JSON maintenance or login page instead of API data.`, 503);
         const message = payload?.message || payload?.error?.message || `HTTP ${response.status}`;
         if (!RETRYABLE.has(response.status) || attempt === maxRetries) {
           throw new OdooError(`${model}.${method}: ${message}`, response.status);
