@@ -424,10 +424,10 @@ export function buildPages(ctx) {
     url: "/itinerarios",
     name: "Itinerarios",
     title: "Itinerarios y calendario 2027 · ACB Puerto Rico",
-    description: "Calendario de la temporada 2027 de la ACB: serie regular, postemporada y finales por grupo de categorías.",
+    description: "Calendario de la temporada 2027 de la ACB: serie regular, postemporada y finales por categorías.",
     hero: hero({ active: "/itinerarios", logo: assets.logo }),
     active: "/itinerarios",
-    title_html: pageTitle("Itinerarios", "Itinerarios <em>2027</em>", "Calendario de la temporada 2027 por grupo de categorías. Los itinerarios de juegos por categoría se publicarán en esta página."),
+    title_html: pageTitle("Itinerarios", "Itinerarios <em>2027</em>", "Calendario de la temporada 2027 por categorías. Los itinerarios de juegos por categoría se publicarán en esta página."),
     body: [
       band(`${head("Calendario del Torneo ACB 2027", "Temporada <em>2027</em>")}${calendarCards()}`),
       band(
