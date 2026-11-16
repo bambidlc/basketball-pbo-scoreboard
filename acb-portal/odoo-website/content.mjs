@@ -292,7 +292,7 @@ export function footer({ portal, logo }) {
 }
 
 function pageTitle(crumb, title, lead) {
-  return `<section class="acbw-title"><div class="acbw-wrap"><div class="acbw-crumbs"><a href="/">Inicio</a> / ${esc(crumb)}</div><h1>${title}</h1>${lead ? `<p>${lead}</p>` : ""}</div></section>`;
+  return `<section class="acbw-title" id="informacion"><div class="acbw-wrap"><div class="acbw-crumbs"><a href="/">Inicio</a> / ${esc(crumb)}</div><h1>${title}</h1>${lead ? `<p>${lead}</p>` : ""}</div></section>`;
 }
 
 function hero({ active, logo }) {
@@ -379,7 +379,7 @@ export function buildPages(ctx) {
         `${head("Temporada 2027", "Todo el <em>torneo</em>")}<div class="acbw-grid acbw-grid--4">${quick
           .map(
             ([href, t, d, ic, orange]) =>
-              `<a class="acbw-card acbw-card--link" href="${href}"><div class="acbw-card__icon${orange ? " acbw-card__icon--orange" : ""}">${icon(ic)}</div><div class="acbw-h3">${t}</div><p>${d}</p><span class="acbw-card__more">Ver ${icon("arrow")}</span></a>`,
+              `<a class="acbw-card acbw-card--link" href="${href.includes("#") ? href : `${href}#informacion`}"><div class="acbw-card__icon${orange ? " acbw-card__icon--orange" : ""}">${icon(ic)}</div><div class="acbw-h3">${t}</div><p>${d}</p><span class="acbw-card__more">Ver ${icon("arrow")}</span></a>`,
           )
           .join("")}</div>`,
       ),
