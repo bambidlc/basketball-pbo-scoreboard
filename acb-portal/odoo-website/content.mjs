@@ -69,8 +69,8 @@ export const LEFT_PILLS = [
   { label: "Itinerarios", href: "/itinerarios" },
   { label: "Tabla de posiciones", href: "/tabla-de-posiciones" },
   { label: "Cuartos de final", href: "/cuartos-de-final" },
-  { label: "Final 4 (semifinales)", href: "/todos-vs-todos" },
-  { label: "ACB regular y ACB Alternativo", href: "/secciones-y-divisiones" },
+  { label: "Final Four (semifinales)", href: "/todos-vs-todos" },
+  { label: "ACB Regular y ACB Alternativo", href: "/secciones-y-divisiones" },
   { label: "Canchas", href: "/canchas#directorio" },
 ];
 export const RIGHT_PILLS = [
@@ -286,7 +286,7 @@ export function footer({ portal, logo }) {
     .join("");
   return `<footer class="acbw-footer"><div class="acbw-wrap"><div class="acbw-footer__grid">
     <div><div class="acbw-footer__brand"><img src="${esc(logo)}" alt="ACB" width="52" height="44"/><b>Asociación de Clubes de Baloncesto de Puerto Rico, Inc.</b></div><p>Torneo #30 · Temporada 2027. Baloncesto juvenil de clubes en Puerto Rico, categorías 6 a 19 años.</p><a class="acbw-contact" style="color:#fff" href="${FACEBOOK_URL}" target="_blank" rel="noopener">${icon("facebook")} Facebook · Liga ACB PR</a></div>
-    <div><h4>Torneo</h4><ul><li><a href="/inscripcion">Inscripción 2027</a></li><li><a href="/itinerarios">Itinerarios y calendario</a></li><li><a href="/secciones-y-divisiones">ACB regular y ACB Alternativo</a></li><li><a href="/canchas#directorio">Canchas</a></li><li><a href="/documentos">Documentos</a></li><li><a href="/reglamento">Reglamento</a></li><li><a href="${esc(portal)}">Portal de clubes</a></li></ul></div>
+    <div><h4>Torneo</h4><ul><li><a href="/inscripcion">Inscripción 2027</a></li><li><a href="/itinerarios">Itinerarios y calendario</a></li><li><a href="/secciones-y-divisiones">ACB Regular y ACB Alternativo</a></li><li><a href="/canchas#directorio">Canchas</a></li><li><a href="/documentos">Documentos</a></li><li><a href="/reglamento">Reglamento</a></li><li><a href="${esc(portal)}">Portal de clubes</a></li></ul></div>
     <div><h4>Contactos</h4><ul>${CONTACTOS.map((p) => `<li><b style="color:#fff">${esc(p.name)}</b><br/>${esc(p.role)} · <a href="${telHref(p.phone)}">${esc(p.phone)}</a></li>`).join("")}</ul></div>
     <div><h4>Fechas clave</h4><ul>${dates}</ul></div>
   </div><div class="acbw-footer__bottom"><span>© 2027 Asociación de Clubes de Baloncesto de Puerto Rico, Inc.</span><span>acbpr.com</span></div></div></footer>`;
@@ -360,7 +360,7 @@ export function buildPages(ctx) {
   const quick = [
     ["/inscripcion", "Inscripción 2027", "Requisitos, costos, fechas y el portal en línea para clubes.", "check", true],
     ["/itinerarios", "Itinerarios y calendario", "Fechas de la serie regular, postemporada y finales por grupo.", "calendar"],
-    ["/secciones-y-divisiones", "ACB regular y ACB Alternativo", "Categorías de 6 a 19 años, ACB Regular y ACB Alternativo.", "grid"],
+    ["/secciones-y-divisiones", "ACB Regular y ACB Alternativo", "Categorías de 6 a 19 años, ACB Regular y ACB Alternativo.", "grid"],
     ["/canchas#directorio", "Canchas", "Directorio de canchas con direcciones y fecha límite de disponibilidad.", "pin"],
     ["/documentos", "Documentos", "Formularios 2027 y documentos oficiales para descargar.", "file"],
     ["/reglamento", "Reglamento", "Reglas de participación, Regla 3 y accesorios permitidos.", "book"],
@@ -489,12 +489,12 @@ export function buildPages(ctx) {
   add({
     slug: "todos-vs-todos",
     url: "/todos-vs-todos",
-    name: "Final 4 (semifinales)",
-    title: "Final 4 (semifinales) 2027 · ACB Puerto Rico",
-    description: "Llaves de Final 4 (semifinales) del Torneo #30 de la ACB.",
+    name: "Final Four (semifinales)",
+    title: "Final Four (semifinales) 2027 · ACB Puerto Rico",
+    description: "Llaves de Final Four (semifinales) del Torneo #30 de la ACB.",
     active: "/todos-vs-todos",
     hero: hero({ active: "/todos-vs-todos", logo: assets.logo, compact: true }),
-    title_html: pageTitle("Final 4 (semifinales)", "Final 4 <em>(semifinales)</em>", "Las llaves de Final 4 (semifinales) de la temporada 2027 se publicarán en esta página."),
+    title_html: pageTitle("Final Four (semifinales)", "Final Four <em>(semifinales)</em>", "Las llaves de Final Four (semifinales) de la temporada 2027 se publicarán en esta página."),
     body: [
       band(`${head("Temporada 2027", "Calendario <em>2027</em>")}${calendarCards()}`),
       band(`${head("Archivo", "Llaves <em>2026</em>")}${archiveList(archive, [{ href: "2026/llaves14.pdf", title: "Llaves 14 – 16" }])}`, "white"),
@@ -506,12 +506,12 @@ export function buildPages(ctx) {
   add({
     slug: "secciones-y-divisiones",
     url: "/secciones-y-divisiones",
-    name: "ACB regular y ACB Alternativo",
-    title: "ACB regular y ACB Alternativo 2027 · ACB Puerto Rico",
+    name: "ACB Regular y ACB Alternativo",
+    title: "ACB Regular y ACB Alternativo 2027 · ACB Puerto Rico",
     description: "Categorías de 6 a 19 años, programas ACB Regular y ACB Alternativo, y grupos de la temporada 2027.",
     active: "/secciones-y-divisiones",
     hero: hero({ active: "/secciones-y-divisiones", logo: assets.logo, compact: true }),
-    title_html: pageTitle("ACB regular y ACB Alternativo", "ACB regular <em>y ACB Alternativo</em>", "Programas, categorías por año de nacimiento y grupos de calendario de la temporada 2027. Las secciones por categoría se publicarán al cerrar la inscripción."),
+    title_html: pageTitle("ACB Regular y ACB Alternativo", "ACB Regular <em>y ACB Alternativo</em>", "Programas, categorías por año de nacimiento y grupos de calendario de la temporada 2027. Las secciones por categoría se publicarán al cerrar la inscripción."),
     body: [
       band(
         `${head("Programas", "ACB Regular <em>y Alternativo</em>")}<div class="acbw-grid acbw-grid--2"><div class="acbw-card"><div class="acbw-card__icon">${icon("trophy")}</div><div class="acbw-h3">ACB Regular</div><p>Categorías de 6 a 19 años, rama masculina y femenina. Serie regular, postemporada, Final Four (6 a 13) y finales.</p></div><div class="acbw-card"><div class="acbw-card__icon acbw-card__icon--orange">${icon("ball")}</div><div class="acbw-h3">ACB Alternativo</div><p>Se juega con el grupo de 6 a 13 años; finales del Alternativo el 10 y 11 de abril de 2027.</p></div></div>`,
