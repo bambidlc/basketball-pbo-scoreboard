@@ -100,7 +100,7 @@ const TICKER = [
 // ACB contacts (shown as "Contactos"; the page keeps its /directiva URL).
 export const CONTACTOS = [
   { role: "Director Ejecutivo", name: 'Prof. Roberto "Bobby" Ramírez', phone: "787-632-4848", email: "bobbyramirez48@yahoo.com", initials: "RR" },
-  { role: "Administrador", name: "Julio Betancurt", phone: "787-370-4145", email: "julio89_@hotmail.com", initials: "JB" },
+  { role: "Uniformes y Pagos", name: "Juliou Betancourt", phone: "787-370-4145", email: "julio89_@hotmail.com", initials: "JB" },
 ];
 
 const FACEBOOK_URL = "https://www.facebook.com/LigaACBPR/";
@@ -364,7 +364,7 @@ export function buildPages(ctx) {
     ["/documentos", "Documentos", "Formularios 2027 y documentos oficiales para descargar.", "file"],
     ["/reglamento", "Reglamento", "Reglas de participación, Regla 3 y accesorios permitidos.", "book"],
     ["/resoluciones", "Resoluciones", "Resoluciones oficiales de la ACB por temporada.", "scale"],
-    ["/directiva", "Contactos", "Director Ejecutivo y Administrador de la ACB.", "users"],
+    ["/directiva", "Contactos", "Director Ejecutivo y Uniformes y Pagos de la ACB.", "users"],
   ];
   add({
     slug: "home",
@@ -609,7 +609,7 @@ export function buildPages(ctx) {
     url: "/directiva",
     name: "Contactos",
     title: "Contactos · ACB Puerto Rico",
-    description: "Contactos de la Asociación de Clubes de Baloncesto de Puerto Rico: Director Ejecutivo y Administrador.",
+    description: "Contactos de la Asociación de Clubes de Baloncesto de Puerto Rico: Director Ejecutivo y Uniformes y Pagos.",
     active: "/directiva",
     hero: hero({ active: "/directiva", logo: assets.logo }),
     title_html: pageTitle("Contactos", "<em>Contactos</em>", "Asociación de Clubes de Baloncesto de Puerto Rico (ACB)"),
