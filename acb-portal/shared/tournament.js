@@ -114,7 +114,7 @@ export const KEY_DATES = [
     date: "2026-12-30",
     title: "Fecha límite: canchas y acomodos",
     when: "Miércoles 30 de diciembre de 2026",
-    where: "Portal de Inscripción ACB",
+    where: "Enviar a bobbyramirez48@yahoo.com",
     detail: "Fechas disponibles de su cancha para los carnavales y dirigentes con 2 equipos (acomodo AM o PM).",
   },
   {
