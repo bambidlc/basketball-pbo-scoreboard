@@ -642,13 +642,6 @@ export function buildPages(ctx) {
       ),
       band(`${head("Sin salir de la página", "Completa tu <em>formulario</em>", "Puedes guardar un borrador PDF y abrirlo aquí para continuar. Los datos y fotos se procesan en tu dispositivo; no se envían automáticamente.")}<iframe class="acbw-form-editor" name="acb-form-editor" title="Editor de formularios digitales ACB" src="${esc(editorBase)}/formularios/?doc=uniformes-2027" loading="lazy" referrerpolicy="no-referrer"></iframe><script src="${esc(editorBase)}/formularios/document-center.js" defer="defer"></script><p class="acbw-editor-help"><a href="${esc(editorBase)}/formularios/" target="_blank" rel="noopener">Abrir el editor en pantalla completa ${icon("external")}</a></p>${notice("Cómo guardar tus cambios", "Usa Guardar borrador PDF o Revisar y descargar PDF dentro del editor. Si llenas el archivo descargado, guárdalo desde tu lector PDF y vuelve a abrirlo para comprobar los datos. Para fotos, usa el editor web o Adobe Acrobat de escritorio.")}<div style="margin-top:16px">${notice("Entrega de documentos", `Descargar no envía el documento a la ACB. Se mantienen los requisitos de entrega, los certificados originales y las tres copias del roster para el sello. El carnet completado se sube al <a href="${esc(portal)}/mi-club">portal del equipo</a>.`)}</div>`, "white", "editor"),
       sectionRequiredDocs("white"),
-      band(
-        `${head("Archivo", "Documentos <em>2026</em>")}${archiveList(archive, [
-          { href: "2026/reglamento2026.pdf", title: "Reglamento ACB 2026" },
-          { href: "2026/REGLAS.pdf", title: "Reglas de participación 2026" },
-          { href: "2026/accesorios 2025.pdf", title: "Accesorios permitidos 2026" },
-        ])}<ul class="acbw-docs">${[['uniformes','Formulario uniforme 2026'],['carnet','Carnet y lista de jugadores 2026'],['roster','Hoja roster 2026']].map(([id,title])=>docLink({href:`${editorBase}/pdf/${id}-2026.pdf`,title,sub:'Archivo histórico · PDF editable',external:false})).join('')}</ul>`,
-      ),
     ].join(""),
   });
 
