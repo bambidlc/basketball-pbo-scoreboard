@@ -284,7 +284,7 @@ export function footer({ portal, logo }) {
     .map((d) => `<li>${esc(d.title)}: ${esc(d.when.split(" · ")[0])}</li>`)
     .join("");
   return `<footer class="acbw-footer"><div class="acbw-wrap"><div class="acbw-footer__grid">
-    <div><div class="acbw-footer__brand"><img src="${esc(logo)}" alt="ACB" width="52" height="44"/><b>Asociación de Clubes de Baloncesto de Puerto Rico (ACB)</b></div><p>Torneo #30 · Temporada 2027. Baloncesto de clubes en Puerto Rico, categorías 6 a 19 años.</p><a class="acbw-contact" style="color:#fff" href="${FACEBOOK_URL}" target="_blank" rel="noopener">${icon("facebook")} Facebook · Liga ACB PR</a></div>
+    <div><div class="acbw-footer__brand"><img src="${esc(logo)}" alt="ACB" width="52" height="44"/><b>Asociación de Clubes de Baloncesto de Puerto Rico (ACB)</b></div><p>Torneo #30 · Temporada 2027. Baloncesto de Clubes en Puerto Rico, categorías 6 a 19 años.</p><a class="acbw-contact" style="color:#fff" href="${FACEBOOK_URL}" target="_blank" rel="noopener">${icon("facebook")} Facebook · Liga ACB PR</a></div>
     <div><h4>Torneo</h4><ul><li><a href="/inscripcion">Inscripción 2027</a></li><li><a href="/itinerarios">Itinerarios y calendario</a></li><li><a href="/secciones-y-divisiones">ACB Regular y ACB Alternativo</a></li><li><a href="/canchas#directorio">Canchas</a></li><li><a href="/documentos">Documentos</a></li><li><a href="/reglamento">Reglamento</a></li><li><a href="${esc(portal)}">Carnet del equipo</a></li></ul></div>
     <div><h4>Contactos</h4><ul>${CONTACTOS.map((p) => `<li><b style="color:#fff">${esc(p.name)}</b><br/>${esc(p.role)} · <a href="${telHref(p.phone)}">${esc(p.phone)}</a></li>`).join("")}</ul></div>
     <div><h4>Fechas clave</h4><ul>${dates}</ul></div>
@@ -573,7 +573,7 @@ export function buildPages(ctx) {
     description: "Campeones de la ACB y fechas de finales del Torneo #30.",
     active: "/campeones",
     hero: hero({ active: "/campeones", logo: assets.logo }),
-    title_html: pageTitle("Campeones", "<em>Campeones</em>", "Treinta torneos de baloncesto de clubes. Los campeones del Torneo #30 se publicarán aquí al terminar cada final."),
+    title_html: pageTitle("Campeones", "<em>Campeones</em>", "Treinta torneos de baloncesto de Clubes. Los campeones del Torneo #30 se publicarán aquí al terminar cada final."),
     body: [
       band(`${head("Torneo #30", "Finales <em>2027</em>")}${calendarCards((p) => /final/i.test(p.phase))}`),
       band(`${head("Archivo", "Campeones <em>2026</em>")}${archiveList(archive, [{ href: `${archive}/campeones.html`, title: "Campeones ACB 2026", sub: "Fotos de los campeones · acbpr.com" }])}`, "white"),
