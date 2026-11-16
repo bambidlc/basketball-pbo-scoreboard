@@ -221,7 +221,7 @@ function sectionCourtRules(portal, tone = "") {
   return band(
     `${head("Fecha límite: 30 de diciembre de 2026", "Canchas <em>y acomodos</em>", "Cada club indica las fechas en que su cancha está disponible para los carnavales y los dirigentes con dos equipos solicitan su acomodo.")}
     <div class="acbw-grid acbw-grid--2">
-      <div class="acbw-card"><div class="acbw-card__icon acbw-card__icon--orange">${icon("calendar")}</div><div class="acbw-h3">Disponibilidad de cancha</div><p>Envíe las fechas de la temporada en que su cancha está disponible (todo el día, solo AM o solo PM) a bobbyramirez48@yahoo.com antes del 30 de diciembre.</p><div class="acbw-btns" style="margin-top:16px"><a class="acbw-btn acbw-btn--orange acbw-btn--sm" href="mailto:bobbyramirez48@yahoo.com">Enviar disponibilidad</a></div></div>
+      <div class="acbw-card"><div class="acbw-card__icon acbw-card__icon--orange">${icon("calendar")}</div><div class="acbw-h3">Disponibilidad de cancha</div><p>Envíe las fechas de la temporada en que su cancha está disponible a bobbyramirez48@yahoo.com antes del 30 de diciembre.</p><div class="acbw-btns" style="margin-top:16px"><a class="acbw-btn acbw-btn--orange acbw-btn--sm" href="mailto:bobbyramirez48@yahoo.com">Enviar disponibilidad</a></div></div>
       <div class="acbw-card"><div class="acbw-card__icon">${icon("users")}</div><div class="acbw-h3">Dirigentes con 2 equipos</div><ul class="acbw-list"><li>Máximo 2 equipos por dirigente.</li><li>Nunca dos equipos en la misma categoría.</li><li>Acomodo AM (hasta el mediodía) o PM (después del mediodía); no se aceptan horas específicas.</li><li>No se aceptan nuevos acomodos luego de iniciado el torneo.</li></ul></div>
     </div>`,
     tone,
