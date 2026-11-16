@@ -100,7 +100,7 @@ const TICKER = [
 // ACB contacts (shown as "Contactos"; the page keeps its /directiva URL).
 export const CONTACTOS = [
   { role: "Director Ejecutivo", name: 'Prof. Roberto "Bobby" Ramírez', phone: "787-632-4848", email: "bobbyramirez48@yahoo.com", initials: "RR" },
-  { role: "Uniformes y Pagos", name: "Juliou Betancourt", phone: "787-370-4145", email: "julio89_@hotmail.com", initials: "JB" },
+  { role: "Uniformes y Pagos", name: "Julio Betancourt", phone: "787-370-4145", email: "julio89_@hotmail.com", initials: "JB" },
 ];
 
 const FACEBOOK_URL = "https://www.facebook.com/LigaACBPR/";
