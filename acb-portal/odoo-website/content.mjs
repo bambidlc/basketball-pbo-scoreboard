@@ -284,11 +284,11 @@ export function footer({ portal, logo }) {
     .map((d) => `<li>${esc(d.title)}: ${esc(d.when.split(" · ")[0])}</li>`)
     .join("");
   return `<footer class="acbw-footer"><div class="acbw-wrap"><div class="acbw-footer__grid">
-    <div><div class="acbw-footer__brand"><img src="${esc(logo)}" alt="ACB" width="52" height="44"/><b>Asociación de Clubes de Baloncesto de Puerto Rico, Inc.</b></div><p>Torneo #30 · Temporada 2027. Baloncesto juvenil de clubes en Puerto Rico, categorías 6 a 19 años.</p><a class="acbw-contact" style="color:#fff" href="${FACEBOOK_URL}" target="_blank" rel="noopener">${icon("facebook")} Facebook · Liga ACB PR</a></div>
+    <div><div class="acbw-footer__brand"><img src="${esc(logo)}" alt="ACB" width="52" height="44"/><b>Asociación de Clubes de Baloncesto de Puerto Rico (ACB)</b></div><p>Torneo #30 · Temporada 2027. Baloncesto juvenil de clubes en Puerto Rico, categorías 6 a 19 años.</p><a class="acbw-contact" style="color:#fff" href="${FACEBOOK_URL}" target="_blank" rel="noopener">${icon("facebook")} Facebook · Liga ACB PR</a></div>
     <div><h4>Torneo</h4><ul><li><a href="/inscripcion">Inscripción 2027</a></li><li><a href="/itinerarios">Itinerarios y calendario</a></li><li><a href="/secciones-y-divisiones">ACB Regular y ACB Alternativo</a></li><li><a href="/canchas#directorio">Canchas</a></li><li><a href="/documentos">Documentos</a></li><li><a href="/reglamento">Reglamento</a></li><li><a href="${esc(portal)}">Carnet del equipo</a></li></ul></div>
     <div><h4>Contactos</h4><ul>${CONTACTOS.map((p) => `<li><b style="color:#fff">${esc(p.name)}</b><br/>${esc(p.role)} · <a href="${telHref(p.phone)}">${esc(p.phone)}</a></li>`).join("")}</ul></div>
     <div><h4>Fechas clave</h4><ul>${dates}</ul></div>
-  </div><div class="acbw-footer__bottom"><span>© 2027 Asociación de Clubes de Baloncesto de Puerto Rico, Inc.</span><span>acbpr.com</span></div></div></footer>`;
+  </div><div class="acbw-footer__bottom"><span>© 2027 Asociación de Clubes de Baloncesto de Puerto Rico (ACB)</span><span>acbpr.com</span></div></div></footer>`;
 }
 
 function pageTitle(crumb, title, lead) {
@@ -612,7 +612,7 @@ export function buildPages(ctx) {
     description: "Contactos de la Asociación de Clubes de Baloncesto de Puerto Rico: Director Ejecutivo y Administrador.",
     active: "/directiva",
     hero: hero({ active: "/directiva", logo: assets.logo }),
-    title_html: pageTitle("Contactos", "<em>Contactos</em>", "Asociación de Clubes de Baloncesto de Puerto Rico, Inc."),
+    title_html: pageTitle("Contactos", "<em>Contactos</em>", "Asociación de Clubes de Baloncesto de Puerto Rico (ACB)"),
     body: [
       band(`<div class="acbw-grid acbw-grid--2">${CONTACTOS.map((p) => personCard(p)).join("")}</div><div style="margin-top:22px">${notice("Inscripción, canchas y acomodos", 'Para dudas sobre la inscripción, la disponibilidad de canchas y los acomodos de dirigentes, comuníquese con el Prof. Roberto "Bobby" Ramírez.')}</div>`),
     ].join(""),
