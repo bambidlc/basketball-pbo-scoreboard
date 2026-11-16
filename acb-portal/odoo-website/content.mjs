@@ -93,7 +93,7 @@ const TOP_NAV = [
 const TICKER = [
   "Inscripción de equipos: sábados 12 y 19 de diciembre de 2026 · Club de Baloncesto Fraigcomar",
   "Inicio del Torneo #30: sábado 6 de febrero de 2027",
-  "Fechas de cancha y acomodos de dirigentes: antes del 30 de diciembre",
+  "Fechas de cancha y acomodos de dirigentes: antes del 30 de diciembre de 2026",
   "Entrega de uniformes y documentos: sábado 23 de enero de 2027",
 ];
 
@@ -221,7 +221,7 @@ function sectionCourtRules(portal, tone = "") {
   return band(
     `${head("Fecha límite: 30 de diciembre de 2026", "Canchas <em>y acomodos</em>", "Cada club indica las fechas en que su cancha está disponible para los carnavales y los dirigentes con dos equipos solicitan su acomodo.")}
     <div class="acbw-grid acbw-grid--2">
-      <div class="acbw-card"><div class="acbw-card__icon acbw-card__icon--orange">${icon("calendar")}</div><div class="acbw-h3">Disponibilidad de cancha</div><p>Envíe las fechas de la temporada en que su cancha está disponible a bobbyramirez48@yahoo.com antes del 30 de diciembre.</p><div class="acbw-btns" style="margin-top:16px"><a class="acbw-btn acbw-btn--orange acbw-btn--sm" href="mailto:bobbyramirez48@yahoo.com">Enviar disponibilidad</a></div></div>
+      <div class="acbw-card"><div class="acbw-card__icon acbw-card__icon--orange">${icon("calendar")}</div><div class="acbw-h3">Disponibilidad de cancha</div><p>Envíe las fechas de la temporada en que su cancha está disponible a bobbyramirez48@yahoo.com antes del 30 de diciembre de 2026.</p><div class="acbw-btns" style="margin-top:16px"><a class="acbw-btn acbw-btn--orange acbw-btn--sm" href="mailto:bobbyramirez48@yahoo.com">Enviar disponibilidad</a></div></div>
       <div class="acbw-card"><div class="acbw-card__icon">${icon("users")}</div><div class="acbw-h3">Dirigentes con 2 equipos</div><ul class="acbw-list"><li>Máximo 2 equipos por dirigente.</li><li>Nunca dos equipos en la misma categoría.</li><li>Acomodo AM (hasta el mediodía) o PM (después del mediodía); no se aceptan horas específicas.</li><li>No se aceptan nuevos acomodos luego de iniciado el torneo.</li></ul></div>
     </div>`,
     tone,
@@ -624,7 +624,7 @@ export function buildPages(ctx) {
     ["uniformes", "Hoja de uniformes 2027", "Jugadores, tallas y resumen automático", "uniformes-2027"],
     ["carnet", "Carnet y lista oficial de jugadores", "Datos, fotos, firmas y tarjetas federativas", "carnet-2027"],
     ["roster", "Roster de juego 2027", "Complete digitalmente · tres copias para ponchar", "roster-2027"],
-    ["disponibilidad", "Disponibilidad de cancha y dirigentes", "Fechas y acomodos · enviar por email antes del 30 de diciembre", "disponibilidad-2027"],
+    ["disponibilidad", "Disponibilidad de cancha y dirigentes", "Fechas y acomodos · enviar por email antes del 30 de diciembre de 2026", "disponibilidad-2027"],
     ["info", "Información de inscripción 2027", "Información oficial y hoja de uniformes editable", "informacion-2027"],
   ];
   add({
