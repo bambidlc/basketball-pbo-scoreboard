@@ -154,7 +154,7 @@ export const KEY_DATES = [
 /** Season calendar, grouped the way the official document groups it. */
 export const CALENDAR = [
   {
-    group: "Categorías 6 a 13 años y ACB Alternativo",
+    group: "Categorías 6 a 13 años ACB Regular y ACB Alternativo",
     phases: [
       { phase: "Serie regular", dates: ["2027-02-06", "2027-02-07", "2027-02-13", "2027-02-14", "2027-02-15", "2027-02-20", "2027-02-21", "2027-02-27", "2027-02-28", "2027-03-06", "2027-03-07"], note: "Lunes 15 de febrero es feriado" },
       { phase: "Series postemporada", dates: ["2027-03-13", "2027-03-14", "2027-03-20"] },
@@ -164,7 +164,7 @@ export const CALENDAR = [
     ],
   },
   {
-    group: "Categorías 14, 15 y 16 años",
+    group: "Categorías 14, 15 y 16 años ACB Regular",
     phases: [
       { phase: "Serie regular", dates: ["2027-02-07", "2027-02-14", "2027-02-21", "2027-02-28", "2027-03-06", "2027-03-07", "2027-03-13", "2027-03-14", "2027-03-20", "2027-03-21"] },
       { phase: "Series postemporada", dates: ["2027-04-03", "2027-04-04", "2027-04-10"] },
