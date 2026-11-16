@@ -296,9 +296,9 @@ function pageTitle(crumb, title, lead) {
   return `<section class="acbw-title"><div class="acbw-wrap"><div class="acbw-crumbs"><a href="/">Inicio</a> / ${esc(crumb)}</div><h1>${title}</h1>${lead ? `<p>${lead}</p>` : ""}</div></section>`;
 }
 
-function hero({ active, logo, compact }) {
+function hero({ active, logo }) {
   const mark = (pills) => pills.map((p) => ({ ...p, active: p.href.split("#")[0] === active }));
-  return heroHtml({ left: mark(LEFT_PILLS), right: mark(RIGHT_PILLS), compact, logoSrc: logo });
+  return heroHtml({ left: mark(LEFT_PILLS), right: mark(RIGHT_PILLS), logoSrc: logo });
 }
 
 // Live filter for the court directory (Canchas page). It sits inline in the QWeb
@@ -373,7 +373,7 @@ export function buildPages(ctx) {
     name: "Inicio",
     title: "ACB Puerto Rico · Torneo #30 · Temporada 2027",
     description: "Asociación de Clubes de Baloncesto de Puerto Rico. Torneo #30, temporada 2027: inscripción, calendario, canchas, documentos y portal de clubes.",
-    hero: hero({ active: "/", logo: assets.logo, compact: false }),
+    hero: hero({ active: "/", logo: assets.logo }),
     body: [
       flyerHtml({ logoSrc: esc(assets.logo), ctaHref: `${esc(portal)}/mi-club` }),
       band(
@@ -403,7 +403,7 @@ export function buildPages(ctx) {
     title: "Inscripción 2027 · Torneo #30 · ACB Puerto Rico",
     description: "Requisitos, costos, fechas clave, elegibilidad, uniformes y documentos para inscribir equipos en el Torneo #30 de la ACB.",
     active: "/inscripcion",
-    hero: hero({ active: "", logo: assets.logo, compact: true }),
+    hero: hero({ active: "", logo: assets.logo }),
     title_html: pageTitle("Inscripción 2027", "Inscripción <em>2027</em>", "Toda la información de inscripción del Torneo #30 en un solo lugar: requisitos, costos, fechas, elegibilidad, uniformes y documentos. Inscriba su club y sus equipos en línea."),
     body: [
       sectionRequirements(""),
@@ -426,7 +426,7 @@ export function buildPages(ctx) {
     name: "Itinerarios",
     title: "Itinerarios y calendario 2027 · ACB Puerto Rico",
     description: "Calendario de la temporada 2027 de la ACB: serie regular, postemporada y finales por grupo de categorías.",
-    hero: hero({ active: "/itinerarios", logo: assets.logo, compact: true }),
+    hero: hero({ active: "/itinerarios", logo: assets.logo }),
     active: "/itinerarios",
     title_html: pageTitle("Itinerarios", "Itinerarios <em>2027</em>", "Calendario de la temporada 2027 por grupo de categorías. Los itinerarios de juegos por categoría se publicarán en esta página."),
     body: [
@@ -450,7 +450,7 @@ export function buildPages(ctx) {
     title: "Tabla de posiciones 2027 · ACB Puerto Rico",
     description: "Tablas de posiciones del Torneo #30 de la ACB.",
     active: "/tabla-de-posiciones",
-    hero: hero({ active: "/tabla-de-posiciones", logo: assets.logo, compact: true }),
+    hero: hero({ active: "/tabla-de-posiciones", logo: assets.logo }),
     title_html: pageTitle("Tabla de posiciones", "Tabla de <em>posiciones</em>", "Las tablas de posiciones 2027 se publicarán aquí una vez comience la temporada, el sábado 6 de febrero de 2027."),
     body: [
       band(`${notice("Temporada 2027", "Cada equipo tiene garantizado un mínimo de 8 juegos. La serie regular de las categorías 6 a 13 años comienza el 6 de febrero; 14 a 16 años el 7 de febrero; y 17 a 19 años el 1 de mayo de 2027.")}<div style="margin-top:22px">${calendarCards((p) => /regular/i.test(p.phase))}</div>`),
@@ -466,7 +466,7 @@ export function buildPages(ctx) {
     title: "Cuartos de final y postemporada 2027 · ACB Puerto Rico",
     description: "Fechas de postemporada, Final Four y finales del Torneo #30 de la ACB.",
     active: "/cuartos-de-final",
-    hero: hero({ active: "/cuartos-de-final", logo: assets.logo, compact: true }),
+    hero: hero({ active: "/cuartos-de-final", logo: assets.logo }),
     title_html: pageTitle("Cuartos de final", "Cuartos <em>de final</em>", "Postemporada, Final Four y finales de la temporada 2027. Las llaves se publicarán al terminar la serie regular."),
     body: [
       band(`${head("Postemporada 2027", "Fechas de <em>postemporada</em>")}${calendarCards((p) => !/regular|uniformes/i.test(p.phase))}`),
@@ -493,7 +493,7 @@ export function buildPages(ctx) {
     title: "Final Four (semifinales) 2027 · ACB Puerto Rico",
     description: "Llaves de Final Four (semifinales) del Torneo #30 de la ACB.",
     active: "/todos-vs-todos",
-    hero: hero({ active: "/todos-vs-todos", logo: assets.logo, compact: true }),
+    hero: hero({ active: "/todos-vs-todos", logo: assets.logo }),
     title_html: pageTitle("Final Four (semifinales)", "Final Four <em>(semifinales)</em>", "Las llaves de Final Four (semifinales) de la temporada 2027 se publicarán en esta página."),
     body: [
       band(`${head("Temporada 2027", "Calendario <em>2027</em>")}${calendarCards()}`),
@@ -510,7 +510,7 @@ export function buildPages(ctx) {
     title: "ACB Regular y ACB Alternativo 2027 · ACB Puerto Rico",
     description: "Categorías de 6 a 19 años, programas ACB Regular y ACB Alternativo, y grupos de la temporada 2027.",
     active: "/secciones-y-divisiones",
-    hero: hero({ active: "/secciones-y-divisiones", logo: assets.logo, compact: true }),
+    hero: hero({ active: "/secciones-y-divisiones", logo: assets.logo }),
     title_html: pageTitle("ACB Regular y ACB Alternativo", "ACB Regular <em>y ACB Alternativo</em>", "Programas, categorías por año de nacimiento y grupos de calendario de la temporada 2027. Las secciones por categoría se publicarán al cerrar la inscripción."),
     body: [
       band(
@@ -543,7 +543,7 @@ export function buildPages(ctx) {
     title: "Canchas · ACB Puerto Rico",
     description: "Directorio de canchas de la ACB con direcciones y contactos, y fecha límite de disponibilidad de canchas para la temporada 2027.",
     active: "/canchas",
-    hero: hero({ active: "/canchas", logo: assets.logo, compact: true }),
+    hero: hero({ active: "/canchas", logo: assets.logo }),
     title_html: pageTitle("Canchas", "<em>Canchas</em>", `Directorio de canchas de los clubes (${sorted.length}) con cómo llegar y personas de contacto, y la información de disponibilidad para la temporada 2027.`),
     body: [
       // The directory comes first (the "Canchas" links land on #directorio) with a live search; the rules follow.
@@ -573,7 +573,7 @@ export function buildPages(ctx) {
     title: "Campeones · ACB Puerto Rico",
     description: "Campeones de la ACB y fechas de finales del Torneo #30.",
     active: "/campeones",
-    hero: hero({ active: "/campeones", logo: assets.logo, compact: true }),
+    hero: hero({ active: "/campeones", logo: assets.logo }),
     title_html: pageTitle("Campeones", "<em>Campeones</em>", "Treinta torneos de baloncesto juvenil de clubes. Los campeones del Torneo #30 se publicarán aquí al terminar cada final."),
     body: [
       band(`${head("Torneo #30", "Finales <em>2027</em>")}${calendarCards((p) => /final/i.test(p.phase))}`),
@@ -589,7 +589,7 @@ export function buildPages(ctx) {
     title: "Resoluciones · ACB Puerto Rico",
     description: "Resoluciones oficiales de la Asociación de Clubes de Baloncesto de Puerto Rico por temporada.",
     active: "/resoluciones",
-    hero: hero({ active: "/resoluciones", logo: assets.logo, compact: true }),
+    hero: hero({ active: "/resoluciones", logo: assets.logo }),
     title_html: pageTitle("Resoluciones", "<em>Resoluciones</em>", "Resoluciones oficiales de la ACB por temporada."),
     body: band(
       resoluciones
@@ -612,7 +612,7 @@ export function buildPages(ctx) {
     title: "Contactos · ACB Puerto Rico",
     description: "Contactos de la Asociación de Clubes de Baloncesto de Puerto Rico: Director Ejecutivo y Administrador.",
     active: "/directiva",
-    hero: hero({ active: "/directiva", logo: assets.logo, compact: true }),
+    hero: hero({ active: "/directiva", logo: assets.logo }),
     title_html: pageTitle("Contactos", "<em>Contactos</em>", "Asociación de Clubes de Baloncesto de Puerto Rico, Inc."),
     body: [
       band(`<div class="acbw-grid acbw-grid--2">${CONTACTOS.map((p) => personCard(p)).join("")}</div><div style="margin-top:22px">${notice("Inscripción, canchas y acomodos", 'Para dudas sobre la inscripción, la disponibilidad de canchas y los acomodos de dirigentes, comuníquese con el Prof. Roberto "Bobby" Ramírez.')}</div>`),
@@ -634,7 +634,7 @@ export function buildPages(ctx) {
     title: "Documentos · ACB Puerto Rico",
     description: "Formularios oficiales 2027 de la ACB: hoja de uniformes, lista oficial, carnet, roster y disponibilidad de canchas.",
     active: "/documentos",
-    hero: hero({ active: "/documentos", logo: assets.logo, compact: true }),
+    hero: hero({ active: "/documentos", logo: assets.logo }),
     title_html: pageTitle("Documentos", "Documentos <em>oficiales</em>", "Formularios 2027 para descargar. Si inscribe su club en el portal, estos documentos se generan automáticamente con la información de cada equipo."),
     body: [
       band(
@@ -670,7 +670,7 @@ export function buildPages(ctx) {
     title: "Reglamento · ACB Puerto Rico",
     description: "Reglamento de la ACB, reglas de participación, Regla 3 y accesorios permitidos.",
     active: "/reglamento",
-    hero: hero({ active: "/reglamento", logo: assets.logo, compact: true }),
+    hero: hero({ active: "/reglamento", logo: assets.logo }),
     title_html: pageTitle("Reglamento", "<em>Reglamento</em>", "Reglas clave del Torneo #30 y el reglamento oficial de la ACB."),
     body: [
       band(`${head("Torneo #30", "Reglas <em>clave 2027</em>")}<div class="acbw-grid acbw-grid--3">${ruleCards.map(([t, d, ic]) => `<div class="acbw-card"><div class="acbw-card__icon">${icon(ic)}</div><div class="acbw-h3">${t}</div><p>${esc(d)}</p></div>`).join("")}</div>`),
@@ -693,7 +693,7 @@ export function buildPages(ctx) {
     title: "Fotos · ACB Puerto Rico",
     description: "Fotos de los juegos, campeones y actividades de la ACB.",
     active: "/fotos",
-    hero: hero({ active: "/fotos", logo: assets.logo, compact: true }),
+    hero: hero({ active: "/fotos", logo: assets.logo }),
     title_html: pageTitle("Fotos", "<em>Fotos</em>", "Juegos, campeones y actividades de la ACB."),
     body: band(
       `<div class="acbw-grid acbw-grid--2"><a class="acbw-card acbw-card--link" href="${FACEBOOK_URL}" target="_blank" rel="noopener"><div class="acbw-card__icon">${icon("facebook")}</div><div class="acbw-h3">Facebook · Liga ACB PR</div><p>Las fotos y noticias de cada fin de semana se publican en la página de Facebook de la Asociación de Clubes de Baloncesto.</p><span class="acbw-card__more">Ver fotos ${icon("external")}</span></a>${
@@ -711,7 +711,7 @@ export function buildPages(ctx) {
     title: "Contacto · ACB Puerto Rico",
     description: "Contacto de la Asociación de Clubes de Baloncesto de Puerto Rico.",
     active: "/contacto",
-    hero: hero({ active: "", logo: assets.logo, compact: true }),
+    hero: hero({ active: "", logo: assets.logo }),
     title_html: pageTitle("Contacto", "<em>Contacto</em>", "Comuníquese con la ACB."),
     body: [
       band(`<div class="acbw-grid acbw-grid--2">${CONTACTOS.map((p) => personCard(p)).join("")}</div>`),
