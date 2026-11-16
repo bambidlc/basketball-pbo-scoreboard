@@ -30,7 +30,7 @@ const dollars = (n) => `$${Number(n).toLocaleString("en-US")}`;
 /**
  * @param {{ logoSrc?: string, ctaHref?: string, ctaLabel?: string }} [options]
  */
-export function flyerHtml({ logoSrc = "/acb-logo.png", ctaHref = "/mi-club", ctaLabel = "Buscar o inscribir mi club" } = {}) {
+export function flyerHtml({ logoSrc = "/acb-logo.png", ctaHref = "/mi-club", ctaLabel = "Subir carnet del equipo" } = {}) {
   const signup = KEY_DATES.find((d) => d.id === "inscripcion");
   const start = KEY_DATES.find((d) => d.id === "inicio");
   const [days, hours] = String(signup?.when || "").split(" · ");
@@ -75,7 +75,7 @@ export function flyerHtml({ logoSrc = "/acb-logo.png", ctaHref = "/mi-club", cta
     </div>
     <div class="acb-flyer__cta">
       <a class="acb-flyer__btn" href="${ctaHref}">${ctaLabel}${ICONS.arrow}</a>
-      <span>Inscríbase en línea o en persona en las fechas indicadas.</span>
+      <span>Inscripción presencial en las fechas indicadas. El portal será para subir el carnet del equipo.</span>
     </div>
   </div>
 </section>`;

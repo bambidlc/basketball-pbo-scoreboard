@@ -187,7 +187,7 @@ function sectionUniforms(tone = "white") {
         <li class="is-alert">${esc(RULES.uniforms)}</li>
       </ul></div>
       <div><div class="acbw-table-wrap"><table class="acbw-table"><thead><tr><th>Niños</th><th>Edad aprox.</th><th>Adulto</th></tr></thead><tbody>${rows}</tbody></table></div>
-      <p class="acbw-muted acbw-small" style="margin-top:12px">En el Portal de Inscripción cada jugador tiene su talla de camiseta y pantalón; la Hoja de Uniformes se genera con el resumen por talla.</p></div>
+      <p class="acbw-muted acbw-small" style="margin-top:12px">Complete la Hoja de Uniformes con las tallas de camiseta y pantalón de cada jugador.</p></div>
     </div>`,
     tone,
     "uniformes",
@@ -205,7 +205,7 @@ function sectionRequirements(tone = "") {
         <div class="acbw-meta">${icon("pin")} Club de Baloncesto Fraigcomar</div>
       </div>
       <div class="acbw-card"><p class="acbw-eyebrow">Requisitos</p><ul class="acbw-list">
-        <li>Hoja de uniformes completada (el portal la genera por usted).</li>
+        <li>Hoja de uniformes completada.</li>
         <li>Pago total de inscripción o depósito de ${money(DEPOSIT_PER_TEAM)} por equipo.</li>
         <li>Roster de ${MAX_PLAYERS} jugadores; ACB provee ${UNIFORMS_INCLUDED} uniformes.</li>
         <li>El uniforme #13 debe incluirse en el formulario inicial: ${money(EXTRA_UNIFORM_FEE)}.</li>
@@ -221,7 +221,7 @@ function sectionCourtRules(portal, tone = "") {
   return band(
     `${head("Fecha límite: 30 de diciembre de 2026", "Canchas <em>y acomodos</em>", "Cada club indica las fechas en que su cancha está disponible para los carnavales y los dirigentes con dos equipos solicitan su acomodo.")}
     <div class="acbw-grid acbw-grid--2">
-      <div class="acbw-card"><div class="acbw-card__icon acbw-card__icon--orange">${icon("calendar")}</div><div class="acbw-h3">Disponibilidad de cancha</div><p>Marque en el portal las fechas de la temporada en que su cancha está disponible (todo el día, solo AM o solo PM). También puede enviarlas a bobbyramirez48@yahoo.com antes del 30 de diciembre.</p><div class="acbw-btns" style="margin-top:16px"><a class="acbw-btn acbw-btn--orange acbw-btn--sm" href="${esc(portal)}/mi-club">Marcar fechas en el portal</a></div></div>
+      <div class="acbw-card"><div class="acbw-card__icon acbw-card__icon--orange">${icon("calendar")}</div><div class="acbw-h3">Disponibilidad de cancha</div><p>Envíe las fechas de la temporada en que su cancha está disponible (todo el día, solo AM o solo PM) a bobbyramirez48@yahoo.com antes del 30 de diciembre.</p><div class="acbw-btns" style="margin-top:16px"><a class="acbw-btn acbw-btn--orange acbw-btn--sm" href="mailto:bobbyramirez48@yahoo.com">Enviar disponibilidad</a></div></div>
       <div class="acbw-card"><div class="acbw-card__icon">${icon("users")}</div><div class="acbw-h3">Dirigentes con 2 equipos</div><ul class="acbw-list"><li>Máximo 2 equipos por dirigente.</li><li>Nunca dos equipos en la misma categoría.</li><li>Acomodo AM (hasta el mediodía) o PM (después del mediodía); no se aceptan horas específicas.</li><li>No se aceptan nuevos acomodos luego de iniciado el torneo.</li></ul></div>
     </div>`,
     tone,
@@ -247,21 +247,20 @@ function sectionRequiredDocs(tone = "white") {
 
 function sectionPortalSteps(portal, tone = "white") {
   const steps = [
-    ["Registre su club", "Datos del club, directiva, cancha sede y póliza de seguro. Luego entra al portal con el email del club."],
-    ["Cree sus equipos", "Categoría, rama, programa y personal técnico con copia de las tarjetas federativas."],
-    ["Uniformes y jugadores", "Colores del uniforme y hasta 13 jugadores con tallas, escuela, grado y autorización firmada del encargado."],
-    ["Revise, imprima y envíe", "El portal valida la elegibilidad, calcula los costos y genera la Hoja de Uniformes, la Lista Oficial, el Carnet y el Roster."],
+    ["Prepare el carnet", "Complete el carnet con la información del equipo y sus jugadores."],
+    ["Revise los datos", "Verifique que la información esté completa, correcta y legible."],
+    ["Suba el carnet", "El portal se utilizará únicamente para subir el carnet con la información del equipo."],
   ];
   return band(
-    `${head("Portal de Inscripción ACB", "Inscriba su club <em>en línea</em>", "Busque su club, vea el estado de su inscripción y complete todos sus equipos en un solo lugar. Si su club no aparece, solicítelo ahí mismo. Los documentos oficiales salen listos para imprimir.", `<div class="acbw-btns"><a class="acbw-btn acbw-btn--orange" href="${esc(portal)}/mi-club">Buscar o inscribir mi club</a></div>`)}
+    `${head("Carnet del equipo", "Carnet e información <em>del equipo</em>", "El portal se utilizará únicamente para subir el carnet con la información del equipo.", `<div class="acbw-btns"><a class="acbw-btn acbw-btn--orange" href="${esc(portal)}/mi-club">Subir carnet del equipo</a></div>`)}
     <div class="acbw-steps">${steps.map(([t, d]) => `<div class="acbw-step"><div class="acbw-h3">${t}</div><p>${d}</p></div>`).join("")}</div>`,
     tone,
     "portal",
   );
 }
 
-function cta(portal, title = "Inscriba su club <em>hoy</em>", text = 'Dudas sobre la inscripción: Prof. Roberto "Bobby" Ramírez · 787-632-4848 · bobbyramirez48@yahoo.com') {
-  return `<section class="acbw-cta"><div class="acbw-wrap"><p class="acbw-eyebrow" style="justify-content:center">¿Listo para el Torneo #30?</p><h2 class="acbw-h2">${title}</h2><p>${esc(text)}</p><div class="acbw-btns"><a class="acbw-btn acbw-btn--orange" href="${esc(portal)}/mi-club">Buscar o inscribir mi club</a></div></div></section>`;
+function cta(portal, title = "Carnet <em>del equipo</em>", text = 'Dudas sobre la inscripción: Prof. Roberto "Bobby" Ramírez · 787-632-4848 · bobbyramirez48@yahoo.com') {
+  return `<section class="acbw-cta"><div class="acbw-wrap"><p class="acbw-eyebrow" style="justify-content:center">¿Listo para el Torneo #30?</p><h2 class="acbw-h2">${title}</h2><p>${esc(text)}</p><div class="acbw-btns"><a class="acbw-btn acbw-btn--orange" href="${esc(portal)}/mi-club">Subir carnet del equipo</a></div></div></section>`;
 }
 
 function archiveList(archive, items) {
@@ -277,7 +276,7 @@ function personCard(p, { dark = false } = {}) {
 // ------------------------------------------------------------------ chrome
 export function topbar({ active, portal, logo }) {
   const nav = TOP_NAV.map((n) => `<a href="${n.href}"${n.href.split("#")[0] === active ? ' aria-current="page"' : ""}>${esc(n.label)}</a>`).join("");
-  return `<div class="acbw-top"><div class="acbw-top__inner"><a class="acbw-brand" href="/"><img src="${esc(logo)}" alt="ACB" width="46" height="39"/><span><b>ACB Puerto Rico</b><small>Torneo #30 · 2027</small></span></a><a class="acbw-btn acbw-btn--orange acbw-btn--sm acbw-top__cta" href="${esc(portal)}">Portal</a><nav class="acbw-nav" aria-label="Principal">${nav}<a class="acbw-btn acbw-btn--orange acbw-btn--sm" href="${esc(portal)}">Portal de clubes</a></nav></div></div>`;
+  return `<div class="acbw-top"><div class="acbw-top__inner"><a class="acbw-brand" href="/"><img src="${esc(logo)}" alt="ACB" width="46" height="39"/><span><b>ACB Puerto Rico</b><small>Torneo #30 · 2027</small></span></a><a class="acbw-btn acbw-btn--orange acbw-btn--sm acbw-top__cta" href="${esc(portal)}">Carnet</a><nav class="acbw-nav" aria-label="Principal">${nav}<a class="acbw-btn acbw-btn--orange acbw-btn--sm" href="${esc(portal)}">Carnet del equipo</a></nav></div></div>`;
 }
 
 export function footer({ portal, logo }) {
@@ -286,7 +285,7 @@ export function footer({ portal, logo }) {
     .join("");
   return `<footer class="acbw-footer"><div class="acbw-wrap"><div class="acbw-footer__grid">
     <div><div class="acbw-footer__brand"><img src="${esc(logo)}" alt="ACB" width="52" height="44"/><b>Asociación de Clubes de Baloncesto de Puerto Rico, Inc.</b></div><p>Torneo #30 · Temporada 2027. Baloncesto juvenil de clubes en Puerto Rico, categorías 6 a 19 años.</p><a class="acbw-contact" style="color:#fff" href="${FACEBOOK_URL}" target="_blank" rel="noopener">${icon("facebook")} Facebook · Liga ACB PR</a></div>
-    <div><h4>Torneo</h4><ul><li><a href="/inscripcion">Inscripción 2027</a></li><li><a href="/itinerarios">Itinerarios y calendario</a></li><li><a href="/secciones-y-divisiones">ACB Regular y ACB Alternativo</a></li><li><a href="/canchas#directorio">Canchas</a></li><li><a href="/documentos">Documentos</a></li><li><a href="/reglamento">Reglamento</a></li><li><a href="${esc(portal)}">Portal de clubes</a></li></ul></div>
+    <div><h4>Torneo</h4><ul><li><a href="/inscripcion">Inscripción 2027</a></li><li><a href="/itinerarios">Itinerarios y calendario</a></li><li><a href="/secciones-y-divisiones">ACB Regular y ACB Alternativo</a></li><li><a href="/canchas#directorio">Canchas</a></li><li><a href="/documentos">Documentos</a></li><li><a href="/reglamento">Reglamento</a></li><li><a href="${esc(portal)}">Carnet del equipo</a></li></ul></div>
     <div><h4>Contactos</h4><ul>${CONTACTOS.map((p) => `<li><b style="color:#fff">${esc(p.name)}</b><br/>${esc(p.role)} · <a href="${telHref(p.phone)}">${esc(p.phone)}</a></li>`).join("")}</ul></div>
     <div><h4>Fechas clave</h4><ul>${dates}</ul></div>
   </div><div class="acbw-footer__bottom"><span>© 2027 Asociación de Clubes de Baloncesto de Puerto Rico, Inc.</span><span>acbpr.com</span></div></div></footer>`;
@@ -358,7 +357,7 @@ export function buildPages(ctx) {
 
   // ---------------------------------------------------------------- home
   const quick = [
-    ["/inscripcion", "Inscripción 2027", "Requisitos, costos, fechas y el portal en línea para clubes.", "check", true],
+    ["/inscripcion", "Inscripción 2027", "Requisitos, costos y fechas de inscripción presencial.", "check", true],
     ["/itinerarios", "Itinerarios y calendario", "Fechas de la serie regular, postemporada y finales por grupo.", "calendar"],
     ["/secciones-y-divisiones", "ACB Regular y ACB Alternativo", "Categorías de 6 a 19 años, ACB Regular y ACB Alternativo.", "grid"],
     ["/canchas#directorio", "Canchas", "Directorio de canchas con direcciones y fecha límite de disponibilidad.", "pin"],
@@ -404,7 +403,7 @@ export function buildPages(ctx) {
     description: "Requisitos, costos, fechas clave, elegibilidad, uniformes y documentos para inscribir equipos en el Torneo #30 de la ACB.",
     active: "/inscripcion",
     hero: hero({ active: "", logo: assets.logo }),
-    title_html: pageTitle("Inscripción 2027", "Inscripción <em>2027</em>", "Toda la información de inscripción del Torneo #30 en un solo lugar: requisitos, costos, fechas, elegibilidad, uniformes y documentos. Inscriba su club y sus equipos en línea."),
+    title_html: pageTitle("Inscripción 2027", "Inscripción <em>2027</em>", "Toda la información de inscripción del Torneo #30 en un solo lugar: requisitos, costos, fechas, elegibilidad, uniformes y documentos. La inscripción se realiza presencialmente en las fechas indicadas. El portal se utilizará para subir el carnet con la información del equipo."),
     body: [
       sectionRequirements(""),
       sectionFees(),
@@ -635,10 +634,10 @@ export function buildPages(ctx) {
     description: "Formularios oficiales 2027 de la ACB: hoja de uniformes, lista oficial, carnet, roster y disponibilidad de canchas.",
     active: "/documentos",
     hero: hero({ active: "/documentos", logo: assets.logo }),
-    title_html: pageTitle("Documentos", "Documentos <em>oficiales</em>", "Formularios 2027 para descargar. Si inscribe su club en el portal, estos documentos se generan automáticamente con la información de cada equipo."),
+    title_html: pageTitle("Documentos", "Documentos <em>oficiales</em>", "Formularios 2027 para descargar. Complete el carnet con la información del equipo para subirlo al portal."),
     body: [
       band(
-        `<div class="acbw-grid acbw-grid--2"><div>${head("Temporada 2027", "Formularios <em>2027</em>")}<ul class="acbw-docs">${forms.map(([key, t, s]) => docLink({ href: assets.docs[key], title: t, sub: s, orange: key === "info" })).join("")}</ul></div><div class="acbw-card" style="align-self:start"><div class="acbw-card__icon acbw-card__icon--orange">${icon("check")}</div><div class="acbw-h3">Mejor aún: hágalo en línea</div><p>En el Portal de Inscripción complete cada equipo una sola vez y el portal genera la Hoja de Uniformes, la Lista Oficial, el Carnet y el Roster (3 copias) listos para imprimir y firmar.</p><div class="acbw-btns" style="margin-top:16px"><a class="acbw-btn acbw-btn--orange acbw-btn--sm" href="${esc(portal)}/mi-club">Buscar o inscribir mi club</a></div></div></div>`,
+        `<div class="acbw-grid acbw-grid--2"><div>${head("Temporada 2027", "Formularios <em>2027</em>")}<ul class="acbw-docs">${forms.map(([key, t, s]) => docLink({ href: assets.docs[key], title: t, sub: s, orange: key === "info" })).join("")}</ul></div><div class="acbw-card" style="align-self:start"><div class="acbw-card__icon acbw-card__icon--orange">${icon("check")}</div><div class="acbw-h3">Carnet del equipo</div><p>El portal se utilizará únicamente para subir el carnet con la información del equipo.</p><div class="acbw-btns" style="margin-top:16px"><a class="acbw-btn acbw-btn--orange acbw-btn--sm" href="${esc(portal)}/mi-club">Subir carnet del equipo</a></div></div></div>`,
       ),
       sectionRequiredDocs("white"),
       band(
@@ -719,7 +718,7 @@ export function buildPages(ctx) {
         `<div class="acbw-grid acbw-grid--2"><div class="acbw-card"><div class="acbw-card__icon acbw-card__icon--orange">${icon("pin")}</div><div class="acbw-h3">Inscripción presencial</div><p>Sábados 12 y 19 de diciembre de 2026 · 10:00 AM – 3:00 PM<br/>Club de Baloncesto Fraigcomar</p></div><div class="acbw-card"><div class="acbw-card__icon">${icon("calendar")}</div><div class="acbw-h3">Entrega de uniformes y documentos</div><p>Sábado 23 de enero de 2027 · 1:00 – 4:00 PM<br/>Colegio Universitario de San Juan · Ave. José Oliver #180, San Juan</p></div></div>`,
         "white",
       ),
-      cta(portal, "Portal de <em>clubes</em>", "Registre su club y complete sus equipos en línea."),
+      cta(portal, "Carnet <em>del equipo</em>", "El portal se utilizará únicamente para subir el carnet con la información del equipo."),
     ].join(""),
   });
 
