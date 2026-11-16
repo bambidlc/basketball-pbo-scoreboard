@@ -143,7 +143,7 @@ function sectionFees() {
 
 function timeline() {
   const items = KEY_DATES.map(
-    (d) => `<li><div class="acbw-date"><b>${Number(d.date.slice(8, 10))}</b><span>${monthShort(d.date)}</span></div><div><h3>${esc(d.title)}</h3><div class="when">${esc(d.when)}</div><div class="where">${icon("pin")} ${esc(d.where)}</div><p>${esc(d.detail)}</p></div></li>`,
+    (d) => `<li><div class="acbw-date${d.id === "uniformes1719" ? " acbw-date--orange" : ""}"><b>${Number(d.date.slice(8, 10))}</b><span>${monthShort(d.date)}</span></div><div><h3>${esc(d.title)}</h3><div class="when">${esc(d.when)}</div><div class="where">${icon("pin")} ${esc(d.where)}</div><p>${esc(d.detail)}</p></div></li>`,
   ).join("");
   return `<ul class="acbw-timeline">${items}</ul>`;
 }

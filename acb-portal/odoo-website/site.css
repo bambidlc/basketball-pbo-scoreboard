@@ -222,6 +222,8 @@
 }
 .acbw-date b { font: 400 34px/1 var(--acb-font-block); }
 .acbw-date span { margin-top: 4px; font: 800 12px/1 var(--acb-font-display); letter-spacing: 0.2em; text-transform: uppercase; color: var(--acb-orange-300); }
+.acbw-date--orange { background: linear-gradient(180deg, var(--acb-orange-400), var(--acb-orange-600)); }
+.acbw-date--orange span { color: #fff; }
 .acbw-timeline h3 { margin: 2px 0 4px; font: 800 20px/1.15 var(--acb-font-display); letter-spacing: 0.04em; text-transform: uppercase; color: var(--acb-navy-900); }
 .acbw-timeline .when { font-weight: 700; }
 .acbw-timeline .where { display: flex; gap: 6px; align-items: center; margin-top: 4px; font-size: 14.5px; color: var(--acb-muted); }
