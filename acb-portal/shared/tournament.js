@@ -164,7 +164,7 @@ export const CALENDAR = [
     ],
   },
   {
-    group: "Categorías 14, 15 y 16 años (ACB Regular)",
+    group: "Categorías 14, 15 y 16 años",
     phases: [
       { phase: "Serie regular", dates: ["2027-02-07", "2027-02-14", "2027-02-21", "2027-02-28", "2027-03-06", "2027-03-07", "2027-03-13", "2027-03-14", "2027-03-20", "2027-03-21"] },
       { phase: "Series postemporada", dates: ["2027-04-03", "2027-04-04", "2027-04-10"] },
