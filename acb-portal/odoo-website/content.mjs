@@ -117,9 +117,9 @@ function head(eyebrow, title, lead = "", side = "") {
   return `<div class="acbw-head"><div><p class="acbw-eyebrow">${eyebrow}</p><h2 class="acbw-h2">${title}</h2>${lead ? `<p class="acbw-lead">${lead}</p>` : ""}</div>${side}</div>`;
 }
 
-function docLink({ href, title, sub, iconName = "file", orange = false, external = false, archive = false }) {
+function docLink({ href, title, sub, iconName = "file", orange = false, external = false }) {
   const attrs = external ? ' target="_blank" rel="noopener"' : "";
-  return `<li><a class="acbw-doc" href="${esc(href)}"${attrs}><span class="acbw-doc__icon${orange ? " acbw-doc__icon--orange" : ""}">${icon(iconName)}</span><span class="acbw-doc__body"><b>${esc(title)}${archive ? '<span class="acbw-archive-tag">ARCHIVO</span>' : ""}</b>${sub ? `<span>${esc(sub)}</span>` : ""}</span><span class="acbw-doc__go">${icon(external ? "external" : href.startsWith("/web/content") ? "download" : "arrow")}</span></a></li>`;
+  return `<li><a class="acbw-doc" href="${esc(href)}"${attrs}><span class="acbw-doc__icon${orange ? " acbw-doc__icon--orange" : ""}">${icon(iconName)}</span><span class="acbw-doc__body"><b>${esc(title)}</b>${sub ? `<span>${esc(sub)}</span>` : ""}</span><span class="acbw-doc__go">${icon(external ? "external" : href.startsWith("/web/content") ? "download" : "arrow")}</span></a></li>`;
 }
 
 function notice(title, text, warm = false) {
@@ -261,12 +261,6 @@ function sectionPortalSteps(portal, tone = "white") {
 
 function cta(portal, title = "Carnet <em>del equipo</em>", text = 'Dudas sobre la inscripción: Prof. Roberto "Bobby" Ramírez · 787-632-4848 · bobbyramirez48@yahoo.com') {
   return `<section class="acbw-cta"><div class="acbw-wrap"><p class="acbw-eyebrow" style="justify-content:center">¿Listo para el Torneo #30?</p><h2 class="acbw-h2">${title}</h2><p>${esc(text)}</p><div class="acbw-btns"><a class="acbw-btn acbw-btn--orange" href="${esc(portal)}/mi-club">Subir carnet del equipo</a></div></div></section>`;
-}
-
-function archiveList(archive, items) {
-  return `<ul class="acbw-docs">${items
-    .map((it) => docLink({ href: it.href.startsWith("http") ? it.href : `${archive}/${encodeURI(it.href)}`, title: it.title, sub: it.sub || "Temporada 2026 · acbpr.com", external: true, archive: true }))
-    .join("")}</ul>`;
 }
 
 function personCard(p, { dark = false } = {}) {
@@ -445,7 +439,6 @@ export function buildPages(ctx) {
     title_html: pageTitle("Tabla de posiciones", "Tabla de <em>posiciones</em>", "Las tablas de posiciones 2027 se publicarán aquí una vez comience la temporada, el sábado 6 de febrero de 2027."),
     body: [
       band(`${notice("Temporada 2027", "Cada equipo tiene garantizado un mínimo de 8 juegos. La serie regular de las categorías 6 a 13 años comienza el 6 de febrero; 14 a 16 años el 7 de febrero; y 17 a 19 años el 1 de mayo de 2027.")}<div style="margin-top:22px">${calendarCards((p) => /regular/i.test(p.phase))}</div>`),
-      band(`${head("Archivo", "Tablas <em>2026</em>")}${archiveList(archive, [{ href: "2026/tabla1719.pdf", title: "Tabla de posiciones ACB 17 – 19" }])}`, "white"),
     ].join(""),
   });
 
@@ -461,18 +454,6 @@ export function buildPages(ctx) {
     title_html: pageTitle("Cuartos de final", "Cuartos <em>de final</em>", "Postemporada, Final Four y finales de la temporada 2027. Las llaves se publicarán al terminar la serie regular."),
     body: [
       band(`${head("Postemporada 2027", "Fechas de <em>postemporada</em>")}${calendarCards((p) => !/regular|uniformes/i.test(p.phase))}`),
-      band(
-        `${head("Archivo", "Cuartos de final <em>2026</em>")}${archiveList(archive, [
-          { href: "2026/4f.pdf", title: "6 – 13 Cuartos de final" },
-          { href: "2026/713f4.pdf", title: "7 – 13 Cuartos de final" },
-          { href: "2026/4fa.pdf", title: "Cuartos de final Alternativo" },
-          { href: "2026/msa.pdf", title: "Cuartos de final Alternativo · muerte súbita" },
-          { href: "2026/ms7.pdf", title: "Cuartos de final 7 – 8 · muerte súbita" },
-          { href: "2026/ms9.pdf", title: "Cuartos de final 9 · muerte súbita" },
-          { href: "2026/ms10.pdf", title: "Cuartos de final 10 – 13 · muerte súbita" },
-        ])}`,
-        "white",
-      ),
     ].join(""),
   });
 
@@ -488,7 +469,6 @@ export function buildPages(ctx) {
     title_html: pageTitle("Final Four (semifinales)", "Final Four <em>(semifinales)</em>", "Las llaves de Final Four (semifinales) de la temporada 2027 se publicarán en esta página."),
     body: [
       band(`${head("Temporada 2027", "Calendario <em>2027</em>")}${calendarCards()}`),
-      band(`${head("Archivo", "Llaves <em>2026</em>")}${archiveList(archive, [{ href: "2026/llaves14.pdf", title: "Llaves 14 – 16" }])}`, "white"),
     ].join(""),
   });
 
@@ -510,7 +490,6 @@ export function buildPages(ctx) {
       sectionEligibility("dark"),
       band(`${head("Costos por división", "Divisiones <em>por edad</em>")}<div class="acbw-table-wrap"><table class="acbw-table"><thead><tr><th>División</th><th>Nacidos en</th><th>Inscripción</th></tr></thead><tbody>${feeRows}</tbody></table></div>`, "white"),
       band(`${head("Grupos de calendario", "Tres grupos <em>de temporada</em>")}${calendarCards((p) => /regular/i.test(p.phase))}`),
-      band(`${head("Archivo", "Secciones <em>2026</em>")}${archiveList(archive, [{ href: "2026/secciones.pdf", title: "ACB Secciones 2026" }])}`, "white"),
     ].join(""),
   });
 
@@ -547,7 +526,6 @@ export function buildPages(ctx) {
         <div class="acbw-courts" id="acbw-courts">${courtHtml}</div>
         <div class="acbw-finder__empty" id="acbw-courts-empty" hidden="hidden">${icon("search")}<div><b>No encontramos esa cancha.</b><span>Pruebe con el pueblo, el nombre del club o solo parte del nombre.</span></div></div>
         <p class="acbw-finder__note">Información del directorio histórico de la ACB; confirme con el club anfitrión antes de su juego.</p>
-        <div style="margin-top:22px">${archiveList(archive, [{ href: "documentos/CANCHAS ACB 2017.pdf", title: "Documento para imprimir canchas", sub: "Localizaciones de canchas · acbpr.com" }])}</div>
         <script>${COURT_SEARCH_JS}</script>`,
         "white",
         "directorio",
@@ -568,7 +546,6 @@ export function buildPages(ctx) {
     title_html: pageTitle("Campeones", "<em>Campeones</em>", "Treinta torneos de baloncesto de Clubes. Los campeones del Torneo #30 se publicarán aquí al terminar cada final."),
     body: [
       band(`${head("Torneo #30", "Finales <em>2027</em>")}${calendarCards((p) => /final/i.test(p.phase))}`),
-      band(`${head("Archivo", "Campeones <em>2026</em>")}${archiveList(archive, [{ href: `${archive}/campeones.html`, title: "Campeones ACB 2026", sub: "Fotos de los campeones · acbpr.com" }])}`, "white"),
     ].join(""),
   });
 
@@ -657,13 +634,6 @@ export function buildPages(ctx) {
     body: [
       band(`${head("Torneo #30", "Reglas <em>clave 2027</em>")}<div class="acbw-grid acbw-grid--3">${ruleCards.map(([t, d, ic]) => `<div class="acbw-card"><div class="acbw-card__icon">${icon(ic)}</div><div class="acbw-h3">${t}</div><p>${esc(d)}</p></div>`).join("")}</div>`),
       band(`${head("Certificación del roster", "Regla <em>3</em>")}${notice("Certificación", esc(RULES.rule3), true)}`, "white"),
-      band(
-        `${head("Documentos", "Reglamento <em>oficial</em>")}${archiveList(archive, [
-          { href: "2026/reglamento2026.pdf", title: "Reglamento ACB 2026" },
-          { href: "2026/REGLAS.pdf", title: "Reglas de participación 2026" },
-          { href: "2026/accesorios 2025.pdf", title: "Accesorios permitidos 2026" },
-        ])}`,
-      ),
     ].join(""),
   });
 
