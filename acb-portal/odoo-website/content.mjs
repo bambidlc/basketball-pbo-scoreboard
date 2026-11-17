@@ -109,6 +109,8 @@ export const CONTACTOS = [
 ];
 
 const FACEBOOK_URL = "https://www.facebook.com/LigaACBPR/";
+const INSTAGRAM_URL = "https://www.instagram.com/ligaacbpr/";
+const FACEBOOK_TIMELINE_URL = `https://www.facebook.com/plugins/page.php?href=${encodeURIComponent(FACEBOOK_URL)}&tabs=timeline&width=500&height=560&small_header=true&adapt_container_width=true&show_facepile=false`;
 
 // ------------------------------------------------------------------ helpers
 const telHref = (phone) => `tel:+1${String(phone).replace(/\D/g, "")}`;
@@ -650,9 +652,17 @@ export function buildPages(ctx) {
     hero: hero({ active: "/fotos", logo: assets.logo }),
     title_html: pageTitle("Fotos y redes sociales", "<em>Fotos</em> y redes sociales", "Juegos, campeones y actividades de la ACB."),
     body: band(
-      `<div class="acbw-grid acbw-grid--2"><a class="acbw-card acbw-card--link" href="${FACEBOOK_URL}" target="_blank" rel="noopener"><div class="acbw-card__icon">${icon("facebook")}</div><div class="acbw-h3">Facebook · Liga ACB PR</div><p>Las fotos y noticias de cada fin de semana se publican en la página de Facebook de la Asociación de Clubes de Baloncesto.</p><span class="acbw-card__more">Ver fotos ${icon("external")}</span></a>${
-        assets.flyer ? `<div class="acbw-card"><img src="${esc(assets.flyer)}" alt="Torneo #30 ACB 2027" loading="lazy" width="738" height="926" style="border-radius:16px; display:block; margin:0 auto"/></div>` : ""
-      }</div>`,
+      `<div class="acbw-social-links">
+        <a class="acbw-social-link acbw-social-link--instagram" href="${INSTAGRAM_URL}" target="_blank" rel="noopener"><span class="acbw-social-icon">${icon("camera")}</span><span><strong>Instagram</strong><small>@ligaacbpr</small></span>${icon("external")}</a>
+        <a class="acbw-social-link acbw-social-link--facebook" href="${FACEBOOK_URL}" target="_blank" rel="noopener"><span class="acbw-social-icon">${icon("facebook")}</span><span><strong>Facebook</strong><small>Liga ACB PR</small></span>${icon("external")}</a>
+      </div>
+      <div class="acbw-social-gallery">
+        <section class="acbw-social-feed" aria-labelledby="acbw-social-feed-title">
+          <div class="acbw-social-feed__head"><h2 class="acbw-h3" id="acbw-social-feed-title">Publicaciones de la liga</h2><a href="${FACEBOOK_URL}" target="_blank" rel="noopener">Ver en Facebook ${icon("external")}</a></div>
+          <iframe title="Publicaciones de Liga ACB PR en Facebook" src="${esc(FACEBOOK_TIMELINE_URL)}" width="500" height="560" loading="lazy" referrerpolicy="strict-origin-when-cross-origin"></iframe>
+        </section>
+        ${assets.flyer ? `<figure class="acbw-social-feature"><img src="${esc(assets.flyer)}" alt="Afiche oficial del Torneo #30 ACB 2027" loading="lazy" width="738" height="926"/><figcaption>Torneo #30 · Temporada 2027</figcaption></figure>` : ""}
+      </div>`,
       "white",
     ),
   });
