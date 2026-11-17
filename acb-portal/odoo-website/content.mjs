@@ -78,7 +78,7 @@ export const RIGHT_PILLS = [
   { label: "Documentos", href: "/documentos" },
   { label: "Reglamento", href: "/reglamento" },
   { label: "Campeones", href: "/campeones" },
-  { label: "Fotos", href: "/fotos" },
+  { label: "Fotos y redes sociales", href: "/fotos" },
   { label: "Resoluciones", href: "/resoluciones" },
 ];
 const TOP_NAV = [
@@ -643,12 +643,12 @@ export function buildPages(ctx) {
   add({
     slug: "fotos",
     url: "/fotos",
-    name: "Fotos",
-    title: "Fotos · ACB Puerto Rico",
+    name: "Fotos y redes sociales",
+    title: "Fotos y redes sociales · ACB Puerto Rico",
     description: "Fotos de los juegos, campeones y actividades de la ACB.",
     active: "/fotos",
     hero: hero({ active: "/fotos", logo: assets.logo }),
-    title_html: pageTitle("Fotos", "<em>Fotos</em>", "Juegos, campeones y actividades de la ACB."),
+    title_html: pageTitle("Fotos y redes sociales", "<em>Fotos</em> y redes sociales", "Juegos, campeones y actividades de la ACB."),
     body: band(
       `<div class="acbw-grid acbw-grid--2"><a class="acbw-card acbw-card--link" href="${FACEBOOK_URL}" target="_blank" rel="noopener"><div class="acbw-card__icon">${icon("facebook")}</div><div class="acbw-h3">Facebook · Liga ACB PR</div><p>Las fotos y noticias de cada fin de semana se publican en la página de Facebook de la Asociación de Clubes de Baloncesto.</p><span class="acbw-card__more">Ver fotos ${icon("external")}</span></a>${
         assets.flyer ? `<div class="acbw-card"><img src="${esc(assets.flyer)}" alt="Torneo #30 ACB 2027" loading="lazy" width="738" height="926" style="border-radius:16px; display:block; margin:0 auto"/></div>` : ""
