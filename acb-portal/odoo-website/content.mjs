@@ -430,14 +430,6 @@ export function buildPages(ctx) {
     title_html: pageTitle("Itinerarios", "Itinerarios <em>2027</em>", "Calendario de la temporada 2027 por categorías. Los itinerarios de juegos por categoría se publicarán en esta página."),
     body: [
       band(`${head("Calendario del Torneo ACB 2027", "Temporada <em>2027</em>")}${calendarCards()}`),
-      band(
-        `${head("Archivo", "Itinerarios <em>2026</em>")}${archiveList(archive, [
-          { href: "2026/17.pdf", title: "Itinerario 17 años" },
-          { href: "2026/18.pdf", title: "Itinerario 18 años" },
-          { href: "2026/19.pdf", title: "Itinerario 19 años" },
-        ])}`,
-        "white",
-      ),
     ].join(""),
   });
 
