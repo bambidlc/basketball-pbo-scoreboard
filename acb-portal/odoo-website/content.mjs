@@ -478,7 +478,6 @@ export function buildPages(ctx) {
   });
 
   // ---------------------------------------------------------------- secciones
-  const feeRows = FEE_BRACKETS.map((b) => `<tr><td><b>${b.from} – ${b.to} años</b></td><td>${CATEGORIES.filter((c) => c >= b.from && c <= b.to).map((c) => categoryBirthYear(c)).join(", ")}</td><td><b>${money(b.fee)}</b></td></tr>`).join("");
   add({
     slug: "secciones-y-divisiones",
     url: "/secciones-y-divisiones",
@@ -493,7 +492,6 @@ export function buildPages(ctx) {
         `${head("Programas", "ACB Regular <em>y Alternativo</em>")}<div class="acbw-grid acbw-grid--2"><div class="acbw-card"><div class="acbw-card__icon">${icon("trophy")}</div><div class="acbw-h3">ACB Regular</div><p>Categorías de 6 a 19 años. Serie regular, postemporada, Final Four (6 a 13) y finales.</p></div><div class="acbw-card"><div class="acbw-card__icon acbw-card__icon--orange">${icon("ball")}</div><div class="acbw-h3">ACB Alternativo</div><p>Se juega con el grupo de 6 a 13 años; finales del Alternativo el 10 y 11 de abril de 2027.</p></div></div>`,
       ),
       sectionEligibility("dark"),
-      band(`${head("Costos por división", "Divisiones <em>por edad</em>")}<div class="acbw-table-wrap"><table class="acbw-table"><thead><tr><th>División</th><th>Nacidos en</th><th>Inscripción</th></tr></thead><tbody>${feeRows}</tbody></table></div>`, "white"),
       band(`${head("Grupos de calendario", "Tres grupos <em>de temporada</em>")}${calendarCards((p) => /regular/i.test(p.phase))}`),
     ].join(""),
   });
