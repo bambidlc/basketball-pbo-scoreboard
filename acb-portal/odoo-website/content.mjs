@@ -119,7 +119,7 @@ function band(inner, tone = "", id = "") {
 }
 
 function head(eyebrow, title, lead = "", side = "") {
-  return `<div class="acbw-head"><div><p class="acbw-eyebrow">${eyebrow}</p><h2 class="acbw-h2">${title}</h2>${lead ? `<p class="acbw-lead">${lead}</p>` : ""}</div>${side}</div>`;
+  return `<div class="acbw-head"><div>${eyebrow ? `<p class="acbw-eyebrow">${eyebrow}</p>` : ""}<h2 class="acbw-h2">${title}</h2>${lead ? `<p class="acbw-lead">${lead}</p>` : ""}</div>${side}</div>`;
 }
 
 function docLink({ href, title, sub, iconName = "file", orange = false, external = false }) {
@@ -357,7 +357,7 @@ export function buildPages(ctx) {
   // ---------------------------------------------------------------- home
   const quick = [
     ["/inscripcion", "Inscripción 2027", "Requisitos, costos y fechas de inscripción presencial.", "check", true],
-    ["/itinerarios", "Itinerarios y calendario", "Fechas de la serie regular, postemporada y finales por grupo.", "calendar"],
+    ["/itinerarios", "Itinerarios y calendario", "Fechas de la serie regular, postemporada y finales.", "calendar"],
     ["/secciones-y-divisiones", "ACB Regular y ACB Alternativo", "Categorías de 6 a 19 años, ACB Regular y ACB Alternativo.", "grid"],
     ["/canchas#directorio", "Canchas", "Directorio de canchas con direcciones y fecha límite de disponibilidad.", "pin"],
     ["/documentos", "Documentos", "Formularios 2027 y documentos oficiales para descargar.", "file"],
@@ -483,16 +483,16 @@ export function buildPages(ctx) {
     url: "/secciones-y-divisiones",
     name: "ACB Regular y ACB Alternativo",
     title: "ACB Regular y ACB Alternativo 2027 · ACB Puerto Rico",
-    description: "Categorías de 6 a 19 años, programas ACB Regular y ACB Alternativo, y grupos de la temporada 2027.",
+    description: "Categorías de 6 a 19 años, programas ACB Regular y ACB Alternativo, y calendario de la temporada 2027.",
     active: "/secciones-y-divisiones",
     hero: hero({ active: "/secciones-y-divisiones", logo: assets.logo }),
-    title_html: pageTitle("ACB Regular y ACB Alternativo", "ACB Regular <em>y ACB Alternativo</em>", "Programas, categorías por año de nacimiento y grupos de calendario de la temporada 2027. Las secciones por categoría se publicarán al cerrar la inscripción."),
+    title_html: pageTitle("ACB Regular y ACB Alternativo", "ACB Regular <em>y ACB Alternativo</em>", "Programas, categorías por año de nacimiento y calendario de la temporada 2027. Las secciones por categoría se publicarán al cerrar la inscripción."),
     body: [
       band(
-        `${head("Programas", "ACB Regular <em>y Alternativo</em>")}<div class="acbw-grid acbw-grid--2"><div class="acbw-card"><div class="acbw-card__icon">${icon("trophy")}</div><div class="acbw-h3">ACB Regular</div><p>Categorías de 6 a 19 años. Serie regular, postemporada, Final Four (6 a 13) y finales.</p></div><div class="acbw-card"><div class="acbw-card__icon acbw-card__icon--orange">${icon("ball")}</div><div class="acbw-h3">ACB Alternativo</div><p>Se juega con el grupo de 6 a 13 años; finales del Alternativo el 10 y 11 de abril de 2027.</p></div></div>`,
+        `${head("Programas", "ACB Regular <em>y Alternativo</em>")}<div class="acbw-grid acbw-grid--2"><div class="acbw-card"><div class="acbw-card__icon">${icon("trophy")}</div><div class="acbw-h3">ACB Regular</div><p>Categorías de 6 a 19 años. Serie regular, postemporada, Final Four (6 a 13) y finales.</p></div><div class="acbw-card"><div class="acbw-card__icon acbw-card__icon--orange">${icon("ball")}</div><div class="acbw-h3">ACB Alternativo</div><p>Participan las categorías de 6 a 13 años; finales del Alternativo el 10 y 11 de abril de 2027.</p></div></div>`,
       ),
       sectionEligibility("dark"),
-      band(`${head("Grupos de calendario", "Tres grupos <em>de temporada</em>")}${calendarCards((p) => /regular/i.test(p.phase))}`),
+      band(`${head("", "Calendario")}${calendarCards((p) => /regular/i.test(p.phase))}`),
     ].join(""),
   });
 
