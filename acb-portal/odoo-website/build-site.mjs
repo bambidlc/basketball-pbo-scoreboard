@@ -168,7 +168,7 @@ async function preview() {
   const slugByUrl = Object.fromEntries(pages.map((p) => [p.url, p.slug]));
   for (const page of pages) {
     // Internal links point at the other preview files.
-    const html = page.html.replace(/href="(\/[a-z0-9-]*)"/g, (m, url) => (slugByUrl[url] ? `href="/.preview/site/${slugByUrl[url]}.html"` : m));
+    const html = page.html.replace(/href="(\/[a-z0-9-]*)(#[^"]*)?"/g, (m, url, hash = "") => (slugByUrl[url] ? `href="/.preview/site/${slugByUrl[url]}.html${hash}"` : m));
     const doc = `<!doctype html>
 <html lang="es"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/>
 <title>${page.title}</title>

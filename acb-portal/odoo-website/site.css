@@ -325,7 +325,7 @@
 .acbw-step p { margin: 0; color: var(--acb-muted); font-size: 15px; }
 
 /* court directory */
-#informacion, #directorio { scroll-margin-top: var(--acbw-top-h, 68px); }
+#torneo-30, #informacion, #directorio { scroll-margin-top: var(--acbw-top-h, 68px); }
 .acbw-finder {
   position: sticky;
   top: calc(var(--acbw-top-h, 68px) + 10px);

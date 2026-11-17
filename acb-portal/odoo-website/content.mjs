@@ -90,6 +90,11 @@ const TOP_NAV = [
   { label: "Contacto", href: "/contacto" },
 ];
 
+function contentHref(href) {
+  if (href.includes("#")) return href;
+  return href === "/" ? "/#torneo-30" : `${href}#informacion`;
+}
+
 const TICKER = [
   "Inscripción de equipos: sábados 12 y 19 de diciembre de 2026 · Club de Baloncesto Fraigcomar",
   "Inicio del Torneo #30: sábado 6 de febrero de 2027",
@@ -269,8 +274,8 @@ function personCard(p, { dark = false } = {}) {
 
 // ------------------------------------------------------------------ chrome
 export function topbar({ active, portal, logo }) {
-  const nav = TOP_NAV.map((n) => `<a href="${n.href}"${n.href.split("#")[0] === active ? ' aria-current="page"' : ""}>${esc(n.label)}</a>`).join("");
-  return `<div class="acbw-top"><div class="acbw-top__inner"><a class="acbw-brand" href="/"><img src="${esc(logo)}" alt="ACB" width="46" height="39"/><span><b>ACB Puerto Rico</b><small>Torneo #30 · 2027</small></span></a><a class="acbw-btn acbw-btn--orange acbw-btn--sm acbw-top__cta" href="${esc(portal)}">Carnet</a><nav class="acbw-nav" aria-label="Principal">${nav}<a class="acbw-btn acbw-btn--orange acbw-btn--sm" href="${esc(portal)}">Carnet del equipo</a></nav></div></div>`;
+  const nav = TOP_NAV.map((n) => `<a href="${contentHref(n.href)}"${n.href.split("#")[0] === active ? ' aria-current="page"' : ""}>${esc(n.label)}</a>`).join("");
+  return `<div class="acbw-top"><div class="acbw-top__inner"><a class="acbw-brand" href="${contentHref("/")}"><img src="${esc(logo)}" alt="ACB" width="46" height="39"/><span><b>ACB Puerto Rico</b><small>Torneo #30 · 2027</small></span></a><a class="acbw-btn acbw-btn--orange acbw-btn--sm acbw-top__cta" href="${esc(portal)}">Carnet</a><nav class="acbw-nav" aria-label="Principal">${nav}<a class="acbw-btn acbw-btn--orange acbw-btn--sm" href="${esc(portal)}">Carnet del equipo</a></nav></div></div>`;
 }
 
 export function footer({ portal, logo }) {
@@ -279,18 +284,18 @@ export function footer({ portal, logo }) {
     .join("");
   return `<footer class="acbw-footer"><div class="acbw-wrap"><div class="acbw-footer__grid">
     <div><div class="acbw-footer__brand"><img src="${esc(logo)}" alt="ACB" width="52" height="44"/><b>Asociación de Clubes de Baloncesto de Puerto Rico (ACB)</b></div><p>Torneo #30 · Temporada 2027. Baloncesto de Clubes en Puerto Rico, categorías 6 a 19 años.</p><a class="acbw-contact" style="color:#fff" href="${FACEBOOK_URL}" target="_blank" rel="noopener">${icon("facebook")} Facebook · Liga ACB PR</a></div>
-    <div><h4>Torneo</h4><ul><li><a href="/inscripcion">Inscripción 2027</a></li><li><a href="/itinerarios">Itinerarios y calendario</a></li><li><a href="/secciones-y-divisiones">ACB Regular y ACB Alternativo</a></li><li><a href="/canchas#directorio">Canchas</a></li><li><a href="/documentos">Documentos</a></li><li><a href="/reglamento">Reglamento</a></li><li><a href="${esc(portal)}">Carnet del equipo</a></li></ul></div>
+    <div><h4>Torneo</h4><ul><li><a href="${contentHref("/inscripcion")}">Inscripción 2027</a></li><li><a href="${contentHref("/itinerarios")}">Itinerarios y calendario</a></li><li><a href="${contentHref("/secciones-y-divisiones")}">ACB Regular y ACB Alternativo</a></li><li><a href="/canchas#directorio">Canchas</a></li><li><a href="${contentHref("/documentos")}">Documentos</a></li><li><a href="${contentHref("/reglamento")}">Reglamento</a></li><li><a href="${esc(portal)}">Carnet del equipo</a></li></ul></div>
     <div><h4>Contactos</h4><ul>${CONTACTOS.map((p) => `<li><b style="color:#fff">${esc(p.name)}</b><br/>${esc(p.role)} · <a href="${telHref(p.phone)}">${esc(p.phone)}</a></li>`).join("")}</ul></div>
     <div><h4>Fechas clave</h4><ul>${dates}</ul></div>
   </div><div class="acbw-footer__bottom"><span>© 2027 Asociación de Clubes de Baloncesto de Puerto Rico (ACB)</span><span>acbpr.com</span></div></div></footer>`;
 }
 
 function pageTitle(crumb, title, lead) {
-  return `<section class="acbw-title" id="informacion"><div class="acbw-wrap"><div class="acbw-crumbs"><a href="/">Inicio</a> / ${esc(crumb)}</div><h1>${title}</h1>${lead ? `<p>${lead}</p>` : ""}</div></section>`;
+  return `<section class="acbw-title" id="informacion"><div class="acbw-wrap"><div class="acbw-crumbs"><a href="${contentHref("/")}">Inicio</a> / ${esc(crumb)}</div><h1>${title}</h1>${lead ? `<p>${lead}</p>` : ""}</div></section>`;
 }
 
 function hero({ active, logo }) {
-  const mark = (pills) => pills.map((p) => ({ ...p, active: p.href.split("#")[0] === active }));
+  const mark = (pills) => pills.map((p) => ({ ...p, href: contentHref(p.href), active: p.href.split("#")[0] === active }));
   return heroHtml({ left: mark(LEFT_PILLS), right: mark(RIGHT_PILLS), logoSrc: logo });
 }
 
@@ -373,7 +378,7 @@ export function buildPages(ctx) {
         `${head("Temporada 2027", "Todo el <em>torneo</em>")}<div class="acbw-grid acbw-grid--4">${quick
           .map(
             ([href, t, d, ic, orange]) =>
-              `<a class="acbw-card acbw-card--link" href="${href.includes("#") ? href : `${href}#informacion`}"><div class="acbw-card__icon${orange ? " acbw-card__icon--orange" : ""}">${icon(ic)}</div><div class="acbw-h3">${t}</div><p>${d}</p><span class="acbw-card__more">Ver ${icon("arrow")}</span></a>`,
+              `<a class="acbw-card acbw-card--link" href="${contentHref(href)}"><div class="acbw-card__icon${orange ? " acbw-card__icon--orange" : ""}">${icon(ic)}</div><div class="acbw-h3">${t}</div><p>${d}</p><span class="acbw-card__more">Ver ${icon("arrow")}</span></a>`,
           )
           .join("")}</div>`,
       ),
