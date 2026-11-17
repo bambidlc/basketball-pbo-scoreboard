@@ -19,7 +19,7 @@
 
 import { createHash } from "node:crypto";
 import { copyFile, mkdir, readFile, writeFile, access, rm, cp } from "node:fs/promises";
-import { build } from "esbuild";
+import { PDFDocument } from "pdf-lib";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { createOdoo, readDotEnv } from "../lib/odoo.mjs";
@@ -47,6 +47,9 @@ const DOCS = [
   { key: "carnet", file: "carnet-2027.pdf", name: "Carnet y Lista de Jugadores ACB 2027.pdf" },
   { key: "roster", file: "roster-2027.pdf", name: "Roster de Juego ACB 2027.pdf" },
   { key: "disponibilidad", file: "disponibilidad-2027.pdf", name: "Disponibilidad de Cancha y Dirigentes ACB 2027.pdf" },
+  { key: "uniformes2026", file: "uniformes-2026.pdf", name: "Hoja de Uniformes ACB 2026.pdf" },
+  { key: "carnet2026", file: "carnet-2026.pdf", name: "Carnet y Lista de Jugadores ACB 2026.pdf" },
+  { key: "roster2026", file: "roster-2026.pdf", name: "Roster de Juego ACB 2026.pdf" },
 ];
 const MIME = {
   ".png": "image/png",
@@ -67,6 +70,9 @@ const css = `${await readFile(path.join(root, "shared/brand.css"), "utf8")}\n${a
 /** The hero's arena photo (public/hero-arena.jpg) at the URL each site serves it from. */
 const heroImageCss = (url) => `.acb-site { --acb-hero-img: url("${url}"); }`;
 
+// Refuse incomplete releases before changing any live page or attachment.
+await validateFormAssets();
+
 if (EXPORT) {
   await exportStatic();
 } else if (PREVIEW) {
@@ -75,10 +81,24 @@ if (EXPORT) {
   await publish();
 }
 
+async function validateFormAssets() {
+  const schemas = JSON.parse(await readFile(path.join(root, "forms/schema.json"), "utf8"));
+  for (const d of DOCS) {
+    const schema = schemas.find(s => s.file === d.file);
+    if (!schema) throw new Error(`Missing field manifest: ${d.file}`);
+    const pdf = await PDFDocument.load(await readFile(path.join(DOCS_DIR, d.file)));
+    const fields = new Set(pdf.getForm().getFields().map(f => f.getName()));
+    if (fields.size !== schema.fields.length || schema.fields.some(f => !fields.has(f.name))) {
+      throw new Error(`PDF fields do not match the manifest: ${d.file}`);
+    }
+  }
+  log(`validated ${DOCS.length} PDFs against the field manifest`);
+}
+
 // ------------------------------------------------------------------ static copy
 /**
  * A self-contained copy of the site for any static host (the shareable link on
- * acbpr.pages.dev, `npm run website:share`). Needs no Odoo credentials: the PDFs and editor are served locally.
+ * acbpr.pages.dev, `npm run website:share`). Needs no Odoo credentials: PDF downloads are served locally.
  */
 async function exportStatic() {
   const out = path.join(root, "dist-site");
@@ -92,19 +112,15 @@ async function exportStatic() {
   const stamp = sha1(Buffer.from(css)).slice(0, 10);
   await writeFile(path.join(out, "assets/acb-site.css"), `${css}\n${heroImageCss(asset("hero-arena.jpg"))}\n`);
 
-  // Serve forms locally: downloads and the editor remain available during Odoo maintenance.
+  // Serve forms locally: downloads remain available during Odoo maintenance.
   const docs = Object.fromEntries(DOCS.map(d => [d.key, `/pdf/${d.file}`]));
   await cp(DOCS_DIR, path.join(out, "pdf"), { recursive: true });
-  await mkdir(path.join(out, "formularios"), { recursive: true });
-  await copyFile(path.join(root, "forms/index.html"), path.join(out, "formularios/index.html"));
-  await copyFile(path.join(root, "forms/editor.css"), path.join(out, "formularios/editor.css"));
-  await copyFile(path.join(root, "forms/document-center.js"), path.join(out, "formularios/document-center.js"));
-  await build({ entryPoints: [path.join(root, "forms/editor.mjs")], bundle: true, minify: true, target: "es2020", outfile: path.join(out, "formularios/editor.js") });
-  await writeFile(path.join(out, "_headers"), "/pdf/*\n  Content-Type: application/pdf\n  X-Content-Type-Options: nosniff\n  Cache-Control: public, max-age=0, must-revalidate\n/formularios/*\n  Cache-Control: public, max-age=0, must-revalidate\n  Referrer-Policy: no-referrer\n  X-Content-Type-Options: nosniff\n");
+  await writeFile(path.join(out, "_redirects"), "/formularios /documentos/ 302\n/formularios/* /documentos/ 302\n");
+  await writeFile(path.join(out, "_headers"), "/pdf/*\n  Content-Type: application/pdf\n  X-Content-Type-Options: nosniff\n  Cache-Control: public, max-age=0, must-revalidate\n");
   const pages = buildPages({
     portal: PORTAL_URL,
     archive: ARCHIVE_URL,
-    assets: { logo: asset("acb-logo.png"), logoSmall: asset("acb-logo-256.png"), flyer: asset("flyer.jpg"), docs, editorBase: "" },
+    assets: { logo: asset("acb-logo.png"), logoSmall: asset("acb-logo-256.png"), flyer: asset("flyer.jpg"), docs },
     courts,
     resoluciones,
   });
@@ -132,7 +148,7 @@ async function exportStatic() {
     await mkdir(path.dirname(path.join(out, file)), { recursive: true });
     await writeFile(path.join(out, file), doc);
   }
-  log(`static copy: ${pages.length} pages, 8 fillable PDFs and local form editor in ${path.relative(root, out)}`);
+  log(`static copy: ${pages.length} pages, 8 PDFs in ${path.relative(root, out)}`);
 }
 
 // ------------------------------------------------------------------ preview
@@ -191,18 +207,18 @@ function splitChrome(html) {
 async function publish() {
   const odoo = createOdoo({ url: env.ODOO_URL, apiKey: env.ODOO_API_KEY, db: env.ODOO_DB });
   const [site] = await odoo.read("website", [WEBSITE_ID], ["id", "name"]);
-  if (!site) throw new Error(`Website ${WEBSITE_ID} not found`);
+  if (!site || site.name !== "ACB") throw new Error(`Refusing to publish: website ${WEBSITE_ID} is not ACB`);
   log(`publishing to website #${site.id} "${site.name}" · portal ${PORTAL_URL}`);
 
   async function upsertAttachment(key, name, data) {
     const mimetype = MIME[path.extname(name).toLowerCase()] || "application/octet-stream";
     const checksum = sha1(data);
     const tag = `acb_site:${key}`;
-    const [existing] = await odoo.searchRead("ir.attachment", [["description", "=", tag]], ["id", "checksum"], { limit: 1 });
+    const [existing] = await odoo.searchRead("ir.attachment", [["description", "=", tag], ["website_id", "=", WEBSITE_ID]], ["id", "checksum", "name", "mimetype", "public"], { limit: 1 });
     const vals = { name, mimetype, datas: data.toString("base64"), public: true, res_model: "ir.ui.view", res_id: 0, description: tag, website_id: WEBSITE_ID };
     let id = existing?.id;
     if (!id) id = await odoo.create("ir.attachment", vals);
-    else if (existing.checksum !== checksum) await odoo.write("ir.attachment", [id], vals);
+    else if (existing.checksum !== checksum || existing.name !== name || existing.mimetype !== mimetype || !existing.public) await odoo.write("ir.attachment", [id], vals);
     return { id, unique: checksum.slice(0, 10) };
   }
 
@@ -214,12 +230,8 @@ async function publish() {
   const docs = {};
   for (const d of DOCS) {
     const file = path.join(DOCS_DIR, d.file);
-    if (!(await exists(file))) {
-      log(`skipping missing form: ${d.file}`);
-      continue;
-    }
     const att = await upsertAttachment(`doc:${d.key}`, d.name, await readFile(file));
-    docs[d.key] = `/web/content/${att.id}?download=true`;
+    docs[d.key] = `/web/content/${att.id}/${encodeURIComponent(d.name)}?download=true&unique=${att.unique}`;
   }
   log(`attachments ok (css #${sheet.id}, ${Object.keys(docs).length} forms)`);
   const odooBase = String(env.ODOO_URL).replace(/\/+$/, "");

@@ -485,7 +485,7 @@ export function buildPages(ctx) {
     title_html: pageTitle("ACB Regular y ACB Alternativo", "ACB Regular <em>y ACB Alternativo</em>", "Programas, categorías por año de nacimiento y grupos de calendario de la temporada 2027. Las secciones por categoría se publicarán al cerrar la inscripción."),
     body: [
       band(
-        `${head("Programas", "ACB Regular <em>y Alternativo</em>")}<div class="acbw-grid acbw-grid--2"><div class="acbw-card"><div class="acbw-card__icon">${icon("trophy")}</div><div class="acbw-h3">ACB Regular</div><p>Categorías de 6 a 19 años, rama masculina y femenina. Serie regular, postemporada, Final Four (6 a 13) y finales.</p></div><div class="acbw-card"><div class="acbw-card__icon acbw-card__icon--orange">${icon("ball")}</div><div class="acbw-h3">ACB Alternativo</div><p>Se juega con el grupo de 6 a 13 años; finales del Alternativo el 10 y 11 de abril de 2027.</p></div></div>`,
+        `${head("Programas", "ACB Regular <em>y Alternativo</em>")}<div class="acbw-grid acbw-grid--2"><div class="acbw-card"><div class="acbw-card__icon">${icon("trophy")}</div><div class="acbw-h3">ACB Regular</div><p>Categorías de 6 a 19 años. Serie regular, postemporada, Final Four (6 a 13) y finales.</p></div><div class="acbw-card"><div class="acbw-card__icon acbw-card__icon--orange">${icon("ball")}</div><div class="acbw-h3">ACB Alternativo</div><p>Se juega con el grupo de 6 a 13 años; finales del Alternativo el 10 y 11 de abril de 2027.</p></div></div>`,
       ),
       sectionEligibility("dark"),
       band(`${head("Costos por división", "Divisiones <em>por edad</em>")}<div class="acbw-table-wrap"><table class="acbw-table"><thead><tr><th>División</th><th>Nacidos en</th><th>Inscripción</th></tr></thead><tbody>${feeRows}</tbody></table></div>`, "white"),
@@ -588,14 +588,13 @@ export function buildPages(ctx) {
   });
 
   // ---------------------------------------------------------------- documentos
-  const editorBase = assets.editorBase ?? "https://acbpr.pages.dev";
   const forms = [
-    ["uniformes", "Hoja de uniformes 2027", "Jugadores, tallas y resumen automático", "uniformes-2027"],
-    ["carnet", "Carnet y lista oficial de jugadores", "Datos, fotos, firmas y tarjetas federativas", "carnet-2027"],
-    ["roster", "Roster de juego 2027", "Complete digitalmente · tres copias para ponchar", "roster-2027"],
-    ["disponibilidad", "Disponibilidad de cancha y dirigentes", "Fechas y acomodos · enviar por email antes del 30 de diciembre de 2026", "disponibilidad-2027"],
-    ["info", "Información de inscripción 2027", "Información oficial y hoja de uniformes editable", "informacion-2027"],
-  ];
+    ["info", "Información de inscripción 2027", "Información y hoja de uniformes · PDF editable"],
+    ["uniformes", "Hoja de uniformes 2027", "Formulario para uniformes · PDF editable"],
+    ["carnet", "Carnet y Lista de Jugadores", "Lista oficial y carnet · PDF editable"],
+    ["roster", "Roster de juego 2027", "Tres copias para ponchar · PDF editable"],
+    ["disponibilidad", "Disponibilidad de cancha y dirigentes con 2 equipos", "Instrucciones y calendario · PDF"],
+  ].filter(([key]) => assets.docs[key]);
   add({
     slug: "documentos",
     url: "/documentos",
@@ -604,12 +603,12 @@ export function buildPages(ctx) {
     description: "Formularios oficiales 2027 de la ACB: hoja de uniformes, lista oficial, carnet, roster y disponibilidad de canchas.",
     active: "/documentos",
     hero: hero({ active: "/documentos", logo: assets.logo }),
-    title_html: pageTitle("Documentos digitales", "Completa. Guarda. <em>Descarga.</em>", "Llena los formularios aquí mismo o descarga un PDF con campos editables. Añade las fotos y firmas desde tu computadora o celular, sin imprimir para llenarlo."),
+    title_html: pageTitle("Documentos", "Documentos <em>oficiales</em>", "Descargue el PDF, complete sus campos digitales y guarde los cambios. Complete el carnet con la información del equipo para subirlo al portal."),
     body: [
       band(
-        `${head("Temporada 2027", "Formularios <em>editables</em>", "La opción recomendada es completar en línea: revisa los campos que falten y conserva tus datos al descargar.")}<div class="acbw-form-list">${forms.map(([key,t,s,id])=>`<article class="acbw-form-row"><div><h3>${esc(t)}</h3><p>${esc(s)}</p></div><div class="acbw-btns"><a class="acbw-btn acbw-btn--orange acbw-btn--sm" href="${esc(editorBase)}/formularios/?doc=${id}" target="acb-form-editor">Completar en línea</a><a class="acbw-btn acbw-btn--sm" href="${esc(assets.docs[key] || `${editorBase}/pdf/${id}.pdf`)}" download="${id}.pdf">PDF editable ${icon("download")}</a></div></article>`).join("")}</div>`,
+        `<div class="acbw-grid acbw-grid--2"><div>${head("Temporada 2027", "Formularios <em>2027</em>")}<ul class="acbw-docs">${forms.map(([key, t, s]) => docLink({ href: assets.docs[key], title: t, sub: s, orange: key === "info" })).join("")}</ul></div><div class="acbw-card" style="align-self:start"><div class="acbw-card__icon acbw-card__icon--orange">${icon("check")}</div><div class="acbw-h3">Carnet del equipo</div><p>El portal se utilizará únicamente para subir el carnet con la información del equipo.</p><div class="acbw-btns" style="margin-top:16px"><a class="acbw-btn acbw-btn--orange acbw-btn--sm" href="${esc(portal)}/mi-club">Subir carnet del equipo</a></div></div></div>`,
       ),
-      band(`${head("Sin salir de la página", "Completa tu <em>formulario</em>", "Puedes guardar un borrador PDF y abrirlo aquí para continuar. Los datos y fotos se procesan en tu dispositivo; no se envían automáticamente.")}<iframe class="acbw-form-editor" name="acb-form-editor" title="Editor de formularios digitales ACB" src="${esc(editorBase)}/formularios/?doc=uniformes-2027" loading="lazy" referrerpolicy="no-referrer"></iframe><script src="${esc(editorBase)}/formularios/document-center.js" defer="defer"></script><p class="acbw-editor-help"><a href="${esc(editorBase)}/formularios/" target="_blank" rel="noopener">Abrir el editor en pantalla completa ${icon("external")}</a></p>${notice("Cómo guardar tus cambios", "Usa Guardar borrador PDF o Revisar y descargar PDF dentro del editor. Si llenas el archivo descargado, guárdalo desde tu lector PDF y vuelve a abrirlo para comprobar los datos. Para fotos, usa el editor web o Adobe Acrobat de escritorio.")}<div style="margin-top:16px">${notice("Entrega de documentos", `Descargar no envía el documento a la ACB. Se mantienen los requisitos de entrega, los certificados originales y las tres copias del roster para el sello. El carnet completado se sube al <a href="${esc(portal)}/mi-club">portal del equipo</a>.`)}</div>`, "white", "editor"),
+      band(notice("Cómo completar el PDF", "Abra el archivo descargado en un lector compatible con formularios PDF, escriba en los campos y guarde una copia. Para añadir fotos al carnet, utilice Adobe Acrobat de escritorio. Se conservan los requisitos de entrega de la ACB."), "white"),
       sectionRequiredDocs("white"),
     ].join(""),
   });

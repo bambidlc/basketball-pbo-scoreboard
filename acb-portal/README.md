@@ -91,7 +91,7 @@ npm run website:share                           # export + upload to acbpr.pages
 It does not update on its own: after changing `content.mjs` (and publishing to Odoo), run
 `npm run website:share` too. Wrangler must be logged in to that Cloudflare account
 (`npx wrangler login`). Internal links point at folders (`/canchas/`) because Pages
-redirects `/canchas` there. The static export hosts the editable PDFs and form editor locally, so they remain
+redirects `/canchas` there. The static export hosts the editable PDFs locally, so they remain
 available during Odoo maintenance. Odoo publishing also records its attachment URLs
 in `odoo-website/data/odoo-docs.json`. The copy is marked `noindex`. Once website #2 has its
 own domain, delete the Pages project.
@@ -122,34 +122,34 @@ behind as orphaned attachments.
 `npm run setup:odoo` creates or updates the models, fields, access rights, admin views and
 menu. It is safe to re-run after changing `shared/schema.js`.
 
-## Digital forms (November 2026)
+## Downloadable PDF forms
 
-The public document center is **https://acbpr.pages.dev/documentos/**. The embedded
-editor at `/formularios/` uses native AcroForms generated with ReportLab and
-filled with pdf-lib. Eight PDFs are served from `/pdf/`: five 2027 packets and
-three historical 2026 forms. Information/calendar source pages are retained in
-`forms/sources`; the uniform sheet inside the information packet is interactive.
+The ACB document center at https://acbpr.pages.dev/documentos/ offers downloads only.
+Online editing has been removed; old `/formularios/` URLs redirect to Documents.
 
-Text, photos and drawn signatures are processed entirely in the browser. There
-is no automatic submission or browser storage. Users explicitly download a draft
-PDF and reopen it to continue. Final export checks mandatory fields and every
-populated player row; it does not certify eligibility, submit the document, or
-replace ACB's original-certificate and roster-stamp requirements. Image buttons
-in downloaded PDFs target desktop Acrobat; the web editor handles images on
-mobile and browsers. Typed/drawn signatures are not certificate-based signatures.
+The official originals in `forms/sources/` are immutable backgrounds. The builder
+adds transparent AcroForm fields only in existing lines, table cells and photo
+spaces. It preserves page dimensions, pagination, logos and artwork.
+The only artwork exception is removing the obsolete printed M/F choice from
+the information packet and the 2026 uniform sheet; those small regions are
+explicitly declared and checked by the layout verifier. No rama fields are added.
+Carnet names/numbers and team headers share fields across pages. Photo slots are native
+Acrobat image buttons. The availability instructions/calendar has no blanks and
+is distributed byte-for-byte unchanged.
 
-The current public site serves these files independently of Odoo. To regenerate:
+Rebuild and validate:
 
 ```bash
-python3 scripts/build-fillable-pdfs.py  # requires reportlab and pypdf
-node scripts/prepare-pdf-images.mjs
+python3 scripts/build-fillable-pdfs.py  # requires pdfplumber
+node scripts/build-fillable-pdfs.mjs
 npm test
+python3 scripts/verify-pdf-layout.py    # pypdf, Pillow, Poppler; pixel comparison
 npm run website:share
 ```
 
-`output/pdf/` and `forms/schema.json` are committed generated assets. The website
-export bundles the editor locally; no third-party runtime script is needed.
-To synchronize only the Documents page after inspecting its live Odoo view:
-`node odoo-website/build-site.mjs --documents-only`. That action also upserts the
-existing attachment records with the editable PDFs. Do not publish other Odoo
-pages without checking for edits made in its website editor.
+`output/pdf/` and `forms/schema.json` are committed generated assets. The export
+validates every PDF against the field manifest before publishing. Odoo publishing
+updates the existing ACB attachment records; it refuses any website not named ACB.
+After inspecting live views, synchronize Documents with
+`node odoo-website/build-site.mjs --documents-only`. Run the full publish only after
+checking for changes made directly in Odoo's website editor.

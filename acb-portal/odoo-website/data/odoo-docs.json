@@ -1,7 +1,10 @@
 {
-  "info": "https://pbopr.odoo.com/web/content/2386?download=true",
-  "uniformes": "https://pbopr.odoo.com/web/content/2387?download=true",
-  "carnet": "https://pbopr.odoo.com/web/content/2388?download=true",
-  "roster": "https://pbopr.odoo.com/web/content/2389?download=true",
-  "disponibilidad": "https://pbopr.odoo.com/web/content/2390?download=true"
+  "info": "https://pbopr.odoo.com/web/content/2386/Informacion%20Inscripcion%20ACB%202027.pdf?download=true&unique=7ecc1ad0f3",
+  "uniformes": "https://pbopr.odoo.com/web/content/2387/Hoja%20de%20Uniformes%20ACB%202027.pdf?download=true&unique=01e53dcf56",
+  "carnet": "https://pbopr.odoo.com/web/content/2388/Carnet%20y%20Lista%20de%20Jugadores%20ACB%202027.pdf?download=true&unique=24425875a5",
+  "roster": "https://pbopr.odoo.com/web/content/2389/Roster%20de%20Juego%20ACB%202027.pdf?download=true&unique=9a0181e2f4",
+  "disponibilidad": "https://pbopr.odoo.com/web/content/2390/Disponibilidad%20de%20Cancha%20y%20Dirigentes%20ACB%202027.pdf?download=true&unique=cca30e9640",
+  "uniformes2026": "https://pbopr.odoo.com/web/content/2413/Hoja%20de%20Uniformes%20ACB%202026.pdf?download=true&unique=2822ff62dd",
+  "carnet2026": "https://pbopr.odoo.com/web/content/2414/Carnet%20y%20Lista%20de%20Jugadores%20ACB%202026.pdf?download=true&unique=fed82063ef",
+  "roster2026": "https://pbopr.odoo.com/web/content/2415/Roster%20de%20Juego%20ACB%202026.pdf?download=true&unique=a41140206e"
 }
